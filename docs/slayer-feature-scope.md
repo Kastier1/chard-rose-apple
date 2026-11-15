@@ -111,8 +111,36 @@ Building our own still makes sense if you want it combined with the combat-tab o
 4. **Gear from bank.** Local DPS ranking and the Gear up tag tab.
 5. **Wiki DPS verify button.**
 
-## Questions to settle
+## Decisions
 
-- Bundled data only, or allow live wiki calls (the plugin shows a warning)?
-- Which slayer master do you mainly use? That decides which tasks get curated locations first.
-- Should Gear up also pull in the task's required items (rock hammer, ice coolers, nose peg) and supplies?
+**Data: bundled snapshot.**
+- Ship a snapshot generated from the wiki and refresh it with each plugin release.
+- A later "Refresh from wiki" option, off by default, can fetch newer drop data.
+- The one network call is the optional "Check in wiki DPS calculator" button. It only runs when clicked.
+
+**Slayer masters: cover them all.**
+- Every task from every master gets data.
+- Konar: show only the locations in her assigned area, read from `getTaskLocation()`.
+- Krystilia: show only Wilderness locations, and send Shortest Path `avoidWilderness=false` for that route only.
+- Other masters: hide the Wilderness-only locations by default.
+- Hand-curated pathing spots are done first for tasks that most masters assign.
+
+**Gear up includes task items and supplies.**
+- **Required items.** If you own a slayer helmet, it replaces the nose peg, earmuffs, facemask and spiny helmet.
+
+  | Task | Item |
+  | --- | --- |
+  | Gargoyles | rock hammer |
+  | Desert lizards | ice cooler |
+  | Rockslugs | bag of salt |
+  | Mutated zygomites | fungicide spray |
+  | Aberrant spectres | nose peg |
+  | Banshees | earmuffs |
+  | Dust devils | facemask |
+  | Basilisks, cockatrices | mirror shield |
+  | Wall beasts | spiny helmet |
+  | Killerwatts | insulated boots |
+  | Brine rats | boots of stone |
+
+- **Teleport:** the Shortest Path `result` lists the transports it used. If the fastest route uses a teleport item you have in the bank, Gear up adds that item.
+- **Supplies:** food and potions for the chosen combat style, taken from what you have tagged as supplies.
