@@ -137,7 +137,7 @@ public class SlayerHelper
 	private int progressVersion;
 	private int lastProgressVersion = -1;
 	private ItemValueMode lastValueMode;
-	/** Slayer XP at the last StatChanged; -1 until the first one after login. */
+	/** Slayer XP at the last StatChanged; -1 until the first one after login, which only sets the starting point. */
 	private int lastSlayerXp = -1;
 
 	public void start()
@@ -169,9 +169,15 @@ public class SlayerHelper
 			.build();
 		clientToolbar.addNavigation(navButton);
 		lastState = SlayerTaskState.NONE;
-		progressProfile = null;
-		lastSlayerXp = -1;
-		clientThread.invokeLater(() -> refresh(true));
+		clientThread.invokeLater(() ->
+		{
+			// On the client thread, so a save queued by stop() just before still goes to the right account
+			progressProfile = null;
+			// Started while logged in: no StatChanged comes until the next XP drop, so take the XP now or that
+			// drop would only set the starting point
+			lastSlayerXp = client.getGameState() == GameState.LOGGED_IN ? client.getSkillExperience(Skill.SLAYER) : -1;
+			refresh(true);
+		});
 	}
 
 	public void stop()

@@ -48,6 +48,6 @@ final class TaskMonsters
 
 	private static String normalise(String s)
 	{
-		return s.replace(' ', ' ').replaceAll("<[^>]*>", "").trim().toLowerCase(Locale.ENGLISH);
+		return s.replace('\u00A0', ' ').replaceAll("<[^>]*>", "").trim().toLowerCase(Locale.ENGLISH);
 	}
 }
