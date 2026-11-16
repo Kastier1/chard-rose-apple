@@ -17,17 +17,24 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import javax.swing.SwingUtilities;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
-import net.runelite.api.events.ChatMessage;
-import net.runelite.api.events.ScriptPreFired;
+import net.runelite.api.Player;
 import net.runelite.api.Quest;
 import net.runelite.api.QuestState;
 import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.ScriptPreFired;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.chat.ChatColorType;
+import net.runelite.client.chat.ChatMessageBuilder;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
+import net.runelite.client.events.PluginMessage;
 import net.runelite.client.plugins.slayer.SlayerPluginService;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
@@ -78,6 +85,9 @@ public class SlayerHelper
 	@Inject
 	private CollectionLog collectionLog;
 
+	@Inject
+	private ChatMessageManager chatMessageManager;
+
 	private SlayerLocationData data;
 	private volatile SlayerPanel panel;
 	private NavigationButton navButton;
@@ -117,7 +127,12 @@ public class SlayerHelper
 	public void stop()
 	{
 		clientToolbar.removeNavigation(navButton);
-		clearPath();
+		clientThread.invokeLater(() ->
+		{
+			// No time to ask Shortest Path whose path it is, so leave the path but never our Wilderness override
+			shortestPath.release();
+			removeMapMarkers();
+		});
 		panel = null;
 		navButton = null;
 	}
@@ -126,7 +141,15 @@ public class SlayerHelper
 	public void onGameTick()
 	{
 		collectionLog.flush();
+		Player player = client.getLocalPlayer();
+		shortestPath.onGameTick(player != null ? player.getWorldLocation() : null);
 		refresh(false);
+	}
+
+	/** Call for every PluginMessage, on the thread it was posted on. */
+	public void onPluginMessage(PluginMessage event)
+	{
+		shortestPath.onPluginMessage(event);
 	}
 
 	public void onScriptPreFired(ScriptPreFired event)
@@ -171,7 +194,9 @@ public class SlayerHelper
 		lastState = state;
 		if (taskEnded || (taskChanged && lastTask != null))
 		{
-			clearPath();
+			// Only clears the path if it is still the one we set
+			shortestPath.clearIfOurs();
+			removeMapMarkers();
 		}
 
 		if (!state.hasTask())
@@ -261,6 +286,18 @@ public class SlayerHelper
 			if (shortestPath.isAvailable())
 			{
 				shortestPath.path(targets, allowWilderness);
+				if (allowWilderness)
+				{
+					chatMessageManager.queue(QueuedMessage.builder()
+						.type(ChatMessageType.GAMEMESSAGE)
+						.runeLiteFormattedMessage(new ChatMessageBuilder()
+							.append(ChatColorType.HIGHLIGHT)
+							.append("[Slayer] This route goes into the Wilderness, where other players can attack you. ")
+							.append(ChatColorType.NORMAL)
+							.append("Shortest Path may route through the Wilderness until you arrive.")
+							.build())
+						.build());
+				}
 			}
 			else
 			{
@@ -343,13 +380,19 @@ public class SlayerHelper
 		}
 	}
 
+	/** The player pressed Clear path. */
 	private void clearPath()
 	{
 		clientThread.invokeLater(() ->
 		{
 			shortestPath.clear();
-			worldMapPointManager.removeIf(p -> MAP_MARKER_NAME.equals(p.getName()));
+			removeMapMarkers();
 		});
+	}
+
+	private void removeMapMarkers()
+	{
+		worldMapPointManager.removeIf(p -> MAP_MARKER_NAME.equals(p.getName()));
 	}
 
 	private SlayerLocationData loadData()

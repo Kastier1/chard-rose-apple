@@ -35,6 +35,7 @@ import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
 import net.runelite.client.game.ItemVariationMapping;
 import net.runelite.client.events.PluginChanged;
+import net.runelite.client.events.PluginMessage;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDependency;
@@ -178,6 +179,15 @@ public class CombatGearOrganizerPlugin extends Plugin
 		if (slayerStarted)
 		{
 			slayerHelper.onChatMessage(event);
+		}
+	}
+
+	@Subscribe
+	public void onPluginMessage(PluginMessage event)
+	{
+		if (slayerStarted)
+		{
+			slayerHelper.onPluginMessage(event);
 		}
 	}
 
