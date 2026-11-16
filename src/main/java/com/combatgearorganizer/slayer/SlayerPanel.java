@@ -1,28 +1,28 @@
 package com.combatgearorganizer.slayer;
 
+import com.combatgearorganizer.slayer.SlayerLocationData.Variant;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Graphics2D;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
-import com.combatgearorganizer.slayer.SlayerLocationData.Variant;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Locale;
-import java.util.Objects;
-import java.util.function.Predicate;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -33,6 +33,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
@@ -40,6 +41,7 @@ import net.runelite.client.ui.PluginPanel;
 /**
  * Side panel showing the current slayer task and where to do it. Only touch it on the Swing thread.
  */
+@Slf4j
 public class SlayerPanel extends PluginPanel
 {
 	private static final Color WILDERNESS_COLOR = new Color(230, 80, 60);
@@ -148,8 +150,18 @@ public class SlayerPanel extends PluginPanel
 		boolean variantWeaknesses = Variants.regular(variants).stream().anyMatch(v -> v.getWeakness() != null);
 		if (info != null || selected != null)
 		{
-			content.add(taskCard(info, !variantWeaknesses, variants, selected, locations, task.getRemaining()));
-			content.add(Box.createVerticalStrut(8));
+			try
+			{
+				content.add(taskCard(info, !variantWeaknesses, variants, selected, locations, task.getRemaining()));
+				content.add(Box.createVerticalStrut(8));
+			}
+			catch (RuntimeException e)
+			{
+				// One bad record must not take the location list and Go buttons down with it
+				log.warn("Couldn't show the details for {} ({})", task.getName(), selectedVariant, e);
+				content.add(wrapped("Couldn't show the details for this monster.", ColorScheme.LIGHT_GRAY_COLOR));
+				content.add(Box.createVerticalStrut(8));
+			}
 		}
 
 		if (!hasData)
@@ -270,24 +282,33 @@ public class SlayerPanel extends PluginPanel
 		{
 			JPanel hits = iconRow();
 			String tip = "Attacks with " + String.join(", ", selected.getAttackTypes());
-			for (int i = 0; i < selected.getAttackTypes().size(); i++)
+			int shown = 0;
+			for (String type : selected.getAttackTypes())
 			{
-				if (i > 0)
+				TaskTags.Style style = TaskTags.styleOf(type);
+				if (style == null)
+				{
+					// Data we don't have an icon for; skip it rather than break the panel
+					continue;
+				}
+				if (shown++ > 0)
 				{
 					hits.add(chipText("+", ColorScheme.MEDIUM_GRAY_COLOR, tip));
 				}
-				TaskTags.Style style = TaskTags.Style.valueOf(selected.getAttackTypes().get(i).toUpperCase(Locale.ROOT));
 				JLabel icon = chipIcon(tip);
 				icons.setStyle(icon, style);
 				hits.add(icon);
 			}
-			card.add(factRow("Hits with", hits));
+			if (shown > 0)
+			{
+				card.add(factRow("Hits with", hits));
+			}
 		}
 
-		if (selected.getWeakness() != null)
+		TaskTags.Element element = selected.getWeakness() != null ? TaskTags.elementOf(selected.getWeakness().getElement()) : null;
+		if (element != null)
 		{
 			JPanel weak = iconRow();
-			TaskTags.Element element = TaskTags.Element.valueOf(selected.getWeakness().getElement().toUpperCase(Locale.ROOT));
 			String tip = "Weak to " + selected.getWeakness().getElement() + " spells";
 			JLabel icon = chipIcon(tip);
 			icons.setElement(icon, element);
@@ -949,6 +970,19 @@ public class SlayerPanel extends PluginPanel
 	private static String capitalise(String s)
 	{
 		return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+	}
+
+	/** Show another monster's details, as clicking its row does. */
+	void selectVariant(String name)
+	{
+		selectedVariant = name;
+		redraw();
+	}
+
+	/** The monster whose details are shown. */
+	String getSelectedVariant()
+	{
+		return selectedVariant;
 	}
 
 	private void redraw()

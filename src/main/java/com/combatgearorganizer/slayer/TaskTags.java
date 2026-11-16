@@ -30,6 +30,46 @@ public class TaskTags
 		AIR, WATER, EARTH, FIRE
 	}
 
+	/** The style for a data string such as "melee" or "ranged"; null for anything unknown. */
+	public static Style styleOf(String s)
+	{
+		if (s == null)
+		{
+			return null;
+		}
+		String v = s.trim().toLowerCase(Locale.ROOT);
+		if (v.startsWith("range"))
+		{
+			return Style.RANGED;
+		}
+		for (Style style : Style.values())
+		{
+			if (style.name().toLowerCase(Locale.ROOT).equals(v))
+			{
+				return style;
+			}
+		}
+		return null;
+	}
+
+	/** The element for a data string such as "fire"; null for "none" or anything unknown. */
+	public static Element elementOf(String s)
+	{
+		if (s == null)
+		{
+			return null;
+		}
+		String v = s.trim().toLowerCase(Locale.ROOT);
+		for (Element element : Element.values())
+		{
+			if (element.name().toLowerCase(Locale.ROOT).equals(v))
+			{
+				return element;
+			}
+		}
+		return null;
+	}
+
 	/** "Protect from Missiles", also catching the short "Protect from Missiles/Magic". */
 	private static final Pattern PRAYER = Pattern.compile("protect from (melee|missiles|magic)((?:\\s*/\\s*(?:melee|missiles|magic))*)",
 		Pattern.CASE_INSENSITIVE);

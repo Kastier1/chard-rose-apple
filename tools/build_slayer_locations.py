@@ -240,10 +240,18 @@ def variants_for(task_name, places, wiki, all_points):
             variant["alwaysDrops"] = always
         if weak:
             (element, percent), _ = weak.most_common(1)[0]
-            variant["weakness"] = {"element": element.lower(), "percent": percent}
+            # The wiki says "None" for monsters with no elemental weakness; only real elements are shown
+            if element.lower() in ELEMENTS:
+                variant["weakness"] = {"element": element.lower(), "percent": percent}
         out.append(variant)
     out.sort(key=lambda v: (v["superior"], v["boss"], v["level"][0] if v["level"] else 0, v["name"]))
     return out
+
+
+# Elements the panel knows (TaskTags.Element)
+ELEMENTS = {"air", "water", "earth", "fire"}
+# Attack styles the panel knows (TaskTags.Style)
+ATTACK_TYPES = {"melee", "ranged", "magic"}
 
 
 # Task names in slayer_tasks*.json that differ from slayer_areas.json
@@ -292,6 +300,21 @@ def task_info(info, name):
         else:
             del out["requiredItems"]
     return out or None
+
+
+def validate(tasks):
+    """Fail the build on values the plugin can't show, instead of breaking the panel in game."""
+    problems = []
+    for t in tasks:
+        for v in t.get("variants", []):
+            w = v.get("weakness")
+            if w and w["element"] not in ELEMENTS:
+                problems.append(f'{t["name"]} / {v["name"]}: weakness element {w["element"]!r}')
+            for a in v.get("attackTypes", []):
+                if a not in ATTACK_TYPES:
+                    problems.append(f'{t["name"]} / {v["name"]}: attack type {a!r}')
+    if problems:
+        raise SystemExit("Invalid data:\n  " + "\n  ".join(problems))
 
 
 def main(src):
@@ -354,6 +377,7 @@ def main(src):
                  "(CC BY-NC-SA 3.0). Points are [x, y, plane].",
         "tasks": tasks,
     }
+    validate(tasks)
     OUT.write_text(json.dumps(out, separators=(",", ":")))
     every = [l for t in tasks for l in t["locations"] + t["wildernessLocations"]]
     routable = sum(1 for l in every if l["points"] or l["wildernessPoints"])
