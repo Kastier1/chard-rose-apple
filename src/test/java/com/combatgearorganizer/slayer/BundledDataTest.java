@@ -120,6 +120,43 @@ public class BundledDataTest
 	}
 
 	@Test
+	public void noPrayerSwitchingAdvice()
+	{
+		java.util.regex.Pattern switching = java.util.regex.Pattern.compile("\\b(switch|swap|flick|alternat|phase|rotation|per form)",
+			java.util.regex.Pattern.CASE_INSENSITIVE);
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			String prayer = t.getInfo() != null ? t.getInfo().getProtectionPrayer() : null;
+			assertTrue(t.getName() + ": " + prayer, prayer == null || !switching.matcher(prayer).find());
+		}
+	}
+
+	@Test
+	public void noPrayerAdviceForBosses()
+	{
+		SlayerLocationData.TaskEntry kraken = data.findTask(-1, "Cave kraken");
+		assertNotNull(kraken);
+		SlayerLocationData.Variant boss = null;
+		SlayerLocationData.Variant regular = null;
+		for (SlayerLocationData.Variant v : kraken.getVariants())
+		{
+			if (v.isBoss())
+			{
+				boss = v;
+			}
+			else if (!v.isSuperior())
+			{
+				regular = v;
+			}
+		}
+		assertNotNull(boss);
+		assertNotNull(regular);
+		assertTrue(!SlayerPanel.showsPrayer(kraken.getInfo(), boss));
+		assertTrue(SlayerPanel.showsPrayer(kraken.getInfo(), regular));
+		assertTrue(!SlayerPanel.showsPrayer(data.findTask(-1, "Hydras").getInfo(), null));
+	}
+
+	@Test
 	public void lenientLookups()
 	{
 		assertEquals(TaskTags.Element.FIRE, TaskTags.elementOf("Fire"));

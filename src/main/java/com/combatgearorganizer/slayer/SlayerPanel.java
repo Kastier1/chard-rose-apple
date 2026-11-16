@@ -236,7 +236,7 @@ public class SlayerPanel extends PluginPanel
 		}
 		if (info != null)
 		{
-			card.add(chips(info, TaskTags.from(info), showTaskWeakness));
+			card.add(chips(info, TaskTags.from(info), showTaskWeakness, showsPrayer(info, selected)));
 		}
 		if (selected != null)
 		{
@@ -547,7 +547,7 @@ public class SlayerPanel extends PluginPanel
 			weakness = info.getElementalWeakness() + ". " + weakness;
 		}
 		addDrawer(card, "Weakness", weakness);
-		if (TaskTags.from(info).isPrayerNeedsDetail())
+		if (showsPrayer(info, selected) && TaskTags.from(info).isPrayerNeedsDetail())
 		{
 			addDrawer(card, "Prayer", info.getProtectionPrayer());
 		}
@@ -560,7 +560,45 @@ public class SlayerPanel extends PluginPanel
 	}
 
 	/** Labelled rows: what to attack with, what to pray, and elemental weaknesses (one row per variant group). */
-	private JPanel chips(SlayerLocationData.TaskInfo info, TaskTags tags, boolean showWeakness)
+	/**
+	 * Whether to give protection prayer advice. Never for a boss: the plugin hub's guidelines rule out prayer
+	 * recommendations for bosses, slayer bosses included. Also not when the data has no advice for the task.
+	 */
+	static boolean showsPrayer(SlayerLocationData.TaskInfo info, Variant selected)
+	{
+		return info != null && notBlank(info.getProtectionPrayer()) && (selected == null || !selected.isBoss());
+	}
+
+	private void addPrayerRow(JPanel rows, SlayerLocationData.TaskInfo info, TaskTags tags)
+	{
+		String prayerTip = "Pray: " + nullToEmpty(info.getProtectionPrayer());
+		JPanel pray = iconRow();
+		if (tags.getPrayers().isEmpty())
+		{
+			pray.add(chipText("No protection prayer", ColorScheme.LIGHT_GRAY_COLOR, prayerTip));
+		}
+		for (int i = 0; i < tags.getPrayers().size(); i++)
+		{
+			if (i > 0)
+			{
+				pray.add(chipText("/", ColorScheme.MEDIUM_GRAY_COLOR, prayerTip));
+			}
+			JLabel icon = chipIcon(prayerTip);
+			icons.setPrayer(icon, tags.getPrayers().get(i));
+			pray.add(icon);
+		}
+		if (tags.getPrayers().size() > 1)
+		{
+			pray.add(chipText("varies", WEAKNESS_COLOR, prayerTip));
+		}
+		else if (tags.isPrayerOptional())
+		{
+			pray.add(chipText("if needed", ColorScheme.LIGHT_GRAY_COLOR, prayerTip));
+		}
+		rows.add(factRow("Pray", pray));
+	}
+
+	private JPanel chips(SlayerLocationData.TaskInfo info, TaskTags tags, boolean showWeakness, boolean showPrayer)
 	{
 		JPanel rows = new JPanel();
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
@@ -590,32 +628,11 @@ public class SlayerPanel extends PluginPanel
 		}
 		rows.add(factRow("Attack", attack));
 
-		// Pray: protection prayer icons; several means it depends on the variant or phase
-		String prayerTip = "Pray: " + nullToEmpty(info.getProtectionPrayer());
-		JPanel pray = iconRow();
-		if (tags.getPrayers().isEmpty())
+		// Pray: protection prayer icons; several means it depends on the variant
+		if (showPrayer)
 		{
-			pray.add(chipText("No protection prayer", ColorScheme.LIGHT_GRAY_COLOR, prayerTip));
+			addPrayerRow(rows, info, tags);
 		}
-		for (int i = 0; i < tags.getPrayers().size(); i++)
-		{
-			if (i > 0)
-			{
-				pray.add(chipText("/", ColorScheme.MEDIUM_GRAY_COLOR, prayerTip));
-			}
-			JLabel icon = chipIcon(prayerTip);
-			icons.setPrayer(icon, tags.getPrayers().get(i));
-			pray.add(icon);
-		}
-		if (tags.getPrayers().size() > 1)
-		{
-			pray.add(chipText("varies", WEAKNESS_COLOR, prayerTip));
-		}
-		else if (tags.isPrayerOptional())
-		{
-			pray.add(chipText("if needed", ColorScheme.LIGHT_GRAY_COLOR, prayerTip));
-		}
-		rows.add(factRow("Pray", pray));
 
 		// Weak to: one row per element, naming the variants when they differ
 		boolean first = true;

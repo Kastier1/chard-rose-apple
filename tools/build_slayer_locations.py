@@ -268,6 +268,18 @@ INFO_FIELDS = ["weakness", "elementalWeakness", "style", "monsterAttackStyle", "
                "notableDrops"]
 
 
+# Prayer advice that tells the player to switch prayers during a fight (boss forms, phases, specials). The plugin
+# hub's guidelines rule out prayer-switching advice and prayer recommendations for bosses, so these are reworded to
+# the plain prayer for the normal monsters, or dropped. None removes the advice.
+PRAYER_REWRITES = {
+    "aquanites": "Protect from Magic",
+    "custodian stalkers": "Protect from Melee",
+    "hydras": None,
+    "kalphite": "Protect from Melee for the standard kalphites.",
+}
+PRAYER_SWITCHING = re.compile(r"\b(switch|swap|flick|alternat|phase|rotation|per form)", re.IGNORECASE)
+
+
 # Gear one place needs, said on that place's card rather than for the whole task
 PLACE_NOTES = {
     "karuulm_slayer_dungeon": "Wear boots of stone, boots of brimstone or granite boots for the hot floor "
@@ -293,6 +305,12 @@ def task_info(info, name):
     if not t:
         return None
     out = {k: t[k].strip() for k in INFO_FIELDS if isinstance(t.get(k), str) and t[k].strip()}
+    if name.lower() in PRAYER_REWRITES:
+        rewrite = PRAYER_REWRITES[name.lower()]
+        if rewrite is None:
+            out.pop("protectionPrayer", None)
+        else:
+            out["protectionPrayer"] = rewrite
     if "requiredItems" in out:
         bring = PLACE_ONLY_ITEMS.sub("", out["requiredItems"]).strip()
         if bring:
@@ -313,6 +331,9 @@ def validate(tasks):
             for a in v.get("attackTypes", []):
                 if a not in ATTACK_TYPES:
                     problems.append(f'{t["name"]} / {v["name"]}: attack type {a!r}')
+        prayer = (t.get("info") or {}).get("protectionPrayer")
+        if prayer and PRAYER_SWITCHING.search(prayer):
+            problems.append(f'{t["name"]}: prayer-switching advice {prayer!r}; add it to PRAYER_REWRITES')
     if problems:
         raise SystemExit("Invalid data:\n  " + "\n  ".join(problems))
 
