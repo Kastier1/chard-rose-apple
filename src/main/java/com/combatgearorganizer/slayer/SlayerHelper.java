@@ -75,6 +75,8 @@ public class SlayerHelper
 	 */
 	static final String PROGRESS_GROUP = "combatgearorganizerprogress";
 	static final String PROGRESS_KEY = "task";
+	/** What the panel remembers (open drawers, picked monsters, last places), in the same group. */
+	static final String PANEL_KEY = "panel";
 	/** The game message for a superior spawning, as in the core Slayer plugin. */
 	static final String SUPERIOR_MESSAGE = "A superior foe has appeared...";
 
@@ -139,6 +141,12 @@ public class SlayerHelper
 	private ItemValueMode lastValueMode;
 	/** Slayer XP at the last StatChanged; -1 until the first one after login, which only sets the starting point. */
 	private int lastSlayerXp = -1;
+	/** The route the panel's route line shows. Client thread. */
+	private Route route = Route.NONE;
+	/** The places marked on the world map, while {@link #route} is a world map route. */
+	private List<WorldPoint> mapTargets = Collections.emptyList();
+	/** Redraw the whole panel on the next refresh, e.g. after it showed the logged-out text. */
+	private boolean needsRedraw;
 
 	public void start()
 	{
@@ -160,7 +168,7 @@ public class SlayerHelper
 		lastItemNamesDone = false;
 		BufferedImage icon = ImageUtil.loadImageResource(SlayerHelper.class, "slayer_icon.png");
 		markerImage = ImageUtil.resizeImage(icon, 24, 21);
-		panel = new SlayerPanel(icons, this::go, this::goNearest, this::clearPath);
+		panel = new SlayerPanel(icons, this::go, this::goNearest, this::cancelRoute, this::saveMemory);
 		navButton = NavigationButton.builder()
 			.tooltip("Slayer task")
 			.icon(ImageUtil.resizeImage(icon, 18, 16))
@@ -173,6 +181,7 @@ public class SlayerHelper
 		{
 			// On the client thread, so a save queued by stop() just before still goes to the right account
 			progressProfile = null;
+			route = Route.NONE;
 			// Started while logged in: no StatChanged comes until the next XP drop, so take the XP now or that
 			// drop would only set the starting point
 			lastSlayerXp = client.getGameState() == GameState.LOGGED_IN ? client.getSkillExperience(Skill.SLAYER) : -1;
@@ -201,7 +210,9 @@ public class SlayerHelper
 		collectionLog.onGameTick();
 		scanItemNames();
 		Player player = client.getLocalPlayer();
-		shortestPath.onGameTick(player != null ? player.getWorldLocation() : null);
+		WorldPoint at = player != null ? player.getWorldLocation() : null;
+		shortestPath.onGameTick(at);
+		updateRoute(at);
 		refresh(false);
 		if (progress.onTick() && config.taskSummaryChat() && progress.getProgress() != null)
 		{
@@ -320,6 +331,12 @@ public class SlayerHelper
 				{
 					// The next login may be another account; load its own progress then
 					progressProfile = null;
+					needsRedraw = true;
+					final SlayerPanel p = panel;
+					if (p != null)
+					{
+						SwingUtilities.invokeLater(p::showLoggedOut);
+					}
 				}
 				break;
 			default:
@@ -346,17 +363,35 @@ public class SlayerHelper
 		updateProgress(state);
 		ItemValueMode valueMode = itemValues.mode();
 		boolean spAvailable = shortestPath.isAvailable();
+		if (!spAvailable && route.getKind() == Route.Kind.SHORTEST_PATH)
+		{
+			// Shortest Path was turned off mid-route
+			setRoute(Route.NONE);
+		}
 		collectionLog.ensureLoaded();
 		int clogVersion = collectionLog.getVersion();
 		boolean namesDone = itemNames.isDone();
+		force |= needsRedraw;
+		needsRedraw = false;
 		if (!force && state.equals(lastState) && spAvailable == lastShortestPathAvailable && clogVersion == lastClogVersion
 			&& namesDone == lastItemNamesDone && progressVersion == lastProgressVersion && valueMode == lastValueMode)
 		{
 			return;
 		}
+		// A kill (or new XP, a superior, loot) on the task already shown only changes the count and progress lines
+		boolean countOnly = !force && state.hasTask() && state.sameTaskAs(lastState) && lastTask != null
+			&& spAvailable == lastShortestPathAvailable && clogVersion == lastClogVersion && namesDone == lastItemNamesDone
+			&& valueMode == lastValueMode;
 		lastProgressVersion = progressVersion;
 		lastValueMode = valueMode;
 		TaskProgress tp = progress.getProgress();
+		if (countOnly)
+		{
+			lastState = state;
+			TaskProgress.View view = tp != null && !tp.isDone() ? tp.view(state.getRemaining(), valueMode) : null;
+			SwingUtilities.invokeLater(() -> p.updateCount(state, view));
+			return;
+		}
 		lastShortestPathAvailable = spAvailable;
 		lastClogVersion = clogVersion;
 		lastItemNamesDone = namesDone;
@@ -370,6 +405,7 @@ public class SlayerHelper
 			// Only clears the path if it is still the one we set
 			shortestPath.clearIfOurs();
 			removeMapMarkers();
+			setRoute(Route.NONE);
 		}
 
 		if (!state.hasTask())
@@ -390,7 +426,12 @@ public class SlayerHelper
 		List<SlayerLocationData.Variant> variants = task != null ? task.getVariants() : Collections.emptyList();
 		DropItems items = dropItems(variants);
 		TaskProgress.View view = tp != null && !tp.isDone() ? tp.view(state.getRemaining(), valueMode) : null;
-		SwingUtilities.invokeLater(() -> p.showTask(state, info, variants, locations, task != null, spAvailable, clog, items, view));
+		boolean compact = config.compactPanel();
+		SwingUtilities.invokeLater(() ->
+		{
+			p.setCompact(compact);
+			p.showTask(state, info, variants, locations, task != null, spAvailable, clog, items, view);
+		});
 	}
 
 	/** Feeds this tick's count to the progress tracker, loading the account's saved progress first. Client thread. */
@@ -443,7 +484,73 @@ public class SlayerHelper
 		progressDirty = false;
 		progress.load(saved, client.getGameState() == GameState.LOGGED_IN, System.currentTimeMillis());
 		progressVersion++;
+		loadMemory(profile);
 		return true;
+	}
+
+	/** Hands the panel this account's open drawers, picked monsters and last places. Client thread. */
+	private void loadMemory(String profile)
+	{
+		PanelMemory memory = PanelMemory.fromJson(gson, configManager.getRSProfileConfiguration(PROGRESS_GROUP, PANEL_KEY));
+		memory.setProfile(profile);
+		final SlayerPanel p = panel;
+		if (p != null)
+		{
+			SwingUtilities.invokeLater(() -> p.setMemory(memory));
+		}
+	}
+
+	/** The panel's memory changed: save it to the account it belongs to. Called on the Swing thread. */
+	private void saveMemory(PanelMemory memory)
+	{
+		String profile = memory.getProfile();
+		if (profile == null)
+		{
+			// Not loaded for an account yet; the account's own memory replaces it on login
+			return;
+		}
+		String json = memory.toJson(gson);
+		clientThread.invokeLater(() ->
+		{
+			if (profile.equals(configManager.getRSProfileKey()))
+			{
+				configManager.setRSProfileConfiguration(PROGRESS_GROUP, PANEL_KEY, json);
+			}
+		});
+	}
+
+	/** Ends the route line when the player arrives or our path is gone. Client thread. */
+	private void updateRoute(WorldPoint player)
+	{
+		if (route.getKind() == Route.Kind.SHORTEST_PATH && !shortestPath.isRouteActive())
+		{
+			// Arrived, or another path replaced ours
+			setRoute(Route.NONE);
+		}
+		else if (route.getKind() == Route.Kind.WORLD_MAP && ShortestPathBridge.near(mapTargets, player))
+		{
+			removeMapMarkers();
+			setRoute(Route.NONE);
+		}
+	}
+
+	/** Client thread. */
+	private void setRoute(Route r)
+	{
+		if (r.equals(route))
+		{
+			return;
+		}
+		route = r;
+		if (r.getKind() != Route.Kind.WORLD_MAP)
+		{
+			mapTargets = Collections.emptyList();
+		}
+		final SlayerPanel p = panel;
+		if (p != null)
+		{
+			SwingUtilities.invokeLater(() -> p.showRoute(r));
+		}
 	}
 
 	private void progressChanged()
@@ -557,15 +664,16 @@ public class SlayerHelper
 
 	private void go(LocationOption location)
 	{
-		route(Collections.singletonList(location));
+		route(Collections.singletonList(location), location.getLabel());
 	}
 
 	private void goNearest(List<LocationOption> locations)
 	{
-		route(locations);
+		route(locations, locations.size() == 1 ? locations.get(0).getLabel() : null);
 	}
 
-	private void route(List<LocationOption> locations)
+	/** {@code place}: the place's name for the route line, or null for the nearest of several. */
+	private void route(List<LocationOption> locations, String place)
 	{
 		List<int[]> targets = new ArrayList<>();
 		// Only lift the player's "avoid Wilderness" setting when every place is in the Wilderness. With a mix,
@@ -587,6 +695,7 @@ public class SlayerHelper
 			if (shortestPath.isAvailable())
 			{
 				shortestPath.path(targets, allowWilderness);
+				setRoute(Route.shortestPath(place));
 				if (allowWilderness)
 				{
 					chatMessageManager.queue(QueuedMessage.builder()
@@ -603,6 +712,10 @@ public class SlayerHelper
 			else
 			{
 				markOnWorldMap(targets);
+				List<WorldPoint> points = new ArrayList<>();
+				targets.forEach(t -> points.add(new WorldPoint(t[0], t[1], t[2])));
+				setRoute(Route.worldMap(place));
+				mapTargets = points;
 			}
 		});
 	}
@@ -681,13 +794,18 @@ public class SlayerHelper
 		}
 	}
 
-	/** The player pressed Clear path. */
-	private void clearPath()
+	/** The player pressed Cancel (or Remove) on the route line. */
+	private void cancelRoute()
 	{
 		clientThread.invokeLater(() ->
 		{
-			shortestPath.clear();
+			if (route.getKind() == Route.Kind.SHORTEST_PATH)
+			{
+				// Only offered while our route is active, so this clears our own path
+				shortestPath.clear();
+			}
 			removeMapMarkers();
+			setRoute(Route.NONE);
 		});
 	}
 

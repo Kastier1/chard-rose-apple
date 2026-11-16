@@ -15,6 +15,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.SwingUtilities;
 import net.runelite.api.Quest;
@@ -338,7 +339,8 @@ public class BundledDataTest
 			p.finish(180_000);
 			panel.showNoTask(p.summary(ItemValueMode.GRAND_EXCHANGE));
 			assertTrue(containsText(panel, "Task done: 52 Abyssal demons in 3 min, 1 superior, 1.2M loot."));
-			assertTrue(containsText(panel, "No task right now"));
+			assertTrue(containsText(panel, SlayerPanel.NO_TASK_TITLE));
+			assertTrue(containsText(panel, SlayerPanel.NO_TASK));
 			panel.showNoTask(null);
 			assertTrue(!containsText(panel, "Task done"));
 		});
@@ -391,6 +393,8 @@ public class BundledDataTest
 		SwingUtilities.invokeAndWait(() ->
 		{
 			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			// With a route line, as after Go
+			panel.showRoute(Route.shortestPath("Catacombs of Kourend"));
 			for (SlayerLocationData.TaskEntry t : data.getTasks())
 			{
 				SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
@@ -398,6 +402,12 @@ public class BundledDataTest
 				try
 				{
 					panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, clog, items, progress);
+					// A kill, drawn without a rebuild
+					panel.updateCount(new SlayerTaskState(t.getTaskId(), t.getName(), 49, 120, 5, 0, null), progress);
+					if (!containsText(panel, "49 of 120 left"))
+					{
+						problems.add(t.getName() + ": count not updated");
+					}
 					List<String> names = new ArrayList<>();
 					for (SlayerLocationData.Variant v : Variants.listed(t.getVariants(), locations))
 					{
@@ -419,5 +429,283 @@ public class BundledDataTest
 			}
 		});
 		assertTrue(String.join("\n", problems), problems.isEmpty());
+	}
+
+	private static List<JButton> buttons(Component c, String text)
+	{
+		List<JButton> out = new ArrayList<>();
+		if (c instanceof JButton && text.equals(((JButton) c).getText()))
+		{
+			out.add((JButton) c);
+		}
+		if (c instanceof Container)
+		{
+			for (Component child : ((Container) c).getComponents())
+			{
+				out.addAll(buttons(child, text));
+			}
+		}
+		return out;
+	}
+
+	private static boolean visibleText(Component c, String text)
+	{
+		if (!c.isVisible())
+		{
+			return false;
+		}
+		if (c instanceof JLabel && ((JLabel) c).getText() != null && ((JLabel) c).getText().contains(text))
+		{
+			return true;
+		}
+		if (c instanceof Container)
+		{
+			for (Component child : ((Container) c).getComponents())
+			{
+				if (visibleText(child, text))
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	@Test
+	public void compactPanelDrawsEveryTask() throws Exception
+	{
+		List<String> problems = Collections.synchronizedList(new ArrayList<>());
+		Set<String> logged = new HashSet<>(Arrays.asList("abyssal whip", "dragon chainbody"));
+		CollectionLog.Snapshot clog = new CollectionLog.Snapshot(logged, true);
+		DropItems items = stubItems(ItemValueMode.GRAND_EXCHANGE);
+		TaskProgress.View progress = progress(true).view(50, ItemValueMode.GRAND_EXCHANGE);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.setCompact(true);
+			for (SlayerLocationData.TaskEntry t : data.getTasks())
+			{
+				SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+				List<LocationOption> locations = LocationPicker.pick(t, 5, 0, true);
+				for (Route route : Arrays.asList(Route.NONE, Route.shortestPath("Catacombs of Kourend"), Route.worldMap(null)))
+				{
+					try
+					{
+						panel.showRoute(route);
+						panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, clog, items, progress);
+						String where = t.getName() + " (" + route.getKind() + "): ";
+						if (!slots(panel).isEmpty())
+						{
+							problems.add(where + "drops shown");
+						}
+						for (String hidden : new String[]{"Found at", "Monster", "Attack", "slayer XP this task", "Loot:"})
+						{
+							if (containsText(panel, hidden))
+							{
+								problems.add(where + hidden + " shown");
+							}
+						}
+						if (!containsText(panel, t.getName()) || !containsText(panel, "50 of 120 left")
+							|| !containsText(panel, "60 kills/hr"))
+						{
+							problems.add(where + "header or progress missing");
+						}
+						if (buttons(panel, "Go").size() != locations.size())
+						{
+							problems.add(where + buttons(panel, "Go").size() + " Go buttons for " + locations.size() + " places");
+						}
+						if (buttons(panel, "Go to nearest").size() != 1)
+						{
+							problems.add(where + "no Go to nearest");
+						}
+						if (route.isShown() != visibleText(panel, route.isShown() ? route.text() : "On route"))
+						{
+							problems.add(where + "route line");
+						}
+					}
+					catch (RuntimeException e)
+					{
+						problems.add(t.getName() + ": " + e);
+					}
+				}
+			}
+		});
+		assertTrue(String.join("\n", problems), problems.isEmpty());
+	}
+
+	@Test
+	public void routeLineAfterGoUntilCancel() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Abyssal demons");
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		List<String> events = new ArrayList<>();
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel[] holder = new SlayerPanel[1];
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> events.add("go " + l.getLabel()), l -> events.add("nearest"),
+				() ->
+				{
+					events.add("cancel");
+					// The helper ends the route after Cancel
+					holder[0].showRoute(Route.NONE);
+				});
+			holder[0] = panel;
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+			assertTrue(buttons(panel, "Clear path").isEmpty());
+			assertTrue(!visibleText(panel, "On route"));
+
+			LocationOption catacombs = locations.stream().filter(l -> l.getLabel().contains("Catacombs")).findFirst().orElse(null);
+			assertNotNull(catacombs);
+			// Go, then the helper reports our route
+			int index = locations.indexOf(catacombs);
+			buttons(panel, "Go").get(index).doClick(0);
+			assertEquals("go " + catacombs.getLabel(), events.get(0));
+			panel.showRoute(Route.shortestPath(catacombs.getLabel()));
+			assertTrue(visibleText(panel, "On route to " + catacombs.getLabel()));
+
+			// Survives a kill and a full redraw
+			panel.updateCount(new SlayerTaskState(t.getTaskId(), t.getName(), 49, 120, 5, 0, null), null);
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+			assertTrue(visibleText(panel, "On route to " + catacombs.getLabel()));
+
+			buttons(panel, "Cancel").get(0).doClick(0);
+			assertEquals("cancel", events.get(events.size() - 1));
+			assertTrue(!visibleText(panel, "On route"));
+
+			// Arrival: the helper ends it the same way
+			panel.showRoute(Route.shortestPath(null));
+			assertTrue(visibleText(panel, "On route to the nearest place"));
+			panel.showRoute(Route.NONE);
+			assertTrue(!visibleText(panel, "On route"));
+
+			// Without Shortest Path
+			panel.showRoute(Route.worldMap(catacombs.getLabel()));
+			assertTrue(visibleText(panel, "Marked on your world map"));
+			assertEquals(1, buttons(panel, "Remove").size());
+		});
+	}
+
+	@Test
+	public void drawersMonsterAndLastPlaceKeptAcrossKillsAndRelogs() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Black dragons");
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		Gson gson = new Gson();
+		List<String> saved = new ArrayList<>();
+		List<String> pickedHolder = new ArrayList<>();
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { }, m -> saved.add(m.toJson(gson)));
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+			String bring = t.getInfo().getRequiredItems();
+			String weakness = t.getInfo().getWeakness();
+			assertTrue(bring != null || weakness != null);
+			String drawer = bring != null ? "Bring" : "Weakness";
+			String body = bring != null ? bring : weakness;
+			assertTrue(!containsText(panel, body));
+			panel.toggleDrawer(drawer);
+			assertTrue(containsText(panel, body));
+			// Pick a monster other than the default
+			String picked = null;
+			for (SlayerLocationData.Variant v : Variants.listed(t.getVariants(), locations))
+			{
+				if (!v.getName().equals(panel.getSelectedVariant()))
+				{
+					picked = v.getName();
+				}
+			}
+			assertNotNull(picked);
+			panel.selectVariant(picked);
+			assertEquals(picked, panel.getSelectedVariant());
+
+			// A kill keeps it open
+			panel.updateCount(new SlayerTaskState(t.getTaskId(), t.getName(), 49, 120, 5, 0, null), null);
+			assertTrue(containsText(panel, body));
+			assertTrue(containsText(panel, "49 of 120 left"));
+
+			// Go somewhere the picked monster lives, so the pick stays
+			int index = 0;
+			for (int i = 0; i < locations.size(); i++)
+			{
+				if (Variants.at(t.getVariants(), locations.get(i).getKey()).contains(picked))
+				{
+					index = i;
+				}
+			}
+			LocationOption place = locations.get(index);
+			assertTrue(!containsText(panel, SlayerPanel.LAST_TIME));
+			buttons(panel, "Go").get(index).doClick(0);
+			assertTrue(containsText(panel, SlayerPanel.LAST_TIME));
+			assertEquals(place.getKey(), panel.getMemory().lastPlace(PanelMemory.taskKey(t.getTaskId(), t.getName())));
+			assertEquals(picked, panel.getSelectedVariant());
+			pickedHolder.add(picked);
+		});
+		assertTrue(!saved.isEmpty());
+
+		// Relog (or a client restart): a new panel gets the saved memory for the account
+		String json = saved.get(saved.size() - 1);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.showLoggedOut();
+			assertTrue(containsText(panel, SlayerPanel.LOGGED_OUT));
+			panel.setMemory(PanelMemory.fromJson(gson, json));
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+			String body = t.getInfo().getRequiredItems() != null ? t.getInfo().getRequiredItems() : t.getInfo().getWeakness();
+			assertTrue(containsText(panel, body));
+			assertTrue(containsText(panel, SlayerPanel.LAST_TIME));
+			assertEquals(pickedHolder.get(0), panel.getSelectedVariant());
+
+			// Another task starts with its own default
+			SlayerLocationData.TaskEntry other = data.findTask(-1, "Hydras");
+			List<LocationOption> otherPlaces = LocationPicker.pick(other, 5, 0, false);
+			panel.showTask(new SlayerTaskState(other.getTaskId(), other.getName(), 50, 120, 5, 0, null), other.getInfo(),
+				other.getVariants(), otherPlaces, true, true, CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+			assertTrue(!containsText(panel, SlayerPanel.LAST_TIME));
+		});
+	}
+
+	@Test
+	public void killUpdatesCountWithoutRebuilding() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Abyssal demons");
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY, DropItems.EMPTY,
+				TaskProgress.start(42, t.getName(), 50, 120, 0).view(50, ItemValueMode.GRAND_EXCHANGE));
+			JButton go = buttons(panel, "Go").get(0);
+			assertTrue(containsText(panel, "for 50 left"));
+			assertTrue(containsText(panel, "Kill rate shows after your next kill"));
+
+			panel.updateCount(new SlayerTaskState(t.getTaskId(), t.getName(), 48, 120, 5, 0, null), progress(true).view(48,
+				ItemValueMode.GRAND_EXCHANGE));
+			assertTrue(containsText(panel, "48 of 120 left"));
+			assertTrue(containsText(panel, "for 48 left"));
+			assertTrue(containsText(panel, "60 kills/hr"));
+			assertTrue(containsText(panel, "1 superior this task"));
+			assertTrue(!containsText(panel, "Kill rate shows after your next kill"));
+			// Same components: nothing was rebuilt
+			assertTrue(go == buttons(panel, "Go").get(0));
+
+			// Another task is not drawn by a count update
+			panel.updateCount(new SlayerTaskState(t.getTaskId() + 1, "Hydras", 10, 120, 5, 0, null), null);
+			assertTrue(containsText(panel, "48 of 120 left"));
+		});
+	}
+
+	@Test
+	public void emptyStatesAreOneSentence()
+	{
+		for (String s : new String[]{SlayerPanel.LOGGED_OUT, SlayerPanel.NO_TASK, SlayerPanel.NO_SHORTEST_PATH, SlayerPanel.NO_DATA,
+			SlayerPanel.NO_DATA_BOSS, SlayerPanel.NO_WILDERNESS_PLACES, SlayerPanel.ALL_IN_WILDERNESS})
+		{
+			assertTrue(s, s.endsWith("."));
+			assertEquals(s, 1, s.split("\\. ").length);
+		}
 	}
 }

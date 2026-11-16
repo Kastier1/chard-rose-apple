@@ -50,6 +50,8 @@ public class ShortestPathBridge
 
 	private Set<WorldPoint> ourTargets = new HashSet<>();
 	private boolean overrideActive;
+	/** True from Go until the player arrives, the route is cleared, or another path replaces ours. */
+	private boolean routeActive;
 	private boolean pendingAutoClear;
 	private int ticksSinceRequest = -1;
 	private int ticksSinceCheck;
@@ -91,6 +93,16 @@ public class ShortestPathBridge
 		return !ourTargets.isEmpty();
 	}
 
+	/**
+	 * Whether the route we set is still under way: true after {@link #path}, false once the player arrives within
+	 * {@link #ARRIVAL_DISTANCE} tiles of a target, the path is cleared, or Shortest Path shows another path.
+	 * The panel's route line follows this.
+	 */
+	public boolean isRouteActive()
+	{
+		return routeActive;
+	}
+
 	/** Whether our Wilderness override is in force. */
 	boolean isOverrideActive()
 	{
@@ -128,6 +140,7 @@ public class ShortestPathBridge
 		eventBus.post(new PluginMessage(NAMESPACE, "path", data));
 
 		ourTargets = points;
+		routeActive = true;
 		overrideActive = override;
 		pendingAutoClear = false;
 		ticksSinceRequest = -1;
@@ -176,9 +189,11 @@ public class ShortestPathBridge
 			return;
 		}
 
-		if (overrideActive && player != null && arrived(player))
+		if ((overrideActive || routeActive) && player != null && near(ourTargets, player))
 		{
+			// Arrived. The path stays ours, so a task change can still clear it
 			restoreWildernessSetting();
+			routeActive = false;
 		}
 
 		if (ticksSinceRequest >= 0)
@@ -256,9 +271,14 @@ public class ShortestPathBridge
 		overrideActive = false;
 	}
 
-	private boolean arrived(WorldPoint player)
+	/** Whether the player is within {@link #ARRIVAL_DISTANCE} tiles of one of the targets, on the same plane. */
+	static boolean near(Collection<WorldPoint> targets, WorldPoint player)
 	{
-		for (WorldPoint t : ourTargets)
+		if (player == null)
+		{
+			return false;
+		}
+		for (WorldPoint t : targets)
 		{
 			if (t.getPlane() == player.getPlane() && t.distanceTo2D(player) <= ARRIVAL_DISTANCE)
 			{
@@ -272,6 +292,7 @@ public class ShortestPathBridge
 	{
 		ourTargets = new HashSet<>();
 		overrideActive = false;
+		routeActive = false;
 		pendingAutoClear = false;
 		ticksSinceRequest = -1;
 		ticksSinceCheck = 0;

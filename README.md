@@ -60,6 +60,8 @@ change your mind. Items you untag drop out of the layout on the next sort.
 - **Item value** – value items at their Grand Exchange price (default) or their high alchemy value. Used for
   every value the plugin shows, including a task's loot; changing it updates the panel straight away.
 - **Task summary in chat** – when you finish a slayer task, also put the summary in your chat box (off by default).
+- **Compact panel** – the slayer panel shows only the task, its progress, the route line and the places with their
+  Go buttons; the monster details and drops are hidden (off by default).
 
 ## How items are classified
 
@@ -82,6 +84,11 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
 - **Go** paths you to that place with the [Shortest Path](https://github.com/Skretzo/shortest-path) plugin.
   **Go to nearest** sends every place at once and Shortest Path picks the quickest to reach.
   Without Shortest Path, Go marks the place on your world map instead.
+- After Go, a **route line** at the top says where you're headed ("On route to Catacombs of Kourend") with a
+  **Cancel** button. It goes away when you arrive, when you set another path in Shortest Path, or when the task
+  changes. Without Shortest Path it says "Marked on your world map", with a **Remove** button.
+- The panel **remembers**, per account and across relogs, which drawers you opened, the monster you picked for each
+  task, and the place you last chose with Go for each task (marked "Last time" when that task comes up again).
 - **Konar**: only the place she assigned is shown.
 - **Krystilia**: only her Wilderness places are shown, and the route is allowed through the Wilderness.
 - **Other masters**: Wilderness places are hidden unless you turn on *Show Wilderness locations*.

@@ -257,4 +257,52 @@ public class ShortestPathBridgeTest
 		assertEquals(2, ShortestPathBridge.targetPoints(list).size());
 		assertTrue(ShortestPathBridge.targetPoints(null).isEmpty());
 	}
+
+	@Test
+	public void routeIsActiveUntilArrival()
+	{
+		assertFalse(bridge.isRouteActive());
+		bridge.path(Collections.singletonList(CATACOMBS), false);
+		assertTrue(bridge.isRouteActive());
+		ticks(2, new WorldPoint(3100, 3500, 0));
+		assertTrue(bridge.isRouteActive());
+		// Close, but on another plane
+		bridge.onGameTick(new WorldPoint(1675, 10091, 1));
+		assertTrue(bridge.isRouteActive());
+
+		bridge.onGameTick(new WorldPoint(1677, 10093, 0));
+		assertFalse(bridge.isRouteActive());
+		// The path is still ours, so a task change still clears it
+		assertTrue(bridge.isPathShown());
+		bridge.clearIfOurs();
+		assertEquals(1, sp.count("clear"));
+	}
+
+	@Test
+	public void routeEndsWhenReplacedOrCleared()
+	{
+		bridge.path(Collections.singletonList(CATACOMBS), false);
+		sp.shownTargets = new ArrayList<>(Collections.singletonList(new WorldPoint(3185, 3436, 0)));
+		ticks(ShortestPathBridge.CHECK_INTERVAL_TICKS, new WorldPoint(3100, 3500, 0));
+		assertFalse(bridge.isRouteActive());
+
+		bridge.path(Collections.singletonList(CATACOMBS), false);
+		assertTrue(bridge.isRouteActive());
+		bridge.clear();
+		assertFalse(bridge.isRouteActive());
+
+		bridge.path(Collections.singletonList(CATACOMBS), false);
+		bridge.release();
+		assertFalse(bridge.isRouteActive());
+	}
+
+	@Test
+	public void nearNeedsThePlaneAndSixTiles()
+	{
+		List<WorldPoint> targets = Collections.singletonList(new WorldPoint(100, 100, 0));
+		assertTrue(ShortestPathBridge.near(targets, new WorldPoint(106, 100, 0)));
+		assertFalse(ShortestPathBridge.near(targets, new WorldPoint(107, 100, 0)));
+		assertFalse(ShortestPathBridge.near(targets, new WorldPoint(100, 100, 1)));
+		assertFalse(ShortestPathBridge.near(targets, null));
+	}
 }

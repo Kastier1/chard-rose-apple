@@ -120,6 +120,19 @@ public interface CombatGearOrganizerConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "compactPanel",
+		name = "Compact panel",
+		description = "Show only the task, its progress, the route and the places with their Go buttons.<br>"
+			+ "Hides the monster details and drops.",
+		section = slayerSection,
+		position = 14
+	)
+	default boolean compactPanel()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "itemValue",
 		name = "Item value",
 		description = "Grand Exchange: what the item sells for. High alchemy: the coins you get for casting High Level Alchemy on it.<br>"

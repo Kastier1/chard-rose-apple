@@ -72,6 +72,18 @@ core Slayer targets or `TaskMonsters` name match). Saved as JSON per account in 
 as a cancel, not a finish. Loot is taken for 10 ticks after the last kill; the optional chat summary goes out then.
 Not yet seen in a logged-in client.
 
+**Update 2026-11-16 (issue #27):** the slayer panel remembers open drawers (for every task), the monster picked per
+task and the place last chosen with Go per task (shown as "Last time"). `PanelMemory` holds it; it is saved as JSON
+per account in `combatgearorganizerprogress`, key `panel`, whenever the player changes it, and loaded with the
+task progress when the account changes. After Go a route line shows at the top with Cancel (Shortest Path) or Remove
+(world map markers); the Clear path button is gone. `ShortestPathBridge.isRouteActive()` goes false on arrival
+(within 6 tiles, same plane), on clear, or when another path replaces ours; `SlayerHelper` polls it each tick and
+pushes a `Route` to the panel with `showRoute`, which redraws only the route line. New "Compact panel" setting: task
+header, kill rate line, route line and the place list only. Empty and waiting states are the constants at the top of
+`SlayerPanel` (title plus one sentence; "Log in to see your task." while logged out). Part of #16: a kill (same task,
+nothing else changed) calls `SlayerPanel.updateCount`, which updates the count, progress lines and the XP for the
+kills left without rebuilding the panel. Not yet seen in a logged-in client.
+
 Still open from the review: boss/Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping), and the scope doc's wrong required items.
 
@@ -110,6 +122,7 @@ src/main/java/com/combatgearorganizer/
     ShortestPathBridge.java        PluginMessage("shortestpath", "path"/"clear") wrapper
     SlayerLocationData.java        Gson model of the bundled JSON
     SlayerTaskState.java, SlayerMasters.java, LocationOption.java
+    PanelMemory.java, Route.java   what the panel remembers per account; the route line after Go
     TaskProgress.java, TaskProgressTracker.java, TaskMonsters.java  task kill rate, XP, superiors, loot, summary
 src/main/resources/com/combatgearorganizer/slayer/
   slayer_locations.json            generated, 102 tasks / 592 places / 488 with map points

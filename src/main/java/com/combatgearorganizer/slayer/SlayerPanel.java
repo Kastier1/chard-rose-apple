@@ -18,11 +18,8 @@ import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
-import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import javax.swing.BorderFactory;
@@ -35,6 +32,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
+import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
@@ -56,10 +54,23 @@ public class SlayerPanel extends PluginPanel
 	private static final int CAPTION_WIDTH = 46;
 	private static final Color WEAKNESS_COLOR = new Color(255, 200, 90);
 	private static final Color MISSING_TEXT_COLOR = new Color(255, 152, 31);
+	private static final Color LAST_TIME_COLOR = new Color(140, 190, 255);
+
+	/** The empty and waiting states: a title and one short sentence each. */
+	static final String LOGGED_OUT = "Log in to see your task.";
+	static final String NO_TASK_TITLE = "No task";
+	static final String NO_TASK = "Get one from any slayer master.";
+	static final String NO_SHORTEST_PATH = "Without Shortest Path, Go marks the place on your world map.";
+	static final String NO_DATA = "No places for this task in the data yet.";
+	static final String NO_DATA_BOSS = "No places for boss tasks in the data yet.";
+	static final String NO_WILDERNESS_PLACES = "No Wilderness places for this task in the data yet.";
+	static final String ALL_IN_WILDERNESS = "Every place for this task is in the Wilderness; turn on \"Show Wilderness locations\" to see them.";
+	static final String LAST_TIME = "Last time";
 
 	private final Consumer<LocationOption> onGo;
 	private final Consumer<List<LocationOption>> onGoNearest;
-	private final Runnable onClear;
+	private final Runnable onCancelRoute;
+	private final Consumer<PanelMemory> onMemoryChanged;
 
 	private static final ImageIcon ARROW_CLOSED = arrowIcon(false);
 	private static final ImageIcon ARROW_OPEN = arrowIcon(true);
@@ -75,32 +86,116 @@ public class SlayerPanel extends PluginPanel
 
 	private final JPanel content = new JPanel();
 	private final SlayerIcons icons;
-	/** Drawer titles the player has opened; kept while the plugin runs. */
-	private final Set<String> openDrawers = new HashSet<>();
-	/** Last task shown, so a drawer click can redraw it. */
-	private Runnable lastShow;
-	/** The variant the player is looking at, by name, and which task it belongs to. */
+	/** Open drawers, the monster picked per task and the last place per task, for this account. */
+	private PanelMemory memory = new PanelMemory();
+	/** Only the header, progress, route line and places. */
+	private boolean compact;
+	private Route route = Route.NONE;
+	/** Holds the route line, so it can change without redrawing the panel. */
+	private final JPanel routeSlot = new JPanel(new BorderLayout());
+
+	/** The task shown, so a click or a kill can redraw it. */
+	private boolean showingTask;
+	private SlayerTaskState shownTask;
+	private SlayerLocationData.TaskInfo shownInfo;
+	private List<LocationOption> shownLocations = Collections.emptyList();
+	private boolean shownHasData;
+	private boolean shownShortestPath;
+	private TaskProgress.View shownProgress;
+
+	/** The variant the player is looking at, by name, and the task (see {@link PanelMemory#taskKey}) it belongs to. */
 	private String selectedVariant;
-	private int variantTaskId = -1;
-	private String variantTaskName;
+	private String variantTaskKey;
 	private List<Variant> currentVariants = Collections.emptyList();
 	private CollectionLog.Snapshot currentClog = CollectionLog.Snapshot.EMPTY;
 	private DropItems currentItems = DropItems.EMPTY;
 
+	/** What a kill changes, kept so a kill can update them without redrawing the panel. */
+	private JLabel countLabel;
+	private final JPanel progressBox = new JPanel();
+	private final List<VariantTotal> variantTotals = new ArrayList<>();
+	private JLabel xpChip;
+	private Variant xpChipVariant;
+
+	/** A "Task" cell of the variant table: XP for the kills left. */
+	@Value
+	private static class VariantTotal
+	{
+		JLabel label;
+		Variant variant;
+	}
+
 	public SlayerPanel(SlayerIcons icons, Consumer<LocationOption> onGo, Consumer<List<LocationOption>> onGoNearest,
-		Runnable onClear)
+		Runnable onCancelRoute)
+	{
+		this(icons, onGo, onGoNearest, onCancelRoute, m -> { });
+	}
+
+	/**
+	 * @param onCancelRoute   the player pressed Cancel (or Remove) on the route line
+	 * @param onMemoryChanged the player opened or closed a drawer, picked a monster or pressed Go; called on the
+	 *                        Swing thread with the memory to save
+	 */
+	public SlayerPanel(SlayerIcons icons, Consumer<LocationOption> onGo, Consumer<List<LocationOption>> onGoNearest,
+		Runnable onCancelRoute, Consumer<PanelMemory> onMemoryChanged)
 	{
 		this.icons = icons;
 		this.onGo = onGo;
 		this.onGoNearest = onGoNearest;
-		this.onClear = onClear;
+		this.onCancelRoute = onCancelRoute;
+		this.onMemoryChanged = onMemoryChanged;
 
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 		content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 		content.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		add(content, BorderLayout.NORTH);
-		showNoTask();
+		progressBox.setLayout(new BoxLayout(progressBox, BoxLayout.Y_AXIS));
+		progressBox.setOpaque(false);
+		progressBox.setAlignmentX(LEFT_ALIGNMENT);
+		routeSlot.setOpaque(false);
+		routeSlot.setAlignmentX(LEFT_ALIGNMENT);
+		routeSlot.setBorder(new EmptyBorder(0, 0, 8, 0));
+		showLoggedOut();
+	}
+
+	/** Use this account's memory (open drawers, picked monsters, last places) from now on. */
+	public void setMemory(PanelMemory memory)
+	{
+		this.memory = memory != null ? memory : new PanelMemory();
+		// Read the picked monster for the shown task again
+		variantTaskKey = null;
+		redraw();
+	}
+
+	PanelMemory getMemory()
+	{
+		return memory;
+	}
+
+	/** Takes effect on the next {@link #showTask}. */
+	public void setCompact(boolean compact)
+	{
+		this.compact = compact;
+	}
+
+	/** Shows, changes or hides the route line, without redrawing the rest of the panel. */
+	public void showRoute(Route route)
+	{
+		this.route = route != null ? route : Route.NONE;
+		fillRoute();
+		refresh();
+	}
+
+	Route getRoute()
+	{
+		return route;
+	}
+
+	/** Not logged in, so no task to read. */
+	public void showLoggedOut()
+	{
+		showMessage("Slayer task", null, LOGGED_OUT);
 	}
 
 	public void showNoTask()
@@ -111,17 +206,30 @@ public class SlayerPanel extends PluginPanel
 	/** No task; {@code summary} is how the last task went, or null. */
 	public void showNoTask(String summary)
 	{
-		lastShow = null;
+		showMessage(NO_TASK_TITLE, summary != null ? summary + "." : null, NO_TASK);
+	}
+
+	private void showMessage(String heading, String summary, String text)
+	{
+		showingTask = false;
 		content.removeAll();
-		content.add(title("Slayer task"));
+		content.add(title(heading));
 		content.add(Box.createVerticalStrut(8));
 		if (summary != null)
 		{
-			content.add(wrapped(summary + ".", RECOMMENDED_COLOR));
+			content.add(wrapped(summary, RECOMMENDED_COLOR));
 			content.add(Box.createVerticalStrut(6));
 		}
-		content.add(wrapped("No task right now. Get one from a slayer master, or check your enchanted gem.", ColorScheme.LIGHT_GRAY_COLOR));
+		content.add(notice(text, ColorScheme.LIGHT_GRAY_COLOR));
 		refresh();
+	}
+
+	/** One short sentence for an empty or waiting state, the same way everywhere. */
+	private static JLabel notice(String text, Color color)
+	{
+		JLabel label = wrapped(text, color);
+		label.setBorder(new EmptyBorder(0, 0, 6, 0));
+		return label;
 	}
 
 	public void showTask(SlayerTaskState task, SlayerLocationData.TaskInfo info, List<Variant> variants,
@@ -136,18 +244,69 @@ public class SlayerPanel extends PluginPanel
 		List<LocationOption> locations, boolean hasData, boolean shortestPathAvailable, CollectionLog.Snapshot clog,
 		DropItems items, TaskProgress.View progress)
 	{
-		lastShow = () -> showTask(task, info, variants, locations, hasData, shortestPathAvailable, clog, items, progress);
+		showingTask = true;
+		shownTask = task;
+		shownInfo = info;
+		currentVariants = variants;
+		shownLocations = locations;
+		shownHasData = hasData;
+		shownShortestPath = shortestPathAvailable;
 		currentClog = clog;
 		currentItems = items != null ? items : DropItems.EMPTY;
+		shownProgress = progress;
+		drawTask();
+	}
 
-		// Keep the player's chosen variant while the task lasts; pick a sensible one for a new task
-		if (task.getTaskId() != variantTaskId || !Objects.equals(task.getName(), variantTaskName))
+	/**
+	 * A kill or new progress on the task already shown: updates the count, the progress and the XP for the kills left,
+	 * without redrawing the rest of the panel. Ignored if it is another task.
+	 */
+	public void updateCount(SlayerTaskState task, TaskProgress.View progress)
+	{
+		if (!showingTask || !task.sameTaskAs(shownTask))
 		{
-			variantTaskId = task.getTaskId();
-			variantTaskName = task.getName();
-			selectedVariant = null;
+			log.debug("Count update for a task that isn't shown: {}", task);
+			return;
 		}
-		currentVariants = variants;
+		shownTask = task;
+		shownProgress = progress;
+		int left = task.getRemaining();
+		countLabel.setText(countText(task));
+		fillProgress();
+		for (VariantTotal t : variantTotals)
+		{
+			t.getLabel().setText(Variants.xpTotalShort(t.getVariant().getXp(), left));
+		}
+		if (xpChip != null)
+		{
+			xpChip.setText(chipHtml(xpHtml(xpChipVariant, left)));
+		}
+		refresh();
+	}
+
+	private static String countText(SlayerTaskState task)
+	{
+		return task.getInitial() > 0
+			? task.getRemaining() + " of " + task.getInitial() + " left"
+			: task.getRemaining() + " left";
+	}
+
+	private void drawTask()
+	{
+		SlayerTaskState task = shownTask;
+		SlayerLocationData.TaskInfo info = shownInfo;
+		List<Variant> variants = currentVariants;
+		List<LocationOption> locations = shownLocations;
+		boolean hasData = shownHasData;
+		boolean shortestPathAvailable = shownShortestPath;
+
+		// Keep the player's chosen variant for this task, even across relogs; pick a sensible one otherwise
+		String key = PanelMemory.taskKey(task.getTaskId(), task.getName());
+		if (!key.equals(variantTaskKey))
+		{
+			variantTaskKey = key;
+			selectedVariant = memory.monster(key);
+		}
 		Variant selected = Variants.byName(Variants.listed(variants, locations), selectedVariant);
 		if (selected == null)
 		{
@@ -156,16 +315,15 @@ public class SlayerPanel extends PluginPanel
 		selectedVariant = selected == null ? null : selected.getName();
 
 		content.removeAll();
+		variantTotals.clear();
+		xpChip = null;
+		xpChipVariant = null;
 		content.add(title(task.getName()));
 
-		String count = task.getInitial() > 0
-			? task.getRemaining() + " of " + task.getInitial() + " left"
-			: task.getRemaining() + " left";
-		content.add(line(count, ColorScheme.LIGHT_GRAY_COLOR));
-		if (progress != null)
-		{
-			addProgress(progress);
-		}
+		countLabel = line(countText(task), ColorScheme.LIGHT_GRAY_COLOR);
+		content.add(countLabel);
+		fillProgress();
+		content.add(progressBox);
 
 		String master = SlayerMasters.name(task.getMasterId());
 		if (task.getKonarArea() != null)
@@ -177,9 +335,11 @@ public class SlayerPanel extends PluginPanel
 			content.add(line("From " + master, ColorScheme.LIGHT_GRAY_COLOR));
 		}
 		content.add(Box.createVerticalStrut(8));
+		fillRoute();
+		content.add(routeSlot);
 
 		boolean variantWeaknesses = Variants.regular(variants).stream().anyMatch(v -> v.getWeakness() != null);
-		if (info != null || selected != null)
+		if (!compact && (info != null || selected != null))
 		{
 			try
 			{
@@ -197,63 +357,95 @@ public class SlayerPanel extends PluginPanel
 
 		if (!hasData)
 		{
-			content.add(wrapped(task.getTaskId() == 98
-				? "Boss tasks don't have location data yet."
-				: "No location data for this task yet.", ColorScheme.LIGHT_GRAY_COLOR));
+			content.add(notice(task.getTaskId() == 98 ? NO_DATA_BOSS : NO_DATA, ColorScheme.LIGHT_GRAY_COLOR));
 			refresh();
 			return;
 		}
 
 		if (!shortestPathAvailable)
 		{
-			content.add(wrapped("Install or turn on the Shortest Path plugin to get directions. Until then, Go marks the place on your world map.",
-				ColorScheme.BRAND_ORANGE));
-			content.add(Box.createVerticalStrut(6));
+			JLabel sp = notice(NO_SHORTEST_PATH, ColorScheme.BRAND_ORANGE);
+			sp.setToolTipText("Install or turn on the Shortest Path plugin from the Plugin Hub to get directions");
+			content.add(sp);
 		}
 
 		List<LocationOption> routable = new ArrayList<>();
 		// "Nearest" leaves out places the player can't get into yet
 		locations.stream().filter(l -> l.isRoutable() && l.isAccessible()).forEach(routable::add);
 
-		JPanel actions = new JPanel(new GridLayout(1, 2, 4, 0));
+		JPanel actions = new JPanel(new BorderLayout());
 		actions.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		JButton nearest = new JButton("Go to nearest");
 		nearest.setEnabled(routable.size() > 0);
 		nearest.setToolTipText("Path to whichever of these places is quickest to reach");
 		nearest.addActionListener(e -> onGoNearest.accept(routable));
-		JButton clear = new JButton("Clear path");
-		clear.addActionListener(e -> onClear.run());
-		actions.add(nearest);
-		actions.add(clear);
+		actions.add(nearest, BorderLayout.CENTER);
 		actions.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
 		actions.setAlignmentX(LEFT_ALIGNMENT);
 		content.add(actions);
 		content.add(Box.createVerticalStrut(8));
 
-		if (locations.isEmpty() && task.getMasterId() == SlayerMasters.KRYSTILIA)
+		if (locations.isEmpty())
 		{
-			content.add(wrapped("No Wilderness places in the data for this task yet.", ColorScheme.LIGHT_GRAY_COLOR));
-		}
-		else if (locations.isEmpty())
-		{
-			content.add(wrapped("All places for this task are in the Wilderness. Turn on \"Show Wilderness locations\" in the plugin settings to see them.",
+			content.add(notice(task.getMasterId() == SlayerMasters.KRYSTILIA ? NO_WILDERNESS_PLACES : ALL_IN_WILDERNESS,
 				ColorScheme.LIGHT_GRAY_COLOR));
 		}
 
+		String lastPlace = memory.lastPlace(key);
 		for (LocationOption location : locations)
 		{
-			content.add(card(location));
+			content.add(card(location, lastPlace != null && lastPlace.equals(location.getKey())));
 			content.add(Box.createVerticalStrut(4));
 		}
 		refresh();
 	}
 
+	/** The route line: where Go is taking the player, with a button to stop. Hidden when there is no route. */
+	private void fillRoute()
+	{
+		routeSlot.removeAll();
+		routeSlot.setVisible(route.isShown());
+		if (!route.isShown())
+		{
+			return;
+		}
+		JPanel row = new JPanel(new BorderLayout(6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.setBorder(new EmptyBorder(5, 8, 5, 6));
+		row.add(wrapped(route.text(), RECOMMENDED_COLOR, FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH),
+			BorderLayout.CENTER);
+		JButton stop = new JButton(route.buttonText());
+		stop.setMargin(new java.awt.Insets(0, 4, 0, 4));
+		stop.setToolTipText(route.buttonTooltip());
+		stop.addActionListener(e -> onCancelRoute.run());
+		JPanel stopWrap = new JPanel(new BorderLayout());
+		stopWrap.setOpaque(false);
+		stopWrap.add(stop, BorderLayout.NORTH);
+		row.add(stopWrap, BorderLayout.EAST);
+		routeSlot.add(row, BorderLayout.CENTER);
+		routeSlot.setMaximumSize(new Dimension(Integer.MAX_VALUE, routeSlot.getPreferredSize().height));
+	}
+
+	/** The progress lines under the kill count; only the kill rate line in compact mode. */
+	private void fillProgress()
+	{
+		progressBox.removeAll();
+		if (shownProgress != null)
+		{
+			addProgress(progressBox, shownProgress, compact);
+		}
+	}
+
 	/** Kill rate, time left, XP, superiors and loot so far, under the kill count. */
-	private void addProgress(TaskProgress.View progress)
+	private static void addProgress(JPanel content, TaskProgress.View progress, boolean rateOnly)
 	{
 		String rate = progress.rateText();
 		content.add(wrapped(rate != null ? rate : "Kill rate shows after your next kill",
 			rate != null ? ColorScheme.LIGHT_GRAY_COLOR : ColorScheme.MEDIUM_GRAY_COLOR));
+		if (rateOnly)
+		{
+			return;
+		}
 		if (progress.getXp() > 0)
 		{
 			content.add(line(String.format(Locale.ENGLISH, "%,d slayer XP this task", progress.getXp()), ColorScheme.LIGHT_GRAY_COLOR));
@@ -317,17 +509,14 @@ public class SlayerPanel extends PluginPanel
 	/** The task's monsters as a clickable table: level, XP each, XP for the kills left. */
 	private void addVariantTable(JPanel card, List<Variant> variants, Variant selected, List<LocationOption> locations, int left)
 	{
-		card.add(variantRow("Monster", null, "Lvl", "XP", "Task", ColorScheme.MEDIUM_GRAY_COLOR, false, null));
+		card.add(variantRow("Monster", null, "Lvl", "XP", "Task", ColorScheme.MEDIUM_GRAY_COLOR, false, null, null));
 		for (Variant v : Variants.listed(variants, locations))
 		{
 			boolean on = v == selected;
 			card.add(variantRow(v.getName(), superiorTip(variants, v), Variants.range(v.getLevel()), Variants.xpEach(v.getXp()),
 				Variants.xpTotalShort(v.getXp(), left), on ? Color.WHITE : ColorScheme.LIGHT_GRAY_COLOR, on,
-				on ? null : () ->
-				{
-					selectedVariant = v.getName();
-					redraw();
-				}));
+				on ? null : () -> pickVariant(v.getName()),
+				totalCell -> variantTotals.add(new VariantTotal(totalCell, v))));
 		}
 		card.add(Box.createVerticalStrut(6));
 	}
@@ -380,9 +569,9 @@ public class SlayerPanel extends PluginPanel
 			card.add(factRow("Weak to", weak));
 		}
 
-		card.add(factRow("XP", textChip("<font color='#ffc85a'>" + Variants.xpEach(selected.getXp()) + "</font> each · "
-			+ "<font color='#ffc85a'>" + Variants.xpTotal(selected.getXp(), left) + "</font> for " + left + " left",
-			ColorScheme.LIGHT_GRAY_COLOR)));
+		xpChip = textChip(xpHtml(selected, left), ColorScheme.LIGHT_GRAY_COLOR);
+		xpChipVariant = selected;
+		card.add(factRow("XP", xpChip));
 
 		List<Variant> superiors = Variants.superiorsOf(currentVariants, selected);
 		if (!superiors.isEmpty())
@@ -640,7 +829,7 @@ public class SlayerPanel extends PluginPanel
 
 	/** One line of the variant table. Clicking it runs onClick; null for the header and the selected row. */
 	private static JPanel variantRow(String name, String superiorTip, String level, String xp, String total, Color color,
-		boolean selected, Runnable onClick)
+		boolean selected, Runnable onClick, Consumer<JLabel> totalCell)
 	{
 		JPanel row = new JPanel(new GridBagLayout());
 		row.setOpaque(selected);
@@ -667,7 +856,12 @@ public class SlayerPanel extends PluginPanel
 		c.weightx = 0;
 		row.add(cell(level, color, 34, SwingConstants.RIGHT), c);
 		row.add(cell(xp, color, 38, SwingConstants.RIGHT), c);
-		row.add(cell(total, color, 40, SwingConstants.RIGHT), c);
+		JLabel totalLabel = cell(total, color, 40, SwingConstants.RIGHT);
+		row.add(totalLabel, c);
+		if (totalCell != null)
+		{
+			totalCell.accept(totalLabel);
+		}
 
 		if (onClick != null)
 		{
@@ -714,10 +908,22 @@ public class SlayerPanel extends PluginPanel
 		return label;
 	}
 
+	/** "1,234 each · 61,700 for 50 left" */
+	private static String xpHtml(Variant v, int left)
+	{
+		return "<font color='#ffc85a'>" + Variants.xpEach(v.getXp()) + "</font> each · "
+			+ "<font color='#ffc85a'>" + Variants.xpTotal(v.getXp(), left) + "</font> for " + left + " left";
+	}
+
+	private static String chipHtml(String html)
+	{
+		return "<html><body style='width:" + (INFO_TEXT_WIDTH - CAPTION_WIDTH) + "px'>" + html + "</body></html>";
+	}
+
 	/** Wrapping HTML text for the right-hand side of a fact row. */
 	private static JLabel textChip(String html, Color color)
 	{
-		JLabel label = new JLabel("<html><body style='width:" + (INFO_TEXT_WIDTH - CAPTION_WIDTH) + "px'>" + html + "</body></html>");
+		JLabel label = new JLabel(chipHtml(html));
 		label.setFont(FontManager.getRunescapeSmallFont());
 		label.setForeground(color);
 		label.setBorder(new EmptyBorder(3, 0, 0, 0));
@@ -914,7 +1120,7 @@ public class SlayerPanel extends PluginPanel
 		{
 			return;
 		}
-		boolean open = openDrawers.contains(title);
+		boolean open = memory.isOpen(title);
 
 		JPanel drawer = new JPanel(new BorderLayout());
 		drawer.setOpaque(false);
@@ -939,11 +1145,7 @@ public class SlayerPanel extends PluginPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				if (!openDrawers.remove(title))
-				{
-					openDrawers.add(title);
-				}
-				redraw();
+				toggleDrawer(title);
 			}
 		});
 		drawer.add(top, BorderLayout.NORTH);
@@ -1033,7 +1235,8 @@ public class SlayerPanel extends PluginPanel
 		return s != null && !s.trim().isEmpty();
 	}
 
-	private JPanel card(LocationOption location)
+	/** One place: its name and facts, and its Go button. {@code lastTime}: the place the player chose last time. */
+	private JPanel card(LocationOption location, boolean lastTime)
 	{
 		JPanel card = new JPanel(new BorderLayout(6, 2));
 		card.setAlignmentX(LEFT_ALIGNMENT);
@@ -1048,7 +1251,7 @@ public class SlayerPanel extends PluginPanel
 
 		// Combat type, and whether a cannon can be set up here
 		boolean cannonKnown = "yes".equals(location.getCannon()) || "no".equals(location.getCannon());
-		if (location.getCombat() != null || cannonKnown)
+		if (!compact && (location.getCombat() != null || cannonKnown))
 		{
 			JPanel facts = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
 			facts.setOpaque(false);
@@ -1074,7 +1277,7 @@ public class SlayerPanel extends PluginPanel
 			text.add(facts);
 		}
 		List<String> here = Variants.at(currentVariants, location.getKey());
-		if (!here.isEmpty())
+		if (!compact && !here.isEmpty())
 		{
 			StringBuilder names = new StringBuilder();
 			for (String name : here)
@@ -1090,6 +1293,12 @@ public class SlayerPanel extends PluginPanel
 			monsters.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 			monsters.setAlignmentX(LEFT_ALIGNMENT);
 			text.add(monsters);
+		}
+		if (lastTime)
+		{
+			JLabel last = line(LAST_TIME, LAST_TIME_COLOR);
+			last.setToolTipText("You chose this place the last time you had this task");
+			text.add(last);
 		}
 		if (location.isRecommended())
 		{
@@ -1108,7 +1317,7 @@ public class SlayerPanel extends PluginPanel
 			text.add(wrapped("Needs " + String.join(", ", location.getMissingRequirements()), WILDERNESS_COLOR,
 				FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH));
 		}
-		if (location.getNote() != null)
+		if (!compact && location.getNote() != null)
 		{
 			text.add(wrapped(location.getNote(), ColorScheme.LIGHT_GRAY_COLOR, FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH));
 		}
@@ -1127,8 +1336,12 @@ public class SlayerPanel extends PluginPanel
 			if (!here.isEmpty() && !here.contains(selectedVariant))
 			{
 				selectedVariant = here.get(0);
-				redraw();
+				memory.setMonster(variantTaskKey, selectedVariant);
 			}
+			// Marked "Last time" when this task comes up again
+			memory.setLastPlace(variantTaskKey, location.getKey());
+			onMemoryChanged.accept(memory);
+			redraw();
 			onGo.accept(location);
 		});
 		JPanel goWrap = new JPanel(new BorderLayout());
@@ -1185,7 +1398,26 @@ public class SlayerPanel extends PluginPanel
 	/** Show another monster's details, as clicking its row does. */
 	void selectVariant(String name)
 	{
+		pickVariant(name);
+	}
+
+	/** The player picked a monster in the table: show it, and remember it for this task. */
+	private void pickVariant(String name)
+	{
 		selectedVariant = name;
+		if (variantTaskKey != null)
+		{
+			memory.setMonster(variantTaskKey, name);
+			onMemoryChanged.accept(memory);
+		}
+		redraw();
+	}
+
+	/** Open or close a drawer, as clicking its title does. Remembered for every task. */
+	void toggleDrawer(String title)
+	{
+		memory.toggle(title);
+		onMemoryChanged.accept(memory);
 		redraw();
 	}
 
@@ -1197,9 +1429,9 @@ public class SlayerPanel extends PluginPanel
 
 	private void redraw()
 	{
-		if (lastShow != null)
+		if (showingTask)
 		{
-			lastShow.run();
+			drawTask();
 		}
 	}
 
