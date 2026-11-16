@@ -5,10 +5,18 @@ Input: slayer_areas.json from Slayer Sensei (https://github.com/rRexhepi/slayer-
 which was written from OSRS Wiki pages (CC BY-NC-SA 3.0) and RuneLite world map data (BSD-2).
 See NOTICE.md.
 
+Also reads slayer_tasks.json and slayer_tasks_supplement.json from the same folder, when present, for each
+task's weakness, attack style, prayer, required items and notable drops (same sources and licence).
+
+Monster variants (level, hitpoints, slayer XP, attack styles, weakness, which places they spawn at) come from
+tools/data/wiki_monsters.json, made by tools/fetch_wiki_monsters.py from the OSRS Wiki (CC BY-NC-SA 3.0).
+
 Usage: python3 tools/build_slayer_locations.py path/to/slayer_areas.json
 """
 import json
+import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parent.parent / "src/main/resources/com/combatgearorganizer/slayer/slayer_locations.json"
@@ -56,10 +64,245 @@ def place(label, key, points, entrance, extra, entrance_routable=True):
     return out
 
 
+WIKI = Path(__file__).resolve().parent / "data" / "wiki_monsters.json"
+# Task names whose wiki slayer category is spelled differently
+CATEGORY_ALIASES = {
+    "aquanites": "aquanite",
+    "aviansies": "aviansie",
+    "custodian stalkers": "custodian stalker",
+    "fleshcrawlers": "flesh crawlers",
+}
+# Not killed on a normal task: Arceuus reanimations, Leagues echoes, quest/minigame rematches
+NOT_A_TASK_KILL = re.compile(r"^reanimated |\((echo|hard)\)", re.IGNORECASE)
+# A variant belongs to a place when one of its spawns is this close (tiles) to one of the place's points
+NEAR = 40
+# Most dungeons sit 6400 tiles north of their entrance on the world map; an entrance-only place gets a looser match
+UNDERGROUND_OFFSET = 6400
+NEAR_UNDERGROUND = 100
+# Big dungeons whose only known point is an entrance far from where the monsters are
+NEAR_UNDERGROUND_WIDE = {"neypotzli": 250, "karuulm_slayer_dungeon": 250}
+# Wide matches that land on a neighbouring dungeon (Frost Nagua live in the Ruins of Tapoyauik)
+NOT_AT = {("Frost Nagua", "neypotzli")}
+MELEE_WORDS = {"melee", "stab", "slash", "crush"}
+
+
+def attack_types(styles):
+    """Wiki attack styles ("Slash", "Magical ranged", "Dragonfire") -> melee / ranged / magic, in order."""
+    out = []
+    for raw in styles:
+        s = raw.lower()
+        kind = ("magic" if "magic" in s else "ranged" if "ranged" in s or "range" in s
+                else "melee" if s in MELEE_WORDS or "melee" in s else None)
+        if kind and kind not in out:
+            out.append(kind)
+    return out
+
+
+def span(values):
+    values = sorted(v for v in values if v is not None)
+    return [values[0], values[-1]] if values else None
+
+
+def place_points(data, locations):
+    """location key -> every point known for that place: each task's spawn spots there, plus the entrance."""
+    points = {}
+    for key, loc in locations.items():
+        pts = points.setdefault(key, [])
+        if loc.get("entrance"):
+            pts.append(loc["entrance"])
+        for per_task in loc.get("tasks", []):
+            pts += per_task.get("spots") or []
+    for t in data["wildernessTaskLocations"]:
+        for p in t.get("places", []):
+            pts = points.setdefault(p["key"], [])
+            pts += (p.get("spots") or []) + ([p["entrance"]] if p.get("entrance") else [])
+    return points
+
+
+def near(spawns, points, radius, dy=0):
+    return any(sp[2] == pt[2] and abs(sp[0] - pt[0]) <= radius and abs(sp[1] - (pt[1] + dy)) <= radius
+               for sp in spawns for pt in points)
+
+
+def places_for(spawns, places, all_points):
+    keys = []
+    for pl in places:
+        pts = all_points.get(pl["key"]) or (pl["points"] + pl["wildernessPoints"])
+        if near(spawns, pts, NEAR):
+            keys.append(pl["key"])
+        elif all(pt[1] < UNDERGROUND_OFFSET for pt in pts) and near(
+                spawns, pts, NEAR_UNDERGROUND_WIDE.get(pl["key"], NEAR_UNDERGROUND), UNDERGROUND_OFFSET):
+            keys.append(pl["key"])
+    return keys
+
+
+RARITY = re.compile(r"~?\s*([\d,.]+)\s*/\s*([\d,.]+)")
+# Shared tables (rare drop table, gems, herbs, seeds, runes) rather than this monster's own drops
+GENERIC_DROP = re.compile(r"(seed|spore)$|^grimy |^uncut |^clue scroll|talisman$| rune$|^coins$"
+                          r"| key$|^looting bag note$|^trouver parchment$|casket", re.IGNORECASE)
+ALWAYS_SHOWN = re.compile(r"bones$|ashes$", re.IGNORECASE)
+GENERIC_KEEP = {"Long bone", "Curved bone"}
+RARE = 1 / 400
+MAX_DROPS = 10
+
+
+def chance(rarity):
+    m = RARITY.match(rarity or "")
+    if not m:
+        return {"Rare": 1 / 1000, "Very rare": 1 / 5000}.get(rarity)
+    lo, hi = (float(x.replace(",", "")) for x in m.groups())
+    return lo / hi if hi else None
+
+
+def generic_items(wiki):
+    """Rare items that turn up on dozens of monsters: the shared drop tables."""
+    count = Counter()
+    for rows in wiki.get("drops", {}).values():
+        count.update({r[0] for r in rows if (chance(r[1]) or 1) <= RARE})
+    return {item for item, n in count.items() if n >= 50 and item not in GENERIC_KEEP}
+
+
+def drops_for(pages, wiki, generic):
+    """A monster's own rare drops and collection log slots (rarest first), and what it always drops."""
+    clog = {n.lower() for n in wiki.get("collection_log_items", [])}
+    best, always = {}, []
+    for page in sorted(pages):
+        for item, rarity, alt, value, low, high in wiki.get("drops", {}).get(page, []):
+            if rarity == "Always":
+                if ALWAYS_SHOWN.search(item) and item not in always:
+                    always.append(item)
+                continue
+            in_log = item.lower() in clog
+            # The shared rare drop table has log slots too (dragon spear), but they'd fill every monster's list
+            if item in generic or (not in_log and GENERIC_DROP.search(item)):
+                continue
+            p = chance(rarity)
+            p_alt = chance(alt)
+            if p is None or (not in_log and min(p, p_alt or p) > RARE):
+                continue
+            drop = {"item": item, "rarity": rarity}
+            if in_log:
+                drop["clog"] = True
+            if p_alt and p_alt > p:
+                drop["onTask"] = alt
+            key = max(p, p_alt or 0)
+            if item not in best or key > best[item][0]:
+                best[item] = (key, drop)
+    rare = [d for _, d in sorted(best.values(), key=lambda kd: (kd[0], kd[1]["item"]))][:MAX_DROPS]
+    return rare, always
+
+
+def variants_for(task_name, places, wiki, all_points):
+    """Each distinct monster on the task, with the keys of the places it spawns near."""
+    if not wiki:
+        return []
+    category = CATEGORY_ALIASES.get(task_name.lower(), task_name.lower())
+    superiors = set(wiki["superiors"])
+    generic = generic_items(wiki)
+    superior_of = wiki.get("superior_of", {})
+    league_only = set(wiki.get("superiors_league_only", []))
+    by_name = {}
+    for m in wiki["monsters"]:
+        if category not in (c.lower() for c in m.get("slayer_category", [])):
+            continue
+        if NOT_A_TASK_KILL.search(m["name"]) or not m.get("combat_level") or m["page_name"] in league_only:
+            continue
+        by_name.setdefault(m["name"], []).append(m)
+
+    out = []
+    for name, versions in by_name.items():
+        pages = {v["page_name"] for v in versions}
+        superior = bool(pages & superiors) or name in superiors
+        spawns = [pt for p in sorted(pages) for pt in wiki["spawns"].get(p, [])]
+        if not spawns and not superior:
+            continue  # minigame, quest or instance only
+        weak = Counter((v["elemental_weakness"], v.get("elemental_weakness_percent"))
+                       for v in versions if v.get("elemental_weakness"))
+        found = [k for k in places_for(spawns, places, all_points) if (name, k) not in NOT_AT]
+        boss = any(c.lower() == "bosses" for v in versions for c in v.get("slayer_category", []))
+        variant = {
+            "name": name,
+            "level": span(v.get("combat_level") for v in versions),
+            "hitpoints": span(v.get("hitpoints") for v in versions),
+            "xp": span(v.get("slayer_experience") for v in versions),
+            "attackTypes": attack_types(s for v in versions for s in v.get("attack_style", [])),
+            "superior": superior,
+            "boss": boss,
+            "places": sorted(set(found)),
+        }
+        base = next((superior_of[p] for p in sorted(pages) if p in superior_of), None)
+        if superior and base:
+            variant["superiorOf"] = base
+        rare, always = drops_for(pages, wiki, generic)
+        if rare:
+            variant["drops"] = rare
+        if always:
+            variant["alwaysDrops"] = always
+        if weak:
+            (element, percent), _ = weak.most_common(1)[0]
+            variant["weakness"] = {"element": element.lower(), "percent": percent}
+        out.append(variant)
+    out.sort(key=lambda v: (v["superior"], v["boss"], v["level"][0] if v["level"] else 0, v["name"]))
+    return out
+
+
+# Task names in slayer_tasks*.json that differ from slayer_areas.json
+INFO_ALIASES = {
+    "cave kraken": "cave kraken (kraken)",
+    "hydras": "hydras (regular hydra + alchemical hydra)",
+    "kalphite": "kalphites",
+    "lizardmen": "lizardmen (incl. brutes and shamans)",
+    "mutated zygomites": "zygomites",
+    "vampyres": "vampyres / vyrewatch",
+}
+
+INFO_FIELDS = ["weakness", "elementalWeakness", "style", "monsterAttackStyle", "protectionPrayer", "requiredItems",
+               "notableDrops"]
+
+
+# Gear one place needs, said on that place's card rather than for the whole task
+PLACE_NOTES = {
+    "karuulm_slayer_dungeon": "Wear boots of stone, boots of brimstone or granite boots for the hot floor "
+                              "(not needed with the elite Kourend & Kebos Diary).",
+}
+# The same advice in a task's "Bring" text, removed there so it doesn't apply to every place
+PLACE_ONLY_ITEMS = re.compile(r"(?:Mandatory:\s*)?[^.;]*\b(?:boots of stone|granite boots|not covered by a slayer helm\w*|does not cover the floor damage)\b[^.;]*(?:\([^)]*\))?[^.;]*[.;]\s*",
+                              re.IGNORECASE)
+
+
+def load_info(folder):
+    info = {}
+    for name in ("slayer_tasks.json", "slayer_tasks_supplement.json"):
+        path = folder / name
+        if path.exists():
+            for t in json.loads(path.read_text()):
+                info.setdefault(t["task"].lower(), t)
+    return info
+
+
+def task_info(info, name):
+    t = info.get(INFO_ALIASES.get(name.lower(), name.lower()))
+    if not t:
+        return None
+    out = {k: t[k].strip() for k in INFO_FIELDS if isinstance(t.get(k), str) and t[k].strip()}
+    if "requiredItems" in out:
+        bring = PLACE_ONLY_ITEMS.sub("", out["requiredItems"]).strip()
+        if bring:
+            out["requiredItems"] = bring[0].upper() + bring[1:]
+        else:
+            del out["requiredItems"]
+    return out or None
+
+
 def main(src):
     data = json.loads(Path(src).read_text())
+    info = load_info(Path(src).parent)
+    wiki = json.loads(WIKI.read_text()) if WIKI.exists() else None
+    if not wiki:
+        print(f"No {WIKI}; run tools/fetch_wiki_monsters.py for monster variants")
     locations = {l["key"]: l for l in data["locations"]}
     wild = {t["taskId"]: t for t in data["wildernessTaskLocations"]}
+    all_points = place_points(data, locations)
 
     normal = {t["taskId"]: t for t in data["taskLocations"]}
 
@@ -72,7 +315,8 @@ def main(src):
         for key in t["locations"]:
             loc = locations[key]
             per_task = next((x for x in loc.get("tasks", []) if x["taskId"] == tid), {})
-            notes = [n for n in (loc.get("note"), access_note(loc.get("access")), per_task.get("note"), access_note(per_task.get("access"))) if n]
+            notes = [n for n in (loc.get("note"), access_note(loc.get("access")), per_task.get("note"),
+                                 access_note(per_task.get("access")), PLACE_NOTES.get(key)) if n]
             entries.append(place(loc["label"], key, per_task.get("spots"), loc.get("entrance"), {
                 "areaId": loc.get("areaId"),
                 "combat": per_task.get("combat") or loc.get("combat"),
@@ -85,7 +329,8 @@ def main(src):
             # Wilderness places often share a key with a normal place; borrow its facts and access
             loc = locations.get(p["key"], {})
             per_task = next((x for x in loc.get("tasks", []) if x["taskId"] == tid), {})
-            notes = [n for n in (loc.get("note"), access_note(loc.get("access")), per_task.get("note")) if n]
+            notes = [n for n in (loc.get("note"), access_note(loc.get("access")), per_task.get("note"),
+                                 PLACE_NOTES.get(p["key"])) if n]
             wild_entries.append(place(p["label"], p["key"], p.get("spots"), p.get("entrance"), {
                 "combat": p.get("combat") or per_task.get("combat") or loc.get("combat"),
                 "cannon": p.get("cannon") or per_task.get("cannon") or loc.get("cannon"),
@@ -98,19 +343,25 @@ def main(src):
             "recommended": t.get("recommended"),
             "locations": entries,
             "wildernessLocations": wild_entries,
+            "info": task_info(info, t["task"]),
+            "variants": variants_for(t["task"], entries + wild_entries, wiki, all_points),
         })
 
     tasks.sort(key=lambda x: x["name"].lower())
     out = {
         "about": "Generated by tools/build_slayer_locations.py from Slayer Sensei's slayer_areas.json "
-                 "(OSRS Wiki, CC BY-NC-SA 3.0; RuneLite world map data, BSD-2). Points are [x, y, plane].",
+                 "(OSRS Wiki, CC BY-NC-SA 3.0; RuneLite world map data, BSD-2) and OSRS Wiki monster data "
+                 "(CC BY-NC-SA 3.0). Points are [x, y, plane].",
         "tasks": tasks,
     }
     OUT.write_text(json.dumps(out, separators=(",", ":")))
     every = [l for t in tasks for l in t["locations"] + t["wildernessLocations"]]
     routable = sum(1 for l in every if l["points"] or l["wildernessPoints"])
     total = len(every)
-    print(f"{len(tasks)} tasks, {total} locations ({routable} with map points) -> {OUT}")
+    with_info = sum(1 for t in tasks if t["info"])
+    with_variants = sum(1 for t in tasks if any(not v["superior"] for v in t["variants"]))
+    print(f"{with_variants} tasks with variants, {sum(len(t['variants']) for t in tasks)} variants in all")
+    print(f"{len(tasks)} tasks ({with_info} with gear info), {total} locations ({routable} with map points) -> {OUT}")
 
 
 if __name__ == "__main__":

@@ -159,6 +159,14 @@ public class LocationPickerTest
 				assertFalse(name, LocationPicker.pick(task, SlayerMasters.KRYSTILIA, 0, false).isEmpty());
 			}
 
+			// Gear info for every task, including ones whose names differ in the source
+			for (TaskEntry task : data.getTasks())
+			{
+				assertNotNull(task.getName(), task.getInfo());
+			}
+			assertEquals("Protect from Melee", data.findTask(-1, "Catablepon").getInfo().getProtectionPrayer());
+			assertNotNull(data.findTask(-1, "Hydras").getInfo().getRequiredItems());
+
 			// Requirements made it through
 			TaskEntry demons = data.findTask(42, null);
 			assertTrue(demons.getLocations().stream().anyMatch(l -> l.getRequirements() != null

@@ -1,0 +1,122 @@
+package com.combatgearorganizer.slayer;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import com.combatgearorganizer.slayer.SlayerLocationData.TaskEntry;
+import com.combatgearorganizer.slayer.SlayerLocationData.Variant;
+import com.google.gson.Gson;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
+import org.junit.Test;
+
+public class VariantsTest
+{
+	private static Variant variant(String name, double xp, boolean superior, String... places)
+	{
+		Variant v = new Variant();
+		v.setName(name);
+		v.setLevel(new int[]{10, 10});
+		v.setXp(new double[]{xp, xp});
+		v.setSuperior(superior);
+		v.setPlaces(Arrays.asList(places));
+		v.setAttackTypes(Collections.emptyList());
+		return v;
+	}
+
+	private static LocationOption place(String key)
+	{
+		return new LocationOption(key, key, false, false, false, null, null, null,
+			Collections.emptyList(), Collections.emptyList());
+	}
+
+	@Test
+	public void defaultIsTheVariantAtTheTopPlace()
+	{
+		List<Variant> wyrms = Arrays.asList(
+			variant("Wyrmling", 65, false, "wyrmscraig"),
+			variant("Wyrm", 123, false, "karuulm"),
+			variant("Shadow Wyrm", 3520, true, "karuulm"));
+		assertEquals("Wyrm", Variants.pickDefault(wyrms, Arrays.asList(place("karuulm"), place("wyrmscraig"))).getName());
+		// No listed place has one: the first regular variant
+		assertEquals("Wyrmling", Variants.pickDefault(wyrms, Collections.singletonList(place("elsewhere"))).getName());
+		assertNull(Variants.pickDefault(Collections.singletonList(wyrms.get(2)), Collections.emptyList()));
+		assertEquals(Collections.singletonList("Wyrm"), Variants.at(wyrms, "karuulm"));
+	}
+
+	@Test
+	public void tableListsOnlyVariantsAtShownPlaces()
+	{
+		List<Variant> dogs = Arrays.asList(
+			variant("Jackal", 27, false, "nardah"),
+			variant("Shadow Hound", 62, false),
+			variant("Wild dog", 62, false, "brimhaven"));
+		List<LocationOption> shown = Arrays.asList(place("brimhaven"), place("nardah"));
+		assertEquals(Arrays.asList(dogs.get(0), dogs.get(2)), Variants.listed(dogs, shown));
+		assertEquals(Collections.singletonList(dogs.get(1)), Variants.unlisted(dogs, shown));
+		// Nothing matches a place: show them all rather than an empty table
+		assertEquals(dogs, Variants.listed(dogs, Collections.singletonList(place("elsewhere"))));
+		assertTrue(Variants.unlisted(dogs, Collections.singletonList(place("elsewhere"))).isEmpty());
+	}
+
+	@Test
+	public void formatting()
+	{
+		assertEquals("97", Variants.range(new int[]{97, 97}));
+		assertEquals("13-142", Variants.range(new int[]{13, 142}));
+		assertEquals("?", Variants.range(null));
+
+		assertEquals("123", Variants.xpEach(new double[]{123, 123}));
+		assertEquals("157.5", Variants.xpEach(new double[]{157.5, 157.5}));
+		assertEquals("17-110", Variants.xpEach(new double[]{17, 110}));
+
+		assertEquals("15,129", Variants.xpTotal(new double[]{123, 123}, 123));
+		assertEquals("1,700-11,000", Variants.xpTotal(new double[]{17, 110}, 100));
+
+		assertEquals("15k", Variants.xpTotalShort(new double[]{123, 123}, 123));
+		assertEquals("4.9k", Variants.xpTotalShort(new double[]{65, 65}, 75));
+		assertEquals("980", Variants.xpTotalShort(new double[]{49, 49}, 20));
+		assertEquals("~6.4k", Variants.xpTotalShort(new double[]{17, 110}, 100));
+	}
+
+	@Test
+	public void bundledWyrmsAndDogs() throws Exception
+	{
+		SlayerLocationData data;
+		try (Reader r = new InputStreamReader(SlayerHelper.class.getResourceAsStream("slayer_locations.json"), StandardCharsets.UTF_8))
+		{
+			data = new Gson().fromJson(r, SlayerLocationData.class);
+		}
+		TaskEntry wyrms = data.getTasks().stream().filter(t -> t.getName().equals("Wyrms")).findFirst().orElse(null);
+		assertNotNull(wyrms);
+		List<String> regular = Variants.regular(wyrms.getVariants()).stream().map(Variant::getName).collect(Collectors.toList());
+		assertTrue(regular.containsAll(Arrays.asList("Wyrm", "Wyrmling", "Lava Strykewyrm")));
+		assertTrue(wyrms.getVariants().stream().anyMatch(v -> v.isSuperior() && v.getName().equals("Shadow Wyrm")));
+		assertTrue(Variants.at(wyrms.getVariants(), "karuulm_slayer_dungeon").contains("Wyrm"));
+		assertTrue(Variants.at(wyrms.getVariants(), "neypotzli").contains("Wyrmling"));
+		Variant wyrm = Variants.byName(wyrms.getVariants(), "Wyrm");
+		Variant lava = Variants.byName(wyrms.getVariants(), "Lava Strykewyrm");
+		assertEquals("Shadow Wyrm", Variants.superiorsOf(wyrms.getVariants(), wyrm).get(0).getName());
+		assertEquals("Magma strykewyrm", Variants.superiorsOf(wyrms.getVariants(), lava).get(0).getName());
+		assertTrue(Variants.superiorsOf(wyrms.getVariants(), Variants.byName(wyrms.getVariants(), "Wyrmling")).isEmpty());
+		// Drops are per monster: only wyrms drop the dragon harpoon
+		assertTrue(Variants.byName(wyrms.getVariants(), "Wyrmling").getDrops().isEmpty());
+		assertEquals(Collections.singletonList("Wyrmling bones"), Variants.byName(wyrms.getVariants(), "Wyrmling").getAlwaysDrops());
+		SlayerLocationData.Drop harpoon = wyrm.getDrops().stream().filter(d -> d.getItem().equals("Dragon harpoon")).findFirst().orElse(null);
+		assertNotNull(harpoon);
+		assertEquals("1/2,000", harpoon.getOnTask());
+		assertTrue(harpoon.isClog());
+		// League-only superiors are left out
+		assertTrue(data.getTasks().stream().flatMap(t -> t.getVariants().stream()).noneMatch(v -> v.getName().startsWith("Bloodthirst")));
+
+		TaskEntry dogs = data.getTasks().stream().filter(t -> t.getName().equals("Dogs")).findFirst().orElse(null);
+		assertNotNull(dogs);
+		assertEquals(Collections.singletonList("Jackal"), Variants.at(dogs.getVariants(), "west_of_nardah"));
+	}
+}
