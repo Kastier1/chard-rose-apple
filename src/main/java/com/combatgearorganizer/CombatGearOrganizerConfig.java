@@ -3,12 +3,20 @@ package com.combatgearorganizer;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.ConfigSection;
 import net.runelite.client.config.Keybind;
 
 @ConfigGroup(CombatGearOrganizerConfig.GROUP)
 public interface CombatGearOrganizerConfig extends Config
 {
 	String GROUP = "combatgearorganizer";
+
+	@ConfigSection(
+		name = "Slayer",
+		description = "Slayer task panel and directions",
+		position = 10
+	)
+	String slayerSection = "slayer";
 
 	@ConfigItem(
 		keyName = "tagName",
@@ -64,5 +72,30 @@ public interface CombatGearOrganizerConfig extends Config
 	default Keybind hotkey()
 	{
 		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		keyName = "showSlayerPanel",
+		name = "Slayer task panel",
+		description = "Show a side panel with your current slayer task and where to do it",
+		section = slayerSection,
+		position = 11
+	)
+	default boolean showSlayerPanel()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showWildernessLocations",
+		name = "Show Wilderness locations",
+		description = "List places and spawns inside the Wilderness for tasks from masters other than Krystilia.<br>"
+			+ "Krystilia's tasks always show her Wilderness places, and Konar's always show her assigned place.",
+		section = slayerSection,
+		position = 12
+	)
+	default boolean showWildernessLocations()
+	{
+		return false;
 	}
 }

@@ -1,6 +1,6 @@
 # Slayer feature: scope
 
-Status: proposal, nothing built yet.
+Status: step 1 (task panel, locations, Shortest Path buttons) is built. Steps 2 to 5 are not started.
 
 ## What it does
 

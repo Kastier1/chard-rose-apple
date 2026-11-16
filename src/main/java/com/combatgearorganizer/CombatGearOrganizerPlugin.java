@@ -1,5 +1,6 @@
 package com.combatgearorganizer;
 
+import com.combatgearorganizer.slayer.SlayerHelper;
 import com.google.inject.Provides;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -18,6 +19,7 @@ import net.runelite.api.Item;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.events.CommandExecuted;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.chat.ChatMessageBuilder;
@@ -25,6 +27,7 @@ import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.game.ItemEquipmentStats;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
@@ -37,16 +40,18 @@ import net.runelite.client.plugins.banktags.BankTagsService;
 import net.runelite.client.plugins.banktags.TagManager;
 import net.runelite.client.plugins.banktags.tabs.Layout;
 import net.runelite.client.plugins.banktags.tabs.LayoutManager;
+import net.runelite.client.plugins.slayer.SlayerPlugin;
 import net.runelite.client.util.HotkeyListener;
 import net.runelite.client.util.Text;
 
 @Slf4j
 @PluginDescriptor(
 	name = "Combat Gear Organizer",
-	description = "Lays out your combat gear bank tag by combat style and equipment slot",
-	tags = {"bank", "tag", "layout", "gear", "combat", "organize", "sort"}
+	description = "Lays out your combat gear bank tag, and shows where to do your slayer task",
+	tags = {"bank", "tag", "layout", "gear", "combat", "organize", "sort", "slayer", "task", "shortest path"}
 )
 @PluginDependency(BankTagsPlugin.class)
+@PluginDependency(SlayerPlugin.class)
 public class CombatGearOrganizerPlugin extends Plugin
 {
 	static final String ORGANIZE_COMMAND = "gearsort";
@@ -79,6 +84,11 @@ public class CombatGearOrganizerPlugin extends Plugin
 	@Inject
 	private CombatGearOrganizerConfig config;
 
+	@Inject
+	private SlayerHelper slayerHelper;
+
+	private boolean slayerStarted;
+
 	private final HotkeyListener hotkeyListener = new HotkeyListener(() -> config.hotkey())
 	{
 		@Override
@@ -98,12 +108,55 @@ public class CombatGearOrganizerPlugin extends Plugin
 	protected void startUp()
 	{
 		keyManager.registerKeyListener(hotkeyListener);
+		updateSlayerPanel();
 	}
 
 	@Override
 	protected void shutDown()
 	{
 		keyManager.unregisterKeyListener(hotkeyListener);
+		if (slayerStarted)
+		{
+			slayerHelper.stop();
+			slayerStarted = false;
+		}
+	}
+
+	private void updateSlayerPanel()
+	{
+		if (config.showSlayerPanel() && !slayerStarted)
+		{
+			slayerHelper.start();
+			slayerStarted = true;
+		}
+		else if (!config.showSlayerPanel() && slayerStarted)
+		{
+			slayerHelper.stop();
+			slayerStarted = false;
+		}
+	}
+
+	@Subscribe
+	public void onGameTick(GameTick event)
+	{
+		if (slayerStarted)
+		{
+			slayerHelper.onGameTick();
+		}
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (!CombatGearOrganizerConfig.GROUP.equals(event.getGroup()))
+		{
+			return;
+		}
+		updateSlayerPanel();
+		if (slayerStarted)
+		{
+			slayerHelper.onConfigChanged();
+		}
 	}
 
 	@Subscribe

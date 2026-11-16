@@ -1,5 +1,7 @@
 # Combat Gear Organizer
 
+Organizes your combat gear bank tag, and shows where to do your slayer task.
+
 A RuneLite plugin that automatically arranges your combat gear **bank tag tab** into a clean, predictable layout.
 
 It reads every item in your tag, works out what each item is for from its equipment bonuses, and writes a
@@ -53,9 +55,27 @@ Using RuneLite's item stats: the highest of melee (best attack + strength), rang
 and magic (magic attack + magic damage) wins. Items with no offensive bonuses fall back to: prayer bonus → Prayer;
 penalises magic *and* ranged (e.g. rune platebody) → Melee; penalises only magic → Ranged; otherwise Utility.
 
+## Slayer task panel
+
+A side panel (the enchanted gem icon) shows your current task, kills left, and every place you can do it.
+
+- **Go** paths you to that place with the [Shortest Path](https://github.com/Skretzo/shortest-path) plugin.
+  **Go to nearest** sends every place at once and Shortest Path picks the quickest to reach.
+  Without Shortest Path, Go marks the place on your world map instead.
+- **Konar**: only the place she assigned is shown.
+- **Krystilia**: only her Wilderness places are shown, and the route is allowed through the Wilderness.
+- **Other masters**: Wilderness places are hidden unless you turn on *Show Wilderness locations*.
+- Some places have no map point in the data yet; their Go button is greyed out.
+
+The task is read from the game and RuneLite's built-in Slayer plugin. Location data is bundled (see NOTICE.md),
+so the panel makes no network requests.
+
 ## Development
 
 ```bash
 ./gradlew run     # launches RuneLite with the plugin loaded
 ./gradlew test
 ```
+
+Regenerate the slayer location data with
+`python3 tools/build_slayer_locations.py path/to/slayer-sensei/src/main/resources/slayer_areas.json`.
