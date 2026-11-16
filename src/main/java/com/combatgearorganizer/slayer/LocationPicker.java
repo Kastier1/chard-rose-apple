@@ -3,6 +3,8 @@ package com.combatgearorganizer.slayer;
 import com.combatgearorganizer.slayer.SlayerLocationData.LocationEntry;
 import com.combatgearorganizer.slayer.SlayerLocationData.TaskEntry;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -15,19 +17,35 @@ public final class LocationPicker
 	{
 	}
 
+	/** Same as {@link #pick(TaskEntry, int, int, boolean, RequirementChecker)} with every requirement met. */
+	public static List<LocationOption> pick(TaskEntry task, int masterId, int konarAreaId, boolean includeWilderness)
+	{
+		return pick(task, masterId, konarAreaId, includeWilderness, RequirementChecker.NONE);
+	}
+
 	/**
 	 * @param task              the task's data
 	 * @param masterId          SLAYER_MASTER varbit value
 	 * @param konarAreaId       SLAYER_AREA varp value; above 0 when Konar assigned a specific place
 	 * @param includeWilderness whether to show places and spawns inside the Wilderness for normal masters
+	 * @param checker           works out which quests and skills the player is missing for each place
 	 */
-	public static List<LocationOption> pick(TaskEntry task, int masterId, int konarAreaId, boolean includeWilderness)
+	public static List<LocationOption> pick(TaskEntry task, int masterId, int konarAreaId, boolean includeWilderness,
+		RequirementChecker checker)
 	{
-		// Krystilia only assigns Wilderness tasks, so show her list on its own
-		if (masterId == SlayerMasters.KRYSTILIA && !task.getWildernessLocations().isEmpty())
+		// Krystilia's kills only count in the Wilderness, so never show places outside it for her tasks
+		if (masterId == SlayerMasters.KRYSTILIA)
 		{
-			return task.getWildernessLocations().stream()
-				.map(l -> toOption(l, false, true))
+			if (!task.getWildernessLocations().isEmpty())
+			{
+				return task.getWildernessLocations().stream()
+					.map(l -> toOption(l, false, OnlyWilderness.HER_LIST, checker))
+					.collect(Collectors.toList());
+			}
+			// No list from her for this task: fall back to the Wilderness spawns of the normal places
+			return task.getLocations().stream()
+				.filter(l -> !l.getWildernessPoints().isEmpty())
+				.map(l -> toOption(l, false, OnlyWilderness.YES, checker))
 				.collect(Collectors.toList());
 		}
 
@@ -36,7 +54,7 @@ public final class LocationPicker
 		{
 			List<LocationOption> konar = task.getLocations().stream()
 				.filter(l -> l.getAreaId() != null && l.getAreaId() == konarAreaId)
-				.map(l -> toOption(l, false, true))
+				.map(l -> toOption(l, false, OnlyWilderness.BOTH, checker))
 				.collect(Collectors.toList());
 			if (!konar.isEmpty())
 			{
@@ -52,27 +70,44 @@ public final class LocationPicker
 			{
 				continue;
 			}
-			LocationOption option = toOption(l, l.getKey().equals(task.getRecommended()), includeWilderness);
-			if (option.isRecommended())
-			{
-				options.add(0, option);
-			}
-			else
-			{
-				options.add(option);
-			}
+			boolean recommended = l.getKey().equals(task.getRecommended());
+			options.add(toOption(l, recommended, includeWilderness ? OnlyWilderness.BOTH : OnlyWilderness.NO, checker));
 		}
+
+		// Recommended first, then places the player can get into; otherwise keep the data's order (stable sort)
+		options.sort(Comparator.comparing((LocationOption o) -> !o.isRecommended())
+			.thenComparing(o -> !o.isAccessible()));
 		return options;
 	}
 
-	private static LocationOption toOption(LocationEntry l, boolean recommended, boolean includeWilderness)
+	private enum OnlyWilderness
 	{
-		List<int[]> targets = new ArrayList<>(l.getPoints());
-		if (includeWilderness)
+		/** Only points outside the Wilderness. */
+		NO,
+		/** Points both inside and outside. */
+		BOTH,
+		/** Only points inside the Wilderness. */
+		YES,
+		/** A place from Krystilia's own list: every point counts as Wilderness. */
+		HER_LIST,
+	}
+
+	private static LocationOption toOption(LocationEntry l, boolean recommended, OnlyWilderness which, RequirementChecker checker)
+	{
+		List<int[]> targets = new ArrayList<>();
+		if (which != OnlyWilderness.YES)
+		{
+			targets.addAll(l.getPoints());
+		}
+		if (which != OnlyWilderness.NO)
 		{
 			targets.addAll(l.getWildernessPoints());
 		}
-		boolean wildernessOnly = l.getPoints().isEmpty() && !l.getWildernessPoints().isEmpty();
+		boolean wildernessOnly = which == OnlyWilderness.YES || which == OnlyWilderness.HER_LIST
+			|| (l.getPoints().isEmpty() && !l.getWildernessPoints().isEmpty());
+		List<String> missing = l.getRequirements() == null
+			? Collections.emptyList()
+			: checker.missing(l.getRequirements());
 		return new LocationOption(
 			l.getKey(),
 			l.getLabel(),
@@ -82,6 +117,7 @@ public final class LocationPicker
 			l.getCombat(),
 			l.getCannon(),
 			l.getNote(),
-			targets);
+			targets,
+			missing);
 	}
 }

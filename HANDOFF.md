@@ -30,18 +30,33 @@ honest status, and they test in their own RuneLite.
 
 | Part | State |
 | --- | --- |
-| Bank organizer (`::gearsort`, `::gearadd`, hotkey) | Built, has real bugs (see below) |
-| Slayer step 1: task panel, locations, Go / Go to nearest via Shortest Path | Built, has bugs (see below) |
+| Bank organizer (`::gearsort`, `::gearadd`, hotkey, Auto layout menu) | Built; High/Medium review findings fixed 2026-11-15 |
+| Slayer step 1: task panel, locations, Go / Go to nearest via Shortest Path | Built; High/Medium review findings fixed 2026-11-15 except boss data |
 | Slayer step 2: monster variants and notable drops | Not started |
 | Slayer step 3: travel times via Shortest Path `query` | Not started |
 | Slayer step 4: gear from bank, "Gear up" tag tab | Not started; plan needs rework (see review) |
 | Slayer step 5: "check in wiki DPS calculator" button | Not started |
-| Plugin hub submission | Blocked on `build=standard` and a LICENSE file |
+| Plugin hub submission | `build=standard` and LICENSE added; not submitted |
 
-**Nothing has been run in the real RuneLite client yet.** The cloud session couldn't download the RuneLite jar
-(`repo.runelite.net` was blocked), so everything was compiled against hand-written stubs. Each stub was checked
-against RuneLite's current source on GitHub, and a reviewer confirmed the stubs match. The first local job is to run it
-for real.
+**Update 2026-11-15 (local session):** the plugin now compiles and its 39 unit tests pass against the real RuneLite
+1.13.6 jar (the stubs were right). It has not yet been clicked through in a logged-in client. Fixed in that session:
+
+- Variation tags resolve to the version you own (`TagItemResolver`); no ghost base ids, no duplicates, untagged
+  items drop out, Remove-tag works again.
+- `AutoLayout` registered as "Auto layout: Combat gear" (preview + Keep/Undo); `::gearsort undo`;
+  `organizeOnAdd` defaults to false; warns if Bank Tags is off.
+- Classifier: staves are Magic; tank check before prayer; void / slayer helm / black mask / salve go to Utility.
+- Power: strength ×2, defence only as tie-break, ammo strength for bows/crossbows/ballistae, fixed bonus for
+  Twisted bow / Tumeken's shadow / Scythe.
+- Data: the 13 Krystilia-only tasks (115 tasks now), `entranceRoutable=false` honoured, quest/skill requirements
+  kept and checked in-game (listed last with "Needs …", skipped by Go to nearest), Wilderness places borrow the
+  normal place's facts. `META-INF/NOTICE.txt` ships in the jar.
+- Slayer runtime: Wilderness override only when every target is Wilderness; Krystilia never falls back to
+  non-Wilderness places; name from data by id first (no stale tick), "Task #id" / "Boss task" instead of "No task";
+  Mortimer's negative modifier; panel race; Shortest Path warning refreshes on PluginChanged; Spria.
+
+Still open from the review: boss/Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
+hybrid items, per-slot rows (the "Loadout" grouping), and the scope doc's wrong required items.
 
 Branch: `claude/loving-faraday-7nz9t9` on `Kastier1/chard-rose-apple`. No pull request yet.
 
