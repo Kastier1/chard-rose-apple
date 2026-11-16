@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import net.runelite.api.gameval.ItemID;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.util.QuantityFormatter;
 
@@ -43,11 +44,33 @@ public class ItemValues
 	public long value(ItemValueMode mode, int itemId)
 	{
 		int id = itemManager.canonicalize(itemId);
+		long money = moneyValue(id);
+		if (money >= 0)
+		{
+			return money;
+		}
 		if (mode == ItemValueMode.HIGH_ALCHEMY)
 		{
 			return haPrices.computeIfAbsent(id, i -> itemManager.getItemComposition(i).getHaPrice());
 		}
 		return itemManager.getItemPrice(id);
+	}
+
+	/**
+	 * What coins and platinum tokens are worth, whatever the setting: casting High Level Alchemy on coins gives
+	 * nothing, but they are still money. -1 for anything else.
+	 */
+	static long moneyValue(int canonicalId)
+	{
+		switch (canonicalId)
+		{
+			case ItemID.COINS:
+				return 1;
+			case ItemID.PLATINUM:
+				return 1000;
+			default:
+				return -1;
+		}
 	}
 
 	/** Short value text, the way RuneLite writes stack sizes: "999", "35K", "1.2M". */

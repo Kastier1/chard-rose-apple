@@ -84,4 +84,33 @@ public class ItemNameResolverTest
 	{
 		assertTrue(new ItemNameResolver(Arrays.asList("", null)).isDone());
 	}
+
+	@Test
+	public void bracketedWikiNameFallsBackToTheGameName()
+	{
+		ItemNameResolver r = new ItemNameResolver(Arrays.asList("Crawling hand (item)", "Black mask (10)", "Bird nest (seeds)"));
+		Map<Integer, ItemNameResolver.Candidate> game = new HashMap<>();
+		game.put(1, item("Black mask", true));
+		game.put(2, item("Crawling hand", false));
+		game.put(3, item("Black mask (10)", true));
+		game.put(4, item("Crawling hand", true));
+		assertFalse(r.step(10, 3, game::get));
+		// Not used until the walk is done, in case an exact match comes later
+		assertEquals(-1, r.idOf("Crawling hand (item)"));
+		assertEquals(-1, r.idOf("Black mask (10)"));
+		assertTrue(r.step(10, 10, game::get));
+		assertEquals(4, r.idOf("Crawling hand (item)"));
+		// An exact match beats the name without brackets
+		assertEquals(3, r.idOf("Black mask (10)"));
+		assertEquals(-1, r.idOf("Bird nest (seeds)"));
+	}
+
+	@Test
+	public void baseName()
+	{
+		assertEquals("crawling hand", ItemNameResolver.base("crawling hand (item)"));
+		assertEquals("black mask", ItemNameResolver.base("black mask (10)"));
+		assertEquals(null, ItemNameResolver.base("abyssal whip"));
+		assertEquals(null, ItemNameResolver.base("(odd)"));
+	}
 }

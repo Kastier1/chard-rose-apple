@@ -58,8 +58,10 @@ honest status, and they test in their own RuneLite.
 **Update 2026-11-16 (issue #25):** drops in the slayer panel are item pictures with tooltips (rate, on-task rate,
 stack, collection log status, value). Collection log status shows by shape: tick = logged, faded + dashed outline =
 missing. New "Item value" setting (Grand Exchange / High alchemy); get values only through `ItemValues`. Drop names
-become item ids via `ItemNameResolver`, which walks every item definition 2,500 per tick after login. Drops now carry
-an optional `quantity` [low, high] from the generator.
+become item ids via `ItemNameResolver`, which walks every item definition 2,500 per tick after login; a wiki name
+with no exact match, like "Crawling hand (item)", falls back to the name without the brackets once the walk is done.
+`ItemValues` values coins and platinum tokens at face value in both modes. Drops now carry an optional `quantity`
+[low, high] from the generator. Not yet seen in a logged-in client.
 
 Still open from the review: boss/Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping), and the scope doc's wrong required items.
