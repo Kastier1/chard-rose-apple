@@ -18,6 +18,47 @@ public final class GearClassifier
 	private static final int ARROW_STRENGTH = 60;
 	private static final int BOLT_STRENGTH = 100;
 	private static final int JAVELIN_STRENGTH = 150;
+	/** Dragon darts, for the blowpipe, which carries its darts' strength on top of its own. */
+	private static final int DART_STRENGTH = 35;
+
+	/** Weapons are compared per tick at this speed, the speed of most one-handed weapons. */
+	private static final int BASE_SPEED = 4;
+	/** Every spell from an autocast staff or wand takes 5 ticks, whatever the weapon's own speed. */
+	private static final int AUTOCAST_SPEED = 5;
+	/** Max hit of a good autocast spell (Fire Surge at 95 Magic), for staves and wands. */
+	private static final int AUTOCAST_MAX_HIT = 24;
+	/** Max hit counts this much more than magic accuracy; it is what the bonuses can't show for magic weapons. */
+	private static final int MAX_HIT_WEIGHT = 6;
+
+	/**
+	 * Powered staves cast their own spell, so their power is that spell's max hit at 99 Magic, not their bonuses.
+	 * Name prefix to max hit.
+	 */
+	private static final String[][] POWERED_STAVES = {
+		{"tumeken's shadow", "40"},
+		{"holy sanguinesti staff", "32"},
+		{"sanguinesti staff", "32"},
+		{"trident of the swamp", "31"},
+		{"trident of the seas", "28"},
+		{"eye of ayak", "27"},
+		{"accursed sceptre", "27"},
+		{"thammaron's sceptre", "25"},
+		{"warped sceptre", "24"},
+	};
+
+	/**
+	 * Weapons brought for their special attack. They go after the main weapons in their row, whatever their bonuses
+	 * (an Elder maul's bonuses would put it above Osmumten's fang).
+	 */
+	private static final String[] SPEC_WEAPONS = {
+		"armadyl godsword", "bandos godsword", "saradomin godsword", "zamorak godsword", "ancient godsword",
+		"elder maul", "granite maul", "dragon warhammer", "dragon claws", "burning claws", "voidwaker",
+		"dragon dagger", "abyssal dagger", "crystal halberd", "dragon halberd", "heavy ballista", "light ballista",
+		"dark bow", "dragon thrownaxe", "dorgeshuun crossbow", "saradomin sword", "eldritch nightmare staff",
+		"volatile nightmare staff",
+	};
+	/** Puts spec weapons below every main weapon. */
+	private static final int SPEC_WEAPON_PENALTY = 5000;
 
 	/**
 	 * Score bonus for weapons whose power comes from an effect the bonuses don't show (Twisted bow's scaling,
@@ -96,17 +137,39 @@ public final class GearClassifier
 	public static int power(GearStyle style, String name, GearSlot slot, Bonuses b)
 	{
 		int defence = Math.max(0, Math.min(defenceScore(b), MAX_DEFENCE_TIEBREAK));
+		boolean weapon = slot == GearSlot.WEAPON;
 		int offence;
 		switch (style)
 		{
 			case MELEE:
 				offence = b.getStrength() * 2 + bestMeleeAttack(b);
+				if (weapon)
+				{
+					offence = perTick(offence, speed(b));
+				}
 				break;
 			case RANGED:
 				offence = (b.getRangedStrength() + ammoStrength(name, slot, b)) * 2 + b.getRange();
+				if (weapon)
+				{
+					// Ranged weapons are used on Rapid, one tick faster
+					offence = perTick(offence, Math.max(1, speed(b) - 1));
+				}
 				break;
 			case MAGIC:
 				offence = Math.round(b.getMagicDamage() * 3) + b.getMagic();
+				if (weapon)
+				{
+					int poweredMaxHit = poweredStaffMaxHit(name);
+					if (poweredMaxHit > 0)
+					{
+						offence = perTick(offence + poweredMaxHit * MAX_HIT_WEIGHT, speed(b));
+					}
+					else
+					{
+						offence = perTick(offence + AUTOCAST_MAX_HIT * MAX_HIT_WEIGHT, AUTOCAST_SPEED);
+					}
+				}
 				break;
 			case PRAYER:
 				offence = b.getPrayer();
@@ -116,9 +179,13 @@ public final class GearClassifier
 				return defenceScore(b) + b.getPrayer();
 		}
 
-		if (slot == GearSlot.WEAPON && isEffectWeapon(name))
+		if (weapon && isEffectWeapon(name))
 		{
 			offence += EFFECT_WEAPON_BONUS;
+		}
+		if (weapon && startsWithAny(name, SPEC_WEAPONS))
+		{
+			offence -= SPEC_WEAPON_PENALTY;
 		}
 		return offence * OFFENCE_WEIGHT + defence;
 	}
@@ -131,6 +198,10 @@ public final class GearClassifier
 			return 0;
 		}
 		String n = lower(name);
+		if (n.contains("blowpipe"))
+		{
+			return DART_STRENGTH;
+		}
 		if (n.contains("ballista"))
 		{
 			return JAVELIN_STRENGTH;
@@ -156,6 +227,43 @@ public final class GearClassifier
 		return n.startsWith("void ") || n.startsWith("elite void")
 			|| n.contains("slayer helmet") || n.startsWith("black mask")
 			|| n.startsWith("salve amulet");
+	}
+
+	/** Damage per {@link #BASE_SPEED} ticks, so fast and slow weapons compare fairly. */
+	private static int perTick(int offence, int speed)
+	{
+		return offence * BASE_SPEED / speed;
+	}
+
+	private static int speed(Bonuses b)
+	{
+		return b.getAttackSpeed() > 0 ? b.getAttackSpeed() : BASE_SPEED;
+	}
+
+	private static int poweredStaffMaxHit(String name)
+	{
+		String n = lower(name);
+		for (String[] staff : POWERED_STAVES)
+		{
+			if (n.startsWith(staff[0]))
+			{
+				return Integer.parseInt(staff[1]);
+			}
+		}
+		return 0;
+	}
+
+	private static boolean startsWithAny(String name, String[] prefixes)
+	{
+		String n = lower(name);
+		for (String p : prefixes)
+		{
+			if (n.startsWith(p))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static boolean isEffectWeapon(String name)

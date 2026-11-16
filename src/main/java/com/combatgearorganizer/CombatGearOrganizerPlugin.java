@@ -489,6 +489,7 @@ public class CombatGearOrganizerPlugin extends Plugin
 			.rangedStrength(e.getRstr())
 			.magicDamage(e.getMdmg())
 			.prayer(e.getPrayer())
+			.attackSpeed(e.getAspeed())
 			.build();
 
 		final GearSlot slot = GearSlot.fromEquipmentIndex(e.getSlot());
