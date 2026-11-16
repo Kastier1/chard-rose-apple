@@ -18,8 +18,10 @@ import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import javax.swing.BorderFactory;
@@ -95,6 +97,8 @@ public class SlayerPanel extends JPanel
 	private PanelMemory memory = new PanelMemory();
 	/** Only the header, progress, route line and places. */
 	private boolean compact;
+	/** Carry items the player has with them, for the ticks in the Carry row. */
+	private Set<CarryItem> carried = EnumSet.noneOf(CarryItem.class);
 	private Route route = Route.NONE;
 	/** Holds the route line, so it can change without redrawing the panel. */
 	private final JPanel routeSlot = new JPanel(new BorderLayout());
@@ -600,6 +604,7 @@ public class SlayerPanel extends JPanel
 		}
 
 		addDrops(card, selected);
+		addCarry(card, selected, locations);
 
 		List<String> where = new ArrayList<>();
 		for (LocationOption l : locations)
@@ -611,6 +616,48 @@ public class SlayerPanel extends JPanel
 		}
 		card.add(factRow("Found at", textChip(where.isEmpty() ? "Not matched to a listed place" : String.join(", ", where),
 			where.isEmpty() ? ColorScheme.MEDIUM_GRAY_COLOR : ColorScheme.LIGHT_GRAY_COLOR)));
+	}
+
+	/**
+	 * Prayer and storage items worth an inventory slot for the selected monster (bonecrusher, herb sack...), ticked
+	 * when the player is already carrying them. Hover one for why.
+	 */
+	private void addCarry(JPanel card, Variant selected, List<LocationOption> locations)
+	{
+		boolean wildernessOnly = !locations.isEmpty() && locations.stream().allMatch(LocationOption::isWilderness);
+		List<CarryItem.Suggestion> suggestions = CarryItem.suggest(selected.getCarry(), wildernessOnly);
+		if (suggestions.isEmpty())
+		{
+			return;
+		}
+		List<JComponent> slots = new ArrayList<>();
+		int missing = 0;
+		for (CarryItem.Suggestion s : suggestions)
+		{
+			boolean have = carried.contains(s.getItem());
+			missing += have ? 0 : 1;
+			String tip = "<html>" + escape(s.getTooltip()) + "<br>" + (have ? "You have one with you" : "Not in your inventory") + "</html>";
+			CarrySlot slot = new CarrySlot(s.getItem(), have, tip);
+			icons.setItem(slot, s.getItem().getIconId(), 1);
+			slots.add(slot);
+		}
+		card.add(factRow("Carry", textChip(missing == 0 ? "All with you" : missing + " worth bringing",
+			missing == 0 ? RECOMMENDED_COLOR : ColorScheme.LIGHT_GRAY_COLOR)));
+		card.add(dropGrid(slots));
+	}
+
+	/** The carry items the player has in their inventory or worn. Redraws the monster card when that changes. */
+	public void updateCarried(Set<CarryItem> now)
+	{
+		if (now.equals(carried))
+		{
+			return;
+		}
+		carried = EnumSet.copyOf(now.isEmpty() ? EnumSet.noneOf(CarryItem.class) : now);
+		if (showingTask && !compact)
+		{
+			redraw();
+		}
 	}
 
 	/**

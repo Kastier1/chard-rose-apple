@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import javax.swing.SwingUtilities;
@@ -23,7 +24,9 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.Item;
 import net.runelite.api.ItemComposition;
+import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Quest;
@@ -32,10 +35,12 @@ import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.ScriptPreFired;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
@@ -46,8 +51,8 @@ import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.events.PluginMessage;
-import net.runelite.client.game.ItemStack;
 import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.ItemStack;
 import net.runelite.client.plugins.slayer.SlayerPluginService;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPoint;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPointManager;
@@ -121,6 +126,8 @@ public class SlayerHelper
 	private volatile SlayerPanel panel;
 	private BufferedImage markerImage;
 	private SlayerTaskState lastState = SlayerTaskState.NONE;
+	/** Carry items last sent to the panel; null to send the next ones whatever they are. */
+	private Set<CarryItem> lastCarried;
 	private SlayerLocationData.TaskEntry lastTask;
 	/** The places last drawn for {@link #lastTask}, so a kill only updates the count while they stay the same. */
 	private List<LocationOption> lastLocations = Collections.emptyList();
@@ -174,8 +181,47 @@ public class SlayerHelper
 			// Started while logged in: no StatChanged comes until the next XP drop, so take the XP now or that
 			// drop would only set the starting point
 			lastSlayerXp = client.getGameState() == GameState.LOGGED_IN ? client.getSkillExperience(Skill.SLAYER) : -1;
+			lastCarried = null;
+			updateCarried();
 			refresh(true);
 		});
+	}
+
+	/** Call when the inventory or worn equipment changes, on the client thread. */
+	public void onItemContainerChanged(ItemContainerChanged event)
+	{
+		if (event.getContainerId() == InventoryID.INV || event.getContainerId() == InventoryID.WORN)
+		{
+			updateCarried();
+		}
+	}
+
+	/** Tells the panel which carry items (bonecrusher, herb sack...) the player has, when that changes. */
+	private void updateCarried()
+	{
+		final SlayerPanel p = panel;
+		if (p == null)
+		{
+			return;
+		}
+		List<Integer> ids = new ArrayList<>();
+		for (int container : new int[]{InventoryID.INV, InventoryID.WORN})
+		{
+			ItemContainer items = client.getItemContainer(container);
+			if (items != null)
+			{
+				for (Item item : items.getItems())
+				{
+					ids.add(item.getId());
+				}
+			}
+		}
+		Set<CarryItem> now = CarryItem.carried(ids);
+		if (!now.equals(lastCarried))
+		{
+			lastCarried = now;
+			SwingUtilities.invokeLater(() -> p.updateCarried(now));
+		}
 	}
 
 	public void stop()

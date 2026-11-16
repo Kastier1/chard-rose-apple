@@ -154,6 +154,49 @@ def chance(rarity):
     return lo / hi if hi else None
 
 
+# Items worth carrying for a monster, from the OSRS Wiki's rules for each (see carry_for).
+DEMONIC_ASHES = {"fiendish ashes", "vile ashes", "malicious ashes", "abyssal ashes", "infernal ashes"}
+CARRY_BY_DROP = [
+    # key, what the drop looks like, suggest when it drops at least once in this many kills
+    ("herbSack", re.compile(r"^grimy ", re.IGNORECASE), 30),
+    ("seedBox", re.compile(r"\b(seeds?|spores?)$", re.IGNORECASE), 30),
+    ("gemBag", re.compile(r"^uncut (sapphire|emerald|ruby|diamond|dragonstone)$", re.IGNORECASE), 50),
+    ("soulBearer", re.compile(r"^ensouled .* head$", re.IGNORECASE), 50),
+]
+CARRY_KEYS = {"bonecrusher", "ashSanctifier", "ectoplasmator"} | {k for k, _, _ in CARRY_BY_DROP}
+
+
+def carry_for(pages, wiki):
+    """Prayer and storage items worth an inventory slot for this monster.
+
+    Bonecrusher: always drops bones (it doesn't crush tertiary or noted bones). Ash sanctifier: always drops demonic
+    ashes. Ectoplasmator: the monster is spectral. Sacks and bags: the drop turns up often enough, counted per kill
+    from the drop table. A monster with several pages counts its best page, so versions aren't added together.
+    """
+    drops = [(p, r) for p in sorted(pages) for r in wiki.get("drops", {}).get(p, [])]
+    always = {r[0].lower() for _, r in drops if r[1] == "Always"}
+    carry = []
+    if any(i.endswith("bones") for i in always):
+        carry.append({"item": "bonecrusher"})
+    if always & DEMONIC_ASHES:
+        carry.append({"item": "ashSanctifier"})
+    if any("spectral" in wiki.get("attributes", {}).get(p, []) for p in pages):
+        carry.append({"item": "ectoplasmator"})
+    for key, pattern, every in CARRY_BY_DROP:
+        best = 0.0
+        for page in sorted(pages):
+            seen = set()
+            rate = 0.0
+            for item, rarity, *_ in wiki.get("drops", {}).get(page, []):
+                if pattern.search(item) and (item, rarity) not in seen:
+                    seen.add((item, rarity))
+                    rate += 1.0 if rarity == "Always" else (chance(rarity) or 0)
+            best = max(best, rate)
+        if best >= 1 / every:
+            carry.append({"item": key, "per": max(1, round(1 / best))})
+    return carry
+
+
 def generic_items(wiki):
     """Rare items that turn up on dozens of monsters: the shared drop tables."""
     count = Counter()
@@ -236,6 +279,9 @@ def variants_for(task_name, places, wiki, all_points):
         base = next((superior_of[p] for p in sorted(pages) if p in superior_of), None)
         if superior and base:
             variant["superiorOf"] = base
+        carry = carry_for(pages, wiki)
+        if carry:
+            variant["carry"] = carry
         rare, always = drops_for(pages, wiki, generic)
         if rare:
             variant["drops"] = rare
@@ -331,6 +377,9 @@ def validate(tasks):
             w = v.get("weakness")
             if w and w["element"] not in ELEMENTS:
                 problems.append(f'{t["name"]} / {v["name"]}: weakness element {w["element"]!r}')
+            for c in v.get("carry", []):
+                if c["item"] not in CARRY_KEYS:
+                    problems.append(f'{t["name"]} / {v["name"]}: carry item {c["item"]!r}')
             for a in v.get("attackTypes", []):
                 if a not in ATTACK_TYPES:
                     problems.append(f'{t["name"]} / {v["name"]}: attack type {a!r}')

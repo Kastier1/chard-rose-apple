@@ -26,6 +26,7 @@ import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.CommandExecuted;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.ScriptPreFired;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.WidgetLoaded;
@@ -267,6 +268,15 @@ public class CombatGearOrganizerPlugin extends Plugin
 		if (slayerStarted)
 		{
 			slayerHelper.onChatMessage(event);
+		}
+	}
+
+	@Subscribe
+	public void onItemContainerChanged(ItemContainerChanged event)
+	{
+		if (slayerStarted)
+		{
+			slayerHelper.onItemContainerChanged(event);
 		}
 	}
 

@@ -9,9 +9,11 @@ Data comes from the wiki's Bucket API (infobox_monster, locline and dropsline bu
 category). OSRS Wiki content is licensed CC BY-NC-SA 3.0, see NOTICE.md.
 
 Usage: python3 tools/fetch_wiki_monsters.py
+       python3 tools/fetch_wiki_monsters.py --attributes   (only refresh monster attributes, e.g. spectral)
 """
 import json
 import re
+import sys
 import time
 import urllib.parse
 import urllib.request
@@ -20,7 +22,8 @@ from pathlib import Path
 OUT = Path(__file__).resolve().parent / "data" / "wiki_monsters.json"
 API = "https://oldschool.runescape.wiki/api.php"
 # The wiki asks automated clients to identify themselves
-HEADERS = {"User-Agent": "combat-gear-organizer-datagen/1.0 (RuneLite plugin data build)"}
+HEADERS = {"User-Agent": "combat-gear-organizer-datagen/1.0 (RuneLite plugin data build; "
+                         "https://github.com/Kastier1/chard-rose-apple)"}
 COORD = re.compile(r"x:\s*(\d+)\D+y:\s*(\d+)")
 # "The shadow wyrm is a [[superior]] variant of the [[wyrm]]."
 SUPERIOR_OF = re.compile(r"superior[^.]{0,80}?\b(?:variant|version|form|counterpart)s? of (?:the |an? )?\[\[([^\]|#]+)",
@@ -55,6 +58,31 @@ def fetch_monsters():
             return rows
         offset += 500
         time.sleep(0.5)
+
+
+def fetch_attributes():
+    """page name -> sorted monster attributes (demon, dragon, spectral, undead, ...) across all its versions."""
+    attrs, offset = {}, 0
+    while True:
+        page = bucket("bucket('infobox_monster').select('page_name','attribute')"
+                      f".where('slayer_category','!=',bucket.Null()).orderBy('page_name','asc')"
+                      f".limit(500).offset({offset}).run()")
+        for row in page:
+            for a in row.get("attribute") or []:
+                attrs.setdefault(row["page_name"], set()).add(a.strip().lower())
+        if len(page) < 500:
+            return {k: sorted(v) for k, v in sorted(attrs.items())}
+        offset += 500
+        time.sleep(0.5)
+
+
+def update_attributes():
+    """Refresh only the attributes in the existing data file, leaving everything else as it was fetched."""
+    data = json.loads(OUT.read_text())
+    data["attributes"] = fetch_attributes()
+    OUT.write_text(json.dumps(data, separators=(",", ":")))
+    spectral = sum(1 for v in data["attributes"].values() if "spectral" in v)
+    print(f"{len(data['attributes'])} monsters with attributes ({spectral} spectral) -> {OUT}")
 
 
 def fetch_superiors():
@@ -177,6 +205,7 @@ def main():
     spawns = fetch_spawns(sorted({m["page_name"] for m in monsters}))
     drops = fetch_drops(sorted({m["page_name"] for m in monsters}))
     clog = fetch_collection_log_items()
+    attributes = fetch_attributes()
     print(f"{len(clog)} collection log items")
     print(f"{len(drops)} monsters with drop tables")
     print(f"{len(superiors)} superiors, {len(spawns)} monsters with spawn points")
@@ -191,9 +220,13 @@ def main():
         "spawns": spawns,
         "drops": drops,
         "collection_log_items": clog,
+        "attributes": attributes,
     }, separators=(",", ":")))
     print(f"-> {OUT}")
 
 
 if __name__ == "__main__":
-    main()
+    if "--attributes" in sys.argv[1:]:
+        update_attributes()
+    else:
+        main()

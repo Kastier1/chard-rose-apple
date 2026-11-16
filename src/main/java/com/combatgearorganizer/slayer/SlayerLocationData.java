@@ -57,11 +57,22 @@ public class SlayerLocationData
 		private List<Drop> drops = Collections.emptyList();
 		/** What it always drops worth naming: bones or ashes. */
 		private List<String> alwaysDrops = Collections.emptyList();
+		/** Prayer and storage items worth bringing for it (bonecrusher, herb sack...). */
+		private List<Carry> carry = Collections.emptyList();
 
 		public boolean isRegular()
 		{
 			return !superior && !boss;
 		}
+	}
+
+	@Data
+	public static class Carry
+	{
+		/** A {@link CarryItem} key, e.g. "herbSack". */
+		private String item;
+		/** For drop-based items: about one drop in this many kills. Null for rule-based ones (bonecrusher). */
+		private Integer per;
 	}
 
 	@Data

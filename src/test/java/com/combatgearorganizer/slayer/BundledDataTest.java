@@ -376,17 +376,46 @@ public class BundledDataTest
 			// And the boss's
 			assertNotNull(slotFor(panel, "Unsired"));
 
+			// The Carry row suggests the ash sanctifier, and ticks it once it's in the inventory
+			CarrySlot ash = carrySlot(panel, CarryItem.ASH_SANCTIFIER);
+			assertNotNull("ash sanctifier suggested", ash);
+			assertTrue(!ash.isCarried());
+			tips.add(ash.getToolTipText());
+			panel.updateCarried(java.util.EnumSet.of(CarryItem.ASH_SANCTIFIER));
+			ash = carrySlot(panel, CarryItem.ASH_SANCTIFIER);
+			assertTrue(ash.isCarried());
+			tips.add(ash.getToolTipText());
+			assertTrue(containsText(panel, "All with you") || containsText(panel, "worth bringing"));
+
 			// Switching the setting changes every value shown, with no restart
 			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, clog, stubItems(ItemValueMode.HIGH_ALCHEMY));
 			for (DropSlot s : slots(panel))
 			{
+				if (s instanceof CarrySlot)
+				{
+					continue;
+				}
 				assertTrue(s.getToolTipText(), s.getToolTipText().contains("High alch: "));
 				assertTrue(s.getToolTipText(), !s.getToolTipText().contains("GE value"));
 			}
 		});
 		assertTrue(tips.get(0), tips.get(0).contains("Drop rate: 1/512"));
+		assertTrue(tips.get(1), tips.get(1).contains("Not in your inventory"));
+		assertTrue(tips.get(2), tips.get(2).contains("You have one with you"));
 		assertTrue(tips.get(0), tips.get(0).contains("GE value: 1.2M"));
 		assertTrue(tips.get(0), tips.get(0).contains("In your collection log"));
+	}
+
+	private static CarrySlot carrySlot(SlayerPanel panel, CarryItem item)
+	{
+		for (DropSlot s : slots(panel))
+		{
+			if (s instanceof CarrySlot && ((CarrySlot) s).getItem() == item)
+			{
+				return (CarrySlot) s;
+			}
+		}
+		return null;
 	}
 
 	private void drawEverything(CollectionLog.Snapshot clog, DropItems items, TaskProgress.View progress) throws Exception
