@@ -126,9 +126,20 @@ NOTICE.md                          data attribution (CC BY-NC-SA 3.0 wiki-derive
 is **CC BY-NC-SA 3.0**: keep the attribution in NOTICE.md and keep the file under that licence. Regenerate with:
 
 ```bash
-git clone --depth 1 https://github.com/rRexhepi/slayer-sensei /tmp/slayer-sensei
+git clone https://github.com/rRexhepi/slayer-sensei /tmp/slayer-sensei
+git -C /tmp/slayer-sensei checkout 5528412856f36f0c9efb9b9c5c164f526406c2c9   # pinned; see below
 python3 tools/build_slayer_locations.py /tmp/slayer-sensei/src/main/resources/slayer_areas.json
 ```
+
+The generator also reads the committed `tools/data/wiki_monsters.json`; it makes no network calls.
+
+**CI check.** `.github/workflows/build.yml` runs `./gradlew build` (Java 11, Temurin) and a `slayer-data` job on
+every pull request and push to `main`. That job checks out Slayer Sensei at the commit in `SLAYER_SENSEI_COMMIT`
+(`5528412856f36f0c9efb9b9c5c164f526406c2c9`, which reproduces the committed file byte for byte), reruns the
+generator and fails on `git diff --exit-code`. To take newer Sensei data, or after changing the generator or
+`wiki_monsters.json`, regenerate locally, commit the new `slayer_locations.json` and bump `SLAYER_SENSEI_COMMIT` in
+the same pull request. Refresh `wiki_monsters.json` with `tools/fetch_wiki_monsters.py` locally only; CI never calls
+the wiki.
 
 Slayer Sensei's `slayer_tasks.json` / `slayer_tasks_supplement.json` also hold per-task notes, required items,
 weaknesses and notable drops (as prose). They're useful inputs for steps 2 and 4.

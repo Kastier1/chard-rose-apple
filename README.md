@@ -1,5 +1,7 @@
 # Combat Gear Organizer
 
+[![Build](https://github.com/Kastier1/chard-rose-apple/actions/workflows/build.yml/badge.svg)](https://github.com/Kastier1/chard-rose-apple/actions/workflows/build.yml)
+
 Organizes your combat gear bank tag, and shows where to do your slayer task.
 
 A RuneLite plugin that automatically arranges your combat gear **bank tag tab** into a clean, predictable layout.
@@ -96,3 +98,7 @@ so the panel makes no network requests.
 
 Regenerate the slayer location data with
 `python3 tools/build_slayer_locations.py path/to/slayer-sensei/src/main/resources/slayer_areas.json`.
+Use the Slayer Sensei commit pinned in `.github/workflows/build.yml` (see HANDOFF.md).
+
+Every pull request and push to `main` runs the tests, and checks that the bundled slayer data still matches what
+the generator makes from the pinned inputs.

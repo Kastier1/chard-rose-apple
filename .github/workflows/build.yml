@@ -1,0 +1,65 @@
+name: Build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+          cache: gradle
+
+      - name: Build and run tests
+        run: ./gradlew build --console=plain
+        env:
+          # The panel tests draw Swing components; there is no display on the runner
+          JAVA_TOOL_OPTIONS: -Djava.awt.headless=true
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: |
+            build/reports/tests/test
+            build/test-results/test
+          if-no-files-found: ignore
+
+  slayer-data:
+    name: Slayer data matches the generator
+    runs-on: ubuntu-latest
+    env:
+      # Slayer Sensei commit that produces the committed slayer_locations.json.
+      # Bump it (and commit the regenerated file) to take newer data. See HANDOFF.md.
+      SLAYER_SENSEI_COMMIT: 5528412856f36f0c9efb9b9c5c164f526406c2c9
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: rRexhepi/slayer-sensei
+          ref: ${{ env.SLAYER_SENSEI_COMMIT }}
+          path: slayer-sensei
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # Uses only the pinned Sensei files and the committed tools/data/wiki_monsters.json; no wiki calls
+      - name: Regenerate slayer_locations.json
+        run: python3 tools/build_slayer_locations.py slayer-sensei/src/main/resources/slayer_areas.json
+
+      - name: Fail if it differs from the committed file
+        run: git diff --exit-code -- src/main/resources/com/combatgearorganizer/slayer/slayer_locations.json
