@@ -10,6 +10,8 @@ import net.runelite.client.config.Keybind;
 public interface CombatGearOrganizerConfig extends Config
 {
 	String GROUP = "combatgearorganizer";
+	String TAG_NAME_KEY = "tagName";
+	String GROUPING_KEY = "grouping";
 
 	@ConfigSection(
 		name = "Slayer",
@@ -26,7 +28,7 @@ public interface CombatGearOrganizerConfig extends Config
 	String valuesSection = "values";
 
 	@ConfigItem(
-		keyName = "tagName",
+		keyName = TAG_NAME_KEY,
 		name = "Bank tag",
 		description = "The bank tag tab that holds your combat gear",
 		position = 0
@@ -37,7 +39,7 @@ public interface CombatGearOrganizerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "grouping",
+		keyName = GROUPING_KEY,
 		name = "Group by",
 		description = "Combat style: melee / ranged / magic / prayer sections, each ordered by slot.<br>"
 			+ "Equipment slot: one section per slot, each ordered by combat style.",

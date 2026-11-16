@@ -38,6 +38,21 @@ all helms together, …), each ordered melee → ranged → magic.
    Or type `::gearsort` (or press the configured hotkey), which saves straight away; `::gearsort undo` puts the
    previous layout back.
 
+### From the side panel
+
+Click the plugin's button in the side bar and pick **Combat tab** at the top (next to **Slayer**). There you can:
+
+- pick the **Bank tag** from your tag tabs, or type a new name;
+- pick the **Layout**: *By style* or *By slot* (the same as the **Group by** setting; changing one changes the other);
+- click **Organize now** with your bank open. It opens the tab with the new layout and asks **Keep** / **Undo** in
+  the chat box, like the Auto layout menu entry. It then shows a line like
+  `48 items: 14 melee, 12 ranged, 10 magic, 12 other`;
+- click **Add worn gear** to tag what you're wearing, like `::gearadd`;
+- follow the **Setup** checklist: Bank Tags plugin on, tag tab exists, tab has gear in it, layout enabled. Each step
+  is ticked when done, and says what to click when it isn't.
+
+After `::gearsort` or the hotkey, the panel shows an **Undo** button, like `::gearsort undo`.
+
 | Command | What it does |
 | --- | --- |
 | `::gearsort` | Organize the configured tag tab |

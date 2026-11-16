@@ -6,7 +6,9 @@ import java.awt.Container;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
+import com.combatgearorganizer.CombatTabPanel;
 import com.combatgearorganizer.ItemValueMode;
+import com.combatgearorganizer.OrganizerPanel;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -695,6 +697,36 @@ public class BundledDataTest
 			// Another task is not drawn by a count update
 			panel.updateCount(new SlayerTaskState(t.getTaskId() + 1, "Hydras", 10, 120, 5, 0, null), null);
 			assertTrue(containsText(panel, "48 of 120 left"));
+		});
+	}
+
+	@Test
+	public void slayerAndCombatTabShareOnePanel() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Abyssal demons");
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			CombatTabPanel combat = new CombatTabPanel(n -> { }, g -> { }, () -> { }, () -> { }, () -> { });
+			OrganizerPanel organizer = new OrganizerPanel(combat);
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			organizer.setSlayerPanel(panel);
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				DropItems.EMPTY, null);
+			assertTrue(containsText(organizer, "50 of 120 left"));
+
+			// The Combat tab section replaces the slayer one, and the task is still there on the way back
+			organizer.showCombatTab();
+			assertTrue(!containsText(organizer, "50 of 120 left"));
+			assertTrue(containsText(organizer, "Bank Tags plugin on"));
+			organizer.showSlayer();
+			assertTrue(containsText(organizer, "50 of 120 left"));
+			assertTrue(!containsText(organizer, "Bank Tags plugin on"));
+
+			// Slayer panel turned off
+			organizer.setSlayerPanel(null);
+			assertTrue(!containsText(organizer, "50 of 120 left"));
 		});
 	}
 

@@ -49,8 +49,6 @@ import net.runelite.client.events.PluginMessage;
 import net.runelite.client.game.ItemStack;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.slayer.SlayerPluginService;
-import net.runelite.client.ui.ClientToolbar;
-import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPoint;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPointManager;
 import net.runelite.client.util.ImageUtil;
@@ -87,9 +85,6 @@ public class SlayerHelper
 	private ClientThread clientThread;
 
 	@Inject
-	private ClientToolbar clientToolbar;
-
-	@Inject
 	private WorldMapPointManager worldMapPointManager;
 
 	@Inject
@@ -124,7 +119,6 @@ public class SlayerHelper
 
 	private SlayerLocationData data;
 	private volatile SlayerPanel panel;
-	private NavigationButton navButton;
 	private BufferedImage markerImage;
 	private SlayerTaskState lastState = SlayerTaskState.NONE;
 	private SlayerLocationData.TaskEntry lastTask;
@@ -171,13 +165,6 @@ public class SlayerHelper
 		BufferedImage icon = ImageUtil.loadImageResource(SlayerHelper.class, "slayer_icon.png");
 		markerImage = ImageUtil.resizeImage(icon, 24, 21);
 		panel = new SlayerPanel(icons, this::go, this::goNearest, this::cancelRoute, this::saveMemory);
-		navButton = NavigationButton.builder()
-			.tooltip("Slayer task")
-			.icon(ImageUtil.resizeImage(icon, 18, 16))
-			.priority(7)
-			.panel(panel)
-			.build();
-		clientToolbar.addNavigation(navButton);
 		lastState = SlayerTaskState.NONE;
 		clientThread.invokeLater(() ->
 		{
@@ -193,7 +180,6 @@ public class SlayerHelper
 
 	public void stop()
 	{
-		clientToolbar.removeNavigation(navButton);
 		clientThread.invokeLater(() ->
 		{
 			// No time to ask Shortest Path whose path it is, so leave the path but never our Wilderness override
@@ -203,7 +189,12 @@ public class SlayerHelper
 			saveProgress();
 		});
 		panel = null;
-		navButton = null;
+	}
+
+	/** The Slayer section for the side panel; null while stopped. The plugin puts it in its one panel. */
+	public SlayerPanel getPanel()
+	{
+		return panel;
 	}
 
 	/** Call every game tick on the client thread. Cheap when nothing changed. */

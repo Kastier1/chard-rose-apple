@@ -36,13 +36,13 @@ import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
-import net.runelite.client.ui.PluginPanel;
 
 /**
- * Side panel showing the current slayer task and where to do it. Only touch it on the Swing thread.
+ * The Slayer section of the side panel: the current slayer task and where to do it. Only touch it on the Swing
+ * thread.
  */
 @Slf4j
-public class SlayerPanel extends PluginPanel
+public class SlayerPanel extends JPanel
 {
 	private static final Color WILDERNESS_COLOR = new Color(230, 80, 60);
 	private static final Color RECOMMENDED_COLOR = new Color(110, 200, 90);

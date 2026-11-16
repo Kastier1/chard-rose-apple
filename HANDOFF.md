@@ -84,6 +84,18 @@ header, kill rate line, route line and the place list only. Empty and waiting st
 nothing else changed) calls `SlayerPanel.updateCount`, which updates the count, progress lines and the XP for the
 kills left without rebuilding the panel. Not yet seen in a logged-in client.
 
+**Update 2026-11-16 (issue #28):** the side panel is now one panel for the whole plugin (`OrganizerPanel`, a
+RuneLite `MaterialTabGroup` with "Slayer" and "Combat tab"); the navigation button belongs to the plugin, not
+`SlayerHelper`, and `SlayerPanel` is a plain `JPanel` section. With the slayer panel setting off, the Slayer tab says
+how to turn it on. `CombatTabPanel` (Swing only) has the tag picker (tabs from config `banktags.tagtabs`, editable),
+By style / By slot radios, Organize now, Undo, Add worn gear, a note line, the summary line and the setup checklist.
+Pure logic in `CombatTabStatus`, `SetupChecklist` (steps, why a button is off) and `OrganizeSummary`. The plugin reads
+the status on the client thread when a `banktags` or plugin setting changes, on plugin changes, on game state changes
+and when the bank opens or closes (polled per tick), and hands it to the panel only when it changed. Organize now does
+what LayoutManager's "Auto layout" menu entry does: `BankTagsPlugin.openTag(tag, preview)` (the `BankTagsService` is
+the plugin instance) and a `ChatboxPanelManager` Keep / Undo menu, `onClose` → `BankSearch.layoutBank()`. If the
+service ever isn't `BankTagsPlugin`, it falls back to the old organize with Undo. Not yet seen in a logged-in client.
+
 Still open from the review: boss/Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping), and the scope doc's wrong required items.
 
@@ -112,12 +124,15 @@ src/main/java/com/combatgearorganizer/
   GearClassifier.java              item bonuses -> style (MELEE/RANGED/MAGIC/PRAYER/UTILITY) + power score
   LayoutBuilder.java               classified items -> Bank Tags layout array (8 columns, -1 = empty)
   GearSlot.java, GearStyle.java, GearItem.java, Bonuses.java, Grouping.java
+  OrganizerPanel.java              the one side panel: Slayer / Combat tab switcher
+  CombatTabPanel.java              Swing: Combat tab section (tag, layout, Organize now, checklist)
+  CombatTabStatus.java, SetupChecklist.java, OrganizeSummary.java  its pure logic
   ItemValues.java, ItemValueMode.java  the one place to ask what an item is worth (GE or high alch setting)
   slayer/
     SlayerHelper.java              reads the task each game tick, drives the panel, routes via Shortest Path
     ItemNameResolver.java          drop name -> item id, by walking item definitions a batch per tick
     DropItems.java, DropSlot.java  drop ids/values handed to the panel; one item picture with its log status
-    SlayerPanel.java               Swing side panel
+    SlayerPanel.java               Swing: the Slayer section of the side panel
     LocationPicker.java            which locations to show (Konar area, Krystilia Wilderness list, Wilderness toggle)
     ShortestPathBridge.java        PluginMessage("shortestpath", "path"/"clear") wrapper
     SlayerLocationData.java        Gson model of the bundled JSON
