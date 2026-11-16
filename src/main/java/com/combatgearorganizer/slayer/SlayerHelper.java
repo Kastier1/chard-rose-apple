@@ -24,6 +24,7 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.ItemComposition;
+import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.Quest;
 import net.runelite.api.QuestState;
@@ -32,6 +33,7 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.ScriptPreFired;
+import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
@@ -41,7 +43,10 @@ import net.runelite.client.chat.ChatColorType;
 import net.runelite.client.chat.ChatMessageBuilder;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
+import net.runelite.client.config.ConfigManager;
+import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.events.PluginMessage;
+import net.runelite.client.game.ItemStack;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.slayer.SlayerPluginService;
 import net.runelite.client.ui.ClientToolbar;
@@ -64,6 +69,14 @@ public class SlayerHelper
 	private static final int BOSS_TASK_ID = 98;
 	/** Item definitions to read per tick while matching drop names to items. The game has about 30,000. */
 	private static final int ITEM_SCAN_BATCH = 2500;
+	/**
+	 * Task progress is saved per account in its own config group, so saving after every kill doesn't reach the
+	 * plugin's settings-changed handling.
+	 */
+	static final String PROGRESS_GROUP = "combatgearorganizerprogress";
+	static final String PROGRESS_KEY = "task";
+	/** The game message for a superior spawning, as in the core Slayer plugin. */
+	static final String SUPERIOR_MESSAGE = "A superior foe has appeared...";
 
 	@Inject
 	private Client client;
@@ -104,6 +117,9 @@ public class SlayerHelper
 	@Inject
 	private ItemValues itemValues;
 
+	@Inject
+	private ConfigManager configManager;
+
 	private SlayerLocationData data;
 	private volatile SlayerPanel panel;
 	private NavigationButton navButton;
@@ -114,6 +130,15 @@ public class SlayerHelper
 	private int lastClogVersion = -1;
 	private ItemNameResolver itemNames;
 	private boolean lastItemNamesDone;
+	private final TaskProgressTracker progress = new TaskProgressTracker();
+	/** The account (RS profile key) the progress in memory belongs to; null until loaded. */
+	private String progressProfile;
+	private boolean progressDirty;
+	private int progressVersion;
+	private int lastProgressVersion = -1;
+	private ItemValueMode lastValueMode;
+	/** Slayer XP at the last StatChanged; -1 until the first one after login. */
+	private int lastSlayerXp = -1;
 
 	public void start()
 	{
@@ -144,6 +169,8 @@ public class SlayerHelper
 			.build();
 		clientToolbar.addNavigation(navButton);
 		lastState = SlayerTaskState.NONE;
+		progressProfile = null;
+		lastSlayerXp = -1;
 		clientThread.invokeLater(() -> refresh(true));
 	}
 
@@ -156,6 +183,7 @@ public class SlayerHelper
 			shortestPath.release();
 			removeMapMarkers();
 			collectionLog.flush();
+			saveProgress();
 		});
 		panel = null;
 		navButton = null;
@@ -169,6 +197,17 @@ public class SlayerHelper
 		Player player = client.getLocalPlayer();
 		shortestPath.onGameTick(player != null ? player.getWorldLocation() : null);
 		refresh(false);
+		if (progress.onTick() && config.taskSummaryChat() && progress.getProgress() != null)
+		{
+			chatMessageManager.queue(QueuedMessage.builder()
+				.type(ChatMessageType.GAMEMESSAGE)
+				.runeLiteFormattedMessage(new ChatMessageBuilder()
+					.append(ChatColorType.HIGHLIGHT)
+					.append("[Slayer] " + progress.getProgress().summary(itemValues.mode()) + ".")
+					.build())
+				.build());
+		}
+		saveProgress();
 	}
 
 	/** Call for every PluginMessage, on the thread it was posted on. */
@@ -185,6 +224,66 @@ public class SlayerHelper
 	public void onChatMessage(ChatMessage event)
 	{
 		collectionLog.onChatMessage(event);
+		if ((event.getType() == ChatMessageType.GAMEMESSAGE || event.getType() == ChatMessageType.SPAM)
+			&& event.getMessage().contains(SUPERIOR_MESSAGE) && progress.addSuperior())
+		{
+			progressChanged();
+		}
+	}
+
+	/** Slayer XP gained counts towards the task. */
+	public void onStatChanged(StatChanged event)
+	{
+		if (event.getSkill() != Skill.SLAYER)
+		{
+			return;
+		}
+		int xp = event.getXp();
+		if (lastSlayerXp >= 0 && xp > lastSlayerXp && progress.addXp(xp - lastSlayerXp))
+		{
+			progressChanged();
+		}
+		lastSlayerXp = xp;
+	}
+
+	/** Loot from a task monster adds to the task's loot value. Client thread. */
+	public void onNpcLootReceived(NpcLootReceived event)
+	{
+		TaskProgress p = progress.getProgress();
+		NPC npc = event.getNpc();
+		if (!progress.isCounting() || p == null || npc == null || !isTaskMonster(npc, p))
+		{
+			return;
+		}
+		long ge = 0;
+		long ha = 0;
+		for (ItemStack item : event.getItems())
+		{
+			ge += itemValues.value(ItemValueMode.GRAND_EXCHANGE, item.getId()) * item.getQuantity();
+			ha += itemValues.value(ItemValueMode.HIGH_ALCHEMY, item.getId()) * item.getQuantity();
+		}
+		if (progress.addLoot(ge, ha))
+		{
+			progressChanged();
+		}
+	}
+
+	private boolean isTaskMonster(NPC npc, TaskProgress p)
+	{
+		List<NPC> targets = slayerPluginService.getTargets();
+		if (targets != null && targets.contains(npc))
+		{
+			return true;
+		}
+		// The Slayer plugin drops an NPC from its targets when it despawns, which can be before its loot shows
+		SlayerLocationData.TaskEntry task = data.findTask(p.getTaskId(), p.getTaskName());
+		List<String> names = new ArrayList<>();
+		if (task != null)
+		{
+			task.getVariants().forEach(v -> names.add(v.getName()));
+		}
+		String taskName = p.getTaskName() != null ? p.getTaskName() : task != null ? task.getName() : null;
+		return TaskMonsters.matches(npc.getName(), taskName, names);
 	}
 
 	public void onWidgetLoaded(WidgetLoaded event)
@@ -199,6 +298,27 @@ public class SlayerHelper
 	public void onGameStateChanged(GameStateChanged event)
 	{
 		collectionLog.onGameStateChanged(event.getGameState());
+		switch (event.getGameState())
+		{
+			case LOGGED_IN:
+				// Also fires after every loading screen; the clock only restarts if it was stopped
+				progress.onLogin(System.currentTimeMillis());
+				break;
+			case LOGIN_SCREEN:
+			case HOPPING:
+			case CONNECTION_LOST:
+				saveProgress();
+				progress.onLogout();
+				lastSlayerXp = -1;
+				if (event.getGameState() == GameState.LOGIN_SCREEN)
+				{
+					// The next login may be another account; load its own progress then
+					progressProfile = null;
+				}
+				break;
+			default:
+				break;
+		}
 	}
 
 	/** Call when the plugin's config changes, or when a plugin (such as Shortest Path) is turned on or off. */
@@ -217,15 +337,20 @@ public class SlayerHelper
 		}
 
 		SlayerTaskState state = readTask();
+		updateProgress(state);
+		ItemValueMode valueMode = itemValues.mode();
 		boolean spAvailable = shortestPath.isAvailable();
 		collectionLog.ensureLoaded();
 		int clogVersion = collectionLog.getVersion();
 		boolean namesDone = itemNames.isDone();
 		if (!force && state.equals(lastState) && spAvailable == lastShortestPathAvailable && clogVersion == lastClogVersion
-			&& namesDone == lastItemNamesDone)
+			&& namesDone == lastItemNamesDone && progressVersion == lastProgressVersion && valueMode == lastValueMode)
 		{
 			return;
 		}
+		lastProgressVersion = progressVersion;
+		lastValueMode = valueMode;
+		TaskProgress tp = progress.getProgress();
 		lastShortestPathAvailable = spAvailable;
 		lastClogVersion = clogVersion;
 		lastItemNamesDone = namesDone;
@@ -244,7 +369,8 @@ public class SlayerHelper
 		if (!state.hasTask())
 		{
 			lastTask = null;
-			SwingUtilities.invokeLater(p::showNoTask);
+			String summary = tp != null && tp.isDone() ? tp.summary(valueMode) : null;
+			SwingUtilities.invokeLater(() -> p.showNoTask(summary));
 			return;
 		}
 
@@ -257,7 +383,86 @@ public class SlayerHelper
 		SlayerLocationData.TaskInfo info = task != null ? task.getInfo() : null;
 		List<SlayerLocationData.Variant> variants = task != null ? task.getVariants() : Collections.emptyList();
 		DropItems items = dropItems(variants);
-		SwingUtilities.invokeLater(() -> p.showTask(state, info, variants, locations, task != null, spAvailable, clog, items));
+		TaskProgress.View view = tp != null && !tp.isDone() ? tp.view(state.getRemaining(), valueMode) : null;
+		SwingUtilities.invokeLater(() -> p.showTask(state, info, variants, locations, task != null, spAvailable, clog, items, view));
+	}
+
+	/** Feeds this tick's count to the progress tracker, loading the account's saved progress first. Client thread. */
+	private void updateProgress(SlayerTaskState state)
+	{
+		if (!loadProgress())
+		{
+			return;
+		}
+		String name = state.hasTask() && !isPlaceholderName(state) ? state.getName() : null;
+		TaskProgressTracker.Change change = progress.onCount(state.getTaskId(), name, state.hasTask() ? state.getRemaining() : 0,
+			state.getInitial(), System.currentTimeMillis());
+		if (change != TaskProgressTracker.Change.NONE)
+		{
+			progressChanged();
+		}
+	}
+
+	private static boolean isPlaceholderName(SlayerTaskState state)
+	{
+		return "Boss task".equals(state.getName()) || ("Task #" + state.getTaskId()).equals(state.getName());
+	}
+
+	/** Loads the saved progress when the account changes. False while no account is known. Client thread. */
+	private boolean loadProgress()
+	{
+		String profile = configManager.getRSProfileKey();
+		if (profile == null)
+		{
+			return false;
+		}
+		if (profile.equals(progressProfile))
+		{
+			return true;
+		}
+		TaskProgress saved = null;
+		String json = configManager.getRSProfileConfiguration(PROGRESS_GROUP, PROGRESS_KEY);
+		if (json != null && !json.isEmpty())
+		{
+			try
+			{
+				saved = gson.fromJson(json, TaskProgress.class);
+			}
+			catch (RuntimeException e)
+			{
+				log.debug("Couldn't read saved task progress", e);
+			}
+		}
+		progressProfile = profile;
+		progressDirty = false;
+		progress.load(saved, client.getGameState() == GameState.LOGGED_IN, System.currentTimeMillis());
+		progressVersion++;
+		return true;
+	}
+
+	private void progressChanged()
+	{
+		progressDirty = true;
+		progressVersion++;
+	}
+
+	/** Saves the progress to the account it belongs to, if it changed. Client thread. */
+	private void saveProgress()
+	{
+		if (!progressDirty || progressProfile == null || !progressProfile.equals(configManager.getRSProfileKey()))
+		{
+			return;
+		}
+		progressDirty = false;
+		TaskProgress p = progress.getProgress();
+		if (p == null)
+		{
+			configManager.unsetRSProfileConfiguration(PROGRESS_GROUP, PROGRESS_KEY);
+		}
+		else
+		{
+			configManager.setRSProfileConfiguration(PROGRESS_GROUP, PROGRESS_KEY, gson.toJson(p));
+		}
 	}
 
 	/** Reads the next batch of item definitions to match drop names to items. Client thread only. */

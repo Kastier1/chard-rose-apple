@@ -107,10 +107,23 @@ public interface CombatGearOrganizerConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "taskSummaryChat",
+		name = "Task summary in chat",
+		description = "When you finish a task, also put the summary in your chat box,<br>"
+			+ "e.g. \"Task done: 140 Abyssal demons in 24 min, 2 superiors, 1.2M loot\".",
+		section = slayerSection,
+		position = 13
+	)
+	default boolean taskSummaryChat()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "itemValue",
 		name = "Item value",
 		description = "Grand Exchange: what the item sells for. High alchemy: the coins you get for casting High Level Alchemy on it.<br>"
-			+ "Used for every value the plugin shows.",
+			+ "Used for every value the plugin shows, including the loot value of your current task.",
 		section = valuesSection,
 		position = 21
 	)

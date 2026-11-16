@@ -58,7 +58,8 @@ change your mind. Items you untag drop out of the layout on the next sort.
 - **Re-organize after ::gearadd** (off by default)
 - **Organize hotkey**
 - **Item value** – value items at their Grand Exchange price (default) or their high alchemy value. Used for
-  every value the plugin shows; changing it updates the panel straight away.
+  every value the plugin shows, including a task's loot; changing it updates the panel straight away.
+- **Task summary in chat** – when you finish a slayer task, also put the summary in your chat box (off by default).
 
 ## How items are classified
 
@@ -91,6 +92,12 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
   the better rate on task, whether it's in your collection log, and its value. Drops you haven't logged are faded
   with a dashed outline; logged ones have a small tick. Superiors and bosses show their notable drops the same way.
   Drop names are matched to items in the first few seconds after you log in; until then they show as text.
+- **Task progress** shows under the kill count: kills per hour, about how long is left, slayer XP gained, superiors
+  seen and the value of what task monsters dropped. Kills are counted from the task count going down, so any way of
+  killing counts. Only time while logged in counts, and a gap of 5 minutes or more without a kill is left out of
+  the rate. If the plugin started mid-task, the panel says which count it started from. Progress is saved per
+  account, so it survives a relog, and starts again with each new task. When you finish, the panel shows a summary
+  such as "Task done: 140 Abyssal demons in 24 min, 2 superiors, 1.2M loot" until your next task.
 
 The task is read from the game and RuneLite's built-in Slayer plugin. Location data is bundled (see NOTICE.md),
 so the panel makes no network requests.

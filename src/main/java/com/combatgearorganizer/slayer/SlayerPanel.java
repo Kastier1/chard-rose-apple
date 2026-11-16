@@ -1,6 +1,7 @@
 package com.combatgearorganizer.slayer;
 
 import com.combatgearorganizer.ItemValueMode;
+import com.combatgearorganizer.ItemValues;
 import com.combatgearorganizer.slayer.SlayerLocationData.Variant;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -104,10 +105,21 @@ public class SlayerPanel extends PluginPanel
 
 	public void showNoTask()
 	{
+		showNoTask(null);
+	}
+
+	/** No task; {@code summary} is how the last task went, or null. */
+	public void showNoTask(String summary)
+	{
 		lastShow = null;
 		content.removeAll();
 		content.add(title("Slayer task"));
 		content.add(Box.createVerticalStrut(8));
+		if (summary != null)
+		{
+			content.add(wrapped(summary + ".", RECOMMENDED_COLOR));
+			content.add(Box.createVerticalStrut(6));
+		}
 		content.add(wrapped("No task right now. Get one from a slayer master, or check your enchanted gem.", ColorScheme.LIGHT_GRAY_COLOR));
 		refresh();
 	}
@@ -116,7 +128,15 @@ public class SlayerPanel extends PluginPanel
 		List<LocationOption> locations, boolean hasData, boolean shortestPathAvailable, CollectionLog.Snapshot clog,
 		DropItems items)
 	{
-		lastShow = () -> showTask(task, info, variants, locations, hasData, shortestPathAvailable, clog, items);
+		showTask(task, info, variants, locations, hasData, shortestPathAvailable, clog, items, null);
+	}
+
+	/** As above, with how the task is going under the kill count; {@code progress} may be null. */
+	public void showTask(SlayerTaskState task, SlayerLocationData.TaskInfo info, List<Variant> variants,
+		List<LocationOption> locations, boolean hasData, boolean shortestPathAvailable, CollectionLog.Snapshot clog,
+		DropItems items, TaskProgress.View progress)
+	{
+		lastShow = () -> showTask(task, info, variants, locations, hasData, shortestPathAvailable, clog, items, progress);
 		currentClog = clog;
 		currentItems = items != null ? items : DropItems.EMPTY;
 
@@ -142,6 +162,10 @@ public class SlayerPanel extends PluginPanel
 			? task.getRemaining() + " of " + task.getInitial() + " left"
 			: task.getRemaining() + " left";
 		content.add(line(count, ColorScheme.LIGHT_GRAY_COLOR));
+		if (progress != null)
+		{
+			addProgress(progress);
+		}
 
 		String master = SlayerMasters.name(task.getMasterId());
 		if (task.getKonarArea() != null)
@@ -222,6 +246,35 @@ public class SlayerPanel extends PluginPanel
 			content.add(Box.createVerticalStrut(4));
 		}
 		refresh();
+	}
+
+	/** Kill rate, time left, XP, superiors and loot so far, under the kill count. */
+	private void addProgress(TaskProgress.View progress)
+	{
+		String rate = progress.rateText();
+		content.add(wrapped(rate != null ? rate : "Kill rate shows after your next kill",
+			rate != null ? ColorScheme.LIGHT_GRAY_COLOR : ColorScheme.MEDIUM_GRAY_COLOR));
+		if (progress.getXp() > 0)
+		{
+			content.add(line(String.format(Locale.ENGLISH, "%,d slayer XP this task", progress.getXp()), ColorScheme.LIGHT_GRAY_COLOR));
+		}
+		if (progress.getSuperiors() > 0)
+		{
+			content.add(line(progress.getSuperiors() + (progress.getSuperiors() == 1 ? " superior" : " superiors") + " this task",
+				SUPERIOR_COLOR));
+		}
+		if (progress.getLoot() > 0)
+		{
+			ItemValueMode mode = progress.getMode() != null ? progress.getMode() : ItemValueMode.GRAND_EXCHANGE;
+			JLabel loot = line("Loot: " + ItemValues.format(progress.getLoot()) + " (" + mode.getLabel() + ")",
+				ColorScheme.LIGHT_GRAY_COLOR);
+			loot.setToolTipText("What task monsters dropped for you this task. Change \"Item value\" in the plugin settings to switch between GE and high alch.");
+			content.add(loot);
+		}
+		if (progress.getTrackedFrom() >= 0)
+		{
+			content.add(line("Counted from " + progress.getTrackedFrom() + " left", ColorScheme.MEDIUM_GRAY_COLOR));
+		}
 	}
 
 	/**

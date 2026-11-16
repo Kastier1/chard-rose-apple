@@ -23,6 +23,7 @@ import net.runelite.api.events.CommandExecuted;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ScriptPreFired;
+import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.client.callback.ClientThread;
@@ -32,6 +33,7 @@ import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.events.PluginChanged;
 import net.runelite.client.events.PluginMessage;
 import net.runelite.client.game.ItemEquipmentStats;
@@ -199,6 +201,24 @@ public class CombatGearOrganizerPlugin extends Plugin
 		if (slayerStarted)
 		{
 			slayerHelper.onGameStateChanged(event);
+		}
+	}
+
+	@Subscribe
+	public void onStatChanged(StatChanged event)
+	{
+		if (slayerStarted)
+		{
+			slayerHelper.onStatChanged(event);
+		}
+	}
+
+	@Subscribe
+	public void onNpcLootReceived(NpcLootReceived event)
+	{
+		if (slayerStarted)
+		{
+			slayerHelper.onNpcLootReceived(event);
 		}
 	}
 

@@ -271,7 +271,7 @@ public class BundledDataTest
 	@Test
 	public void panelDrawsEveryTaskAndMonster() throws Exception
 	{
-		drawEverything(CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+		drawEverything(CollectionLog.Snapshot.EMPTY, DropItems.EMPTY, null);
 	}
 
 	@Test
@@ -280,8 +280,68 @@ public class BundledDataTest
 		// Some drops logged and the log searched, so all three log states are drawn
 		Set<String> logged = new HashSet<>(Arrays.asList("abyssal whip", "dragon chainbody", "vorki"));
 		CollectionLog.Snapshot clog = new CollectionLog.Snapshot(logged, true);
-		drawEverything(clog, stubItems(ItemValueMode.GRAND_EXCHANGE));
-		drawEverything(CollectionLog.Snapshot.EMPTY, stubItems(ItemValueMode.HIGH_ALCHEMY));
+		drawEverything(clog, stubItems(ItemValueMode.GRAND_EXCHANGE), null);
+		drawEverything(CollectionLog.Snapshot.EMPTY, stubItems(ItemValueMode.HIGH_ALCHEMY), null);
+		// With task progress under the kill count, before and after the first timed kill
+		drawEverything(clog, stubItems(ItemValueMode.GRAND_EXCHANGE), progress(true).view(50, ItemValueMode.GRAND_EXCHANGE));
+		drawEverything(clog, stubItems(ItemValueMode.HIGH_ALCHEMY), TaskProgress.start(1, "Bears", 50, 120, 0)
+			.view(50, ItemValueMode.HIGH_ALCHEMY));
+	}
+
+	/** A task tracked from 52 left: two kills a minute apart, XP, a superior and some loot. */
+	private static TaskProgress progress(boolean withExtras)
+	{
+		TaskProgress p = TaskProgress.start(42, "Abyssal demons", 52, 120, 0);
+		p.kill(1, 60_000);
+		p.kill(1, 120_000);
+		if (withExtras)
+		{
+			p.addXp(3000);
+			p.addSuperior();
+			p.addLoot(1_200_000, 400_000);
+		}
+		return p;
+	}
+
+	@Test
+	public void progressShowsUnderTheKillCount() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Abyssal demons");
+		assertNotNull(t);
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			TaskProgress p = progress(true);
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				stubItems(ItemValueMode.GRAND_EXCHANGE), p.view(50, ItemValueMode.GRAND_EXCHANGE));
+			assertTrue(containsText(panel, "60 kills/hr · about 50 min left"));
+			assertTrue(containsText(panel, "3,000 slayer XP this task"));
+			assertTrue(containsText(panel, "1 superior this task"));
+			assertTrue(containsText(panel, "Loot: 1.2M (GE value)"));
+			assertTrue(containsText(panel, "Counted from 52 left"));
+
+			// The loot value follows the "Item value" setting
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				stubItems(ItemValueMode.HIGH_ALCHEMY), p.view(50, ItemValueMode.HIGH_ALCHEMY));
+			assertTrue(containsText(panel, "Loot: 400K (High alch)"));
+
+			// Before a timed kill there is no rate yet
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				stubItems(ItemValueMode.GRAND_EXCHANGE), TaskProgress.start(42, "Abyssal demons", 120, 120, 0)
+					.view(120, ItemValueMode.GRAND_EXCHANGE));
+			assertTrue(containsText(panel, "Kill rate shows after your next kill"));
+			assertTrue(!containsText(panel, "Counted from"));
+
+			// Finished: the summary stays until the next task
+			p.finish(180_000);
+			panel.showNoTask(p.summary(ItemValueMode.GRAND_EXCHANGE));
+			assertTrue(containsText(panel, "Task done: 52 Abyssal demons in 3 min, 1 superior, 1.2M loot."));
+			assertTrue(containsText(panel, "No task right now"));
+			panel.showNoTask(null);
+			assertTrue(!containsText(panel, "Task done"));
+		});
 	}
 
 	@Test
@@ -325,7 +385,7 @@ public class BundledDataTest
 		assertTrue(tips.get(0), tips.get(0).contains("In your collection log"));
 	}
 
-	private void drawEverything(CollectionLog.Snapshot clog, DropItems items) throws Exception
+	private void drawEverything(CollectionLog.Snapshot clog, DropItems items, TaskProgress.View progress) throws Exception
 	{
 		List<String> problems = Collections.synchronizedList(new ArrayList<>());
 		SwingUtilities.invokeAndWait(() ->
@@ -337,7 +397,7 @@ public class BundledDataTest
 				List<LocationOption> locations = LocationPicker.pick(t, 5, 0, true);
 				try
 				{
-					panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, clog, items);
+					panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, clog, items, progress);
 					List<String> names = new ArrayList<>();
 					for (SlayerLocationData.Variant v : Variants.listed(t.getVariants(), locations))
 					{

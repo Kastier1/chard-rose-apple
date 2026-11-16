@@ -63,6 +63,15 @@ with no exact match, like "Crawling hand (item)", falls back to the name without
 `ItemValues` values coins and platinum tokens at face value in both modes. Drops now carry an optional `quantity`
 [low, high] from the generator. Not yet seen in a logged-in client.
 
+**Update 2026-11-16 (issue #26):** task progress under the kill count: kills/hr, time left, slayer XP, superiors
+and loot value (both GE and high alch are summed, so the "Item value" setting can change mid-task). Pure logic in
+`TaskProgress` (numbers, summary text) and `TaskProgressTracker` (kill / new task / finish / relog decisions);
+`SlayerHelper` feeds it varps, `StatChanged`, the superior game message and `NpcLootReceived` (task monster =
+core Slayer targets or `TaskMonsters` name match). Saved as JSON per account in config group
+`combatgearorganizerprogress`, key `task`, once per tick when changed. A count drop to 0 of more than 15 is taken
+as a cancel, not a finish. Loot is taken for 10 ticks after the last kill; the optional chat summary goes out then.
+Not yet seen in a logged-in client.
+
 Still open from the review: boss/Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping), and the scope doc's wrong required items.
 
@@ -101,6 +110,7 @@ src/main/java/com/combatgearorganizer/
     ShortestPathBridge.java        PluginMessage("shortestpath", "path"/"clear") wrapper
     SlayerLocationData.java        Gson model of the bundled JSON
     SlayerTaskState.java, SlayerMasters.java, LocationOption.java
+    TaskProgress.java, TaskProgressTracker.java, TaskMonsters.java  task kill rate, XP, superiors, loot, summary
 src/main/resources/com/combatgearorganizer/slayer/
   slayer_locations.json            generated, 102 tasks / 592 places / 488 with map points
   slayer_icon.png                  enchanted gem icon
