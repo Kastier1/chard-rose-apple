@@ -26,8 +26,9 @@ public enum CarryItem
 		ItemID.SLAYER_HERB_SACK_SILK, ItemID.SLAYER_HERB_SACK_SILK_OPEN),
 	SEED_BOX("seedBox", "Seed box", "Seeds",
 		ItemID.SEED_BOX, ItemID.SEED_BOX, ItemID.SEED_BOX_OPEN),
+	// The gem sack is a gem bag combined with a gem tote, and holds the same gems
 	GEM_BAG("gemBag", "Gem bag", "Uncut gems",
-		ItemID.GEM_BAG, ItemID.GEM_BAG, ItemID.GEM_BAG_OPEN),
+		ItemID.GEM_BAG, ItemID.GEM_BAG, ItemID.GEM_BAG_OPEN, ItemID.GEM_SACK, ItemID.GEM_SACK_OPEN),
 	SOUL_BEARER("soulBearer", "Soul bearer", "Ensouled heads",
 		ItemID.ARCEUUS_SOULBEARER, ItemID.ARCEUUS_SOULBEARER),
 	LOOTING_BAG(null, "Looting bag", "Holds loot in the Wilderness",
@@ -40,7 +41,7 @@ public enum CarryItem
 	private final String reason;
 	/** The picture to show. */
 	private final int iconId;
-	/** Every version that counts as carrying it (open, silklined, necklace). */
+	/** Every version that counts as carrying it (open, silklined, necklace, gem sack). */
 	private final int[] itemIds;
 
 	CarryItem(String key, String displayName, String reason, int iconId, int... itemIds)

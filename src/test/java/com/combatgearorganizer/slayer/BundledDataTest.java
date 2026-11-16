@@ -381,11 +381,18 @@ public class BundledDataTest
 			assertNotNull("ash sanctifier suggested", ash);
 			assertTrue(!ash.isCarried());
 			tips.add(ash.getToolTipText());
+			// Ash sanctifier, herb sack, gem bag and soul bearer; no looting bag outside the Wilderness
+			assertNull(carrySlot(panel, CarryItem.LOOTING_BAG));
+			assertTrue(containsText(panel, "4 worth bringing"));
 			panel.updateCarried(java.util.EnumSet.of(CarryItem.ASH_SANCTIFIER));
 			ash = carrySlot(panel, CarryItem.ASH_SANCTIFIER);
 			assertTrue(ash.isCarried());
+			assertTrue(!carrySlot(panel, CarryItem.HERB_SACK).isCarried());
 			tips.add(ash.getToolTipText());
-			assertTrue(containsText(panel, "All with you") || containsText(panel, "worth bringing"));
+			assertTrue(containsText(panel, "3 worth bringing"));
+			panel.updateCarried(java.util.EnumSet.of(CarryItem.ASH_SANCTIFIER, CarryItem.HERB_SACK, CarryItem.GEM_BAG,
+				CarryItem.SOUL_BEARER));
+			assertTrue(containsText(panel, "All with you"));
 
 			// Switching the setting changes every value shown, with no restart
 			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, clog, stubItems(ItemValueMode.HIGH_ALCHEMY));
@@ -400,7 +407,7 @@ public class BundledDataTest
 			}
 		});
 		assertTrue(tips.get(0), tips.get(0).contains("Drop rate: 1/512"));
-		assertTrue(tips.get(1), tips.get(1).contains("Not in your inventory"));
+		assertTrue(tips.get(1), tips.get(1).contains("Not in your inventory or worn"));
 		assertTrue(tips.get(2), tips.get(2).contains("You have one with you"));
 		assertTrue(tips.get(0), tips.get(0).contains("GE value: 1.2M"));
 		assertTrue(tips.get(0), tips.get(0).contains("In your collection log"));

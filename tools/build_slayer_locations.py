@@ -156,42 +156,62 @@ def chance(rarity):
 
 # Items worth carrying for a monster, from the OSRS Wiki's rules for each (see carry_for).
 DEMONIC_ASHES = {"fiendish ashes", "vile ashes", "malicious ashes", "abyssal ashes", "infernal ashes"}
+# The ash sanctifier works on every demon's ashes except Skotizo's
+NO_ASH_SANCTIFIER = {"Skotizo"}
+# The herb sack holds the fifteen grimy normal herbs only (not cleaned, noted or quest herbs)
+SACK_HERBS = ("guam leaf", "marrentill", "tarromin", "harralander", "ranarr weed", "toadflax", "irit leaf", "avantoe",
+              "kwuarm", "huasca", "snapdragon", "cadantine", "lantadyme", "dwarf weed", "torstol")
+# Things named like seeds that aren't farming seeds, so don't go in the seed box
+NOT_SEEDS = {"crystal teleport seed", "enhanced crystal teleport seed"}
 CARRY_BY_DROP = [
     # key, what the drop looks like, suggest when it drops at least once in this many kills
-    ("herbSack", re.compile(r"^grimy ", re.IGNORECASE), 30),
-    ("seedBox", re.compile(r"\b(seeds?|spores?)$", re.IGNORECASE), 30),
+    ("herbSack", re.compile(r"^grimy (%s)$" % "|".join(SACK_HERBS), re.IGNORECASE), 30),
+    # Seeds and spores (mushroom, seaweed); plural "seeds" are ammunition like adamant seeds
+    ("seedBox", re.compile(r"\b(seed|spore)$", re.IGNORECASE), 30),
     ("gemBag", re.compile(r"^uncut (sapphire|emerald|ruby|diamond|dragonstone)$", re.IGNORECASE), 50),
     ("soulBearer", re.compile(r"^ensouled .* head$", re.IGNORECASE), 50),
 ]
 CARRY_KEYS = {"bonecrusher", "ashSanctifier", "ectoplasmator"} | {k for k, _, _ in CARRY_BY_DROP}
 
 
+def drop_rate(rows, pattern):
+    """About how many matching drops per kill, for the best version in one page's drop rows.
+
+    A page with several versions (e.g. the Catacombs one) lists each version's table one after another, so a new table
+    starts when the first matching item comes round again; the tables are rated on their own, not added together.
+    """
+    best, rate, seen, first = 0.0, 0.0, set(), None
+    for item, rarity, *_ in rows:
+        if not pattern.search(item) or item.lower() in NOT_SEEDS:
+            continue
+        if item == first:
+            best, rate, seen = max(best, rate), 0.0, set()
+        first = first or item
+        if (item, rarity) not in seen:
+            seen.add((item, rarity))
+            rate += 1.0 if rarity == "Always" else (chance(rarity) or 0)
+    return max(best, rate)
+
+
 def carry_for(pages, wiki):
     """Prayer and storage items worth an inventory slot for this monster.
 
-    Bonecrusher: always drops bones (it doesn't crush tertiary or noted bones). Ash sanctifier: always drops demonic
-    ashes. Ectoplasmator: the monster is spectral. Sacks and bags: the drop turns up often enough, counted per kill
-    from the drop table. A monster with several pages counts its best page, so versions aren't added together.
+    Bonecrusher: always drops bones (the data counts no tertiary bones: long and curved bones aren't "...bones").
+    Ash sanctifier: always drops demonic ashes, except Skotizo. Ectoplasmator: the monster is spectral. Sacks and bags:
+    the drop turns up often enough, counted per kill from the drop table. A monster with several pages or versions
+    counts its best one, so versions aren't added together.
     """
-    drops = [(p, r) for p in sorted(pages) for r in wiki.get("drops", {}).get(p, [])]
-    always = {r[0].lower() for _, r in drops if r[1] == "Always"}
+    drops = [r for p in sorted(pages) for r in wiki.get("drops", {}).get(p, [])]
+    always = {r[0].lower() for r in drops if r[1] == "Always"}
     carry = []
     if any(i.endswith("bones") for i in always):
         carry.append({"item": "bonecrusher"})
-    if always & DEMONIC_ASHES:
+    if always & DEMONIC_ASHES and not set(pages) & NO_ASH_SANCTIFIER:
         carry.append({"item": "ashSanctifier"})
     if any("spectral" in wiki.get("attributes", {}).get(p, []) for p in pages):
         carry.append({"item": "ectoplasmator"})
     for key, pattern, every in CARRY_BY_DROP:
-        best = 0.0
-        for page in sorted(pages):
-            seen = set()
-            rate = 0.0
-            for item, rarity, *_ in wiki.get("drops", {}).get(page, []):
-                if pattern.search(item) and (item, rarity) not in seen:
-                    seen.add((item, rarity))
-                    rate += 1.0 if rarity == "Always" else (chance(rarity) or 0)
-            best = max(best, rate)
+        best = max((drop_rate(wiki.get("drops", {}).get(p, []), pattern) for p in pages), default=0.0)
         if best >= 1 / every:
             carry.append({"item": key, "per": max(1, round(1 / best))})
     return carry

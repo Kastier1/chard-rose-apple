@@ -636,7 +636,7 @@ public class SlayerPanel extends JPanel
 		{
 			boolean have = carried.contains(s.getItem());
 			missing += have ? 0 : 1;
-			String tip = "<html>" + escape(s.getTooltip()) + "<br>" + (have ? "You have one with you" : "Not in your inventory") + "</html>";
+			String tip = "<html>" + escape(s.getTooltip()) + "<br>" + (have ? "You have one with you" : "Not in your inventory or worn") + "</html>";
 			CarrySlot slot = new CarrySlot(s.getItem(), have, tip);
 			icons.setItem(slot, s.getItem().getIconId(), 1);
 			slots.add(slot);

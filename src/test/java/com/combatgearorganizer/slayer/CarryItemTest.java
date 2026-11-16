@@ -70,6 +70,38 @@ public class CarryItemTest
 	}
 
 	@Test
+	public void skotizoGetsNoAshSanctifier()
+	{
+		// The wiki: the sanctifier works on demonic ashes from every demon except Skotizo
+		assertFalse(suggested(variant("Greater demons", "Skotizo"), false).contains(CarryItem.ASH_SANCTIFIER));
+		assertFalse(suggested(variant("Black demons", "Skotizo"), false).contains(CarryItem.ASH_SANCTIFIER));
+	}
+
+	private static Integer per(SlayerLocationData.Variant v, String key)
+	{
+		return v.getCarry().stream().filter(c -> c.getItem().equals(key)).map(SlayerLocationData.Carry::getPer)
+			.findFirst().orElse(null);
+	}
+
+	@Test
+	public void versionsOfAMonsterAreNotAddedTogether()
+	{
+		// The abyssal demon page has two drop tables, each about 1 herb in 4 to 7 kills; added together they'd be 1 in 2
+		Integer herbs = per(variant("Abyssal demons", "Abyssal demon"), "herbSack");
+		assertNotNull(herbs);
+		assertTrue("herbs 1 in " + herbs, herbs >= 3);
+		// Each of the ankou's tables drops herbs about 1 in 33 kills: not worth a slot
+		assertFalse(suggested(variant("Ankou", "Ankou"), false).contains(CarryItem.HERB_SACK));
+	}
+
+	@Test
+	public void crystalTeleportSeedsDontNeedTheSeedBox()
+	{
+		// Elves drop crystal teleport seeds 25/128, but they aren't farming seeds
+		assertFalse(suggested(variant("Elves", "Elf Archer"), false).contains(CarryItem.SEED_BOX));
+	}
+
+	@Test
 	public void spectralBoneDroppersGetBoth()
 	{
 		Set<CarryItem> ankou = suggested(variant("Ankou", "Ankou"), false);
@@ -118,6 +150,8 @@ public class CarryItemTest
 		assertEquals(EnumSet.of(CarryItem.BONECRUSHER, CarryItem.HERB_SACK),
 			CarryItem.carried(Arrays.asList(ItemID.BONECRUSHER_NECKLACE, ItemID.SLAYER_HERB_SACK_SILK_OPEN, 995)));
 		assertEquals(EnumSet.of(CarryItem.SEED_BOX), CarryItem.carried(Collections.singletonList(ItemID.SEED_BOX_OPEN)));
+		// A gem sack holds the gem bag's gems
+		assertEquals(EnumSet.of(CarryItem.GEM_BAG), CarryItem.carried(Collections.singletonList(ItemID.GEM_SACK_OPEN)));
 		assertTrue(CarryItem.carried(Collections.emptyList()).isEmpty());
 	}
 }

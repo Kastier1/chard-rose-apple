@@ -117,13 +117,14 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
 - **Carry** suggests the prayer and storage items worth an inventory slot for the selected monster, and ticks the
   ones you already have in your inventory or worn:
   - **Bonecrusher** (or bonecrusher necklace) when it always drops bones
-  - **Ash sanctifier** when it always drops demonic ashes
+  - **Ash sanctifier** when it always drops demonic ashes (not Skotizo, whose ashes it doesn't take)
   - **Ectoplasmator** when it's spectral
   - **Herb sack** and **seed box** when herbs or seeds drop about once in 30 kills or more often
-  - **Gem bag** and **soul bearer** when uncut gems or ensouled heads drop about once in 50 kills or more often
+  - **Gem bag** (or gem sack) and **soul bearer** when uncut gems or ensouled heads drop about once in 50 kills or
+    more often
   - **Looting bag** when every place shown is in the Wilderness
 
-  Hover an item to see why, for example "Herb sack: Grimy herbs drop about 1 in 2 kills". The rules follow the
+  Hover an item to see why, for example "Herb sack: Grimy herbs drop about 1 in 4 kills". The rules follow the
   OSRS Wiki, and the rates come from the bundled drop tables.
 - **Task progress** shows under the kill count: kills per hour, about how long is left, slayer XP gained, superiors
   seen and the value of what task monsters dropped. Kills are counted from the task count going down, so any way of
