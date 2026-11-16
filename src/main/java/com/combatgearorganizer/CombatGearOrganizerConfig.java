@@ -18,6 +18,13 @@ public interface CombatGearOrganizerConfig extends Config
 	)
 	String slayerSection = "slayer";
 
+	@ConfigSection(
+		name = "Item values",
+		description = "How the plugin values items, such as drops in the slayer panel",
+		position = 20
+	)
+	String valuesSection = "values";
+
 	@ConfigItem(
 		keyName = "tagName",
 		name = "Bank tag",
@@ -97,5 +104,18 @@ public interface CombatGearOrganizerConfig extends Config
 	default boolean showWildernessLocations()
 	{
 		return false;
+	}
+
+	@ConfigItem(
+		keyName = "itemValue",
+		name = "Item value",
+		description = "Grand Exchange: what the item sells for. High alchemy: the coins you get for casting High Level Alchemy on it.<br>"
+			+ "Used for every value the plugin shows.",
+		section = valuesSection,
+		position = 21
+	)
+	default ItemValueMode itemValue()
+	{
+		return ItemValueMode.GRAND_EXCHANGE;
 	}
 }

@@ -55,6 +55,12 @@ honest status, and they test in their own RuneLite.
   non-Wilderness places; name from data by id first (no stale tick), "Task #id" / "Boss task" instead of "No task";
   Mortimer's negative modifier; panel race; Shortest Path warning refreshes on PluginChanged; Spria.
 
+**Update 2026-11-16 (issue #25):** drops in the slayer panel are item pictures with tooltips (rate, on-task rate,
+stack, collection log status, value). Collection log status shows by shape: tick = logged, faded + dashed outline =
+missing. New "Item value" setting (Grand Exchange / High alchemy); get values only through `ItemValues`. Drop names
+become item ids via `ItemNameResolver`, which walks every item definition 2,500 per tick after login. Drops now carry
+an optional `quantity` [low, high] from the generator.
+
 Still open from the review: boss/Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping), and the scope doc's wrong required items.
 
@@ -83,8 +89,11 @@ src/main/java/com/combatgearorganizer/
   GearClassifier.java              item bonuses -> style (MELEE/RANGED/MAGIC/PRAYER/UTILITY) + power score
   LayoutBuilder.java               classified items -> Bank Tags layout array (8 columns, -1 = empty)
   GearSlot.java, GearStyle.java, GearItem.java, Bonuses.java, Grouping.java
+  ItemValues.java, ItemValueMode.java  the one place to ask what an item is worth (GE or high alch setting)
   slayer/
     SlayerHelper.java              reads the task each game tick, drives the panel, routes via Shortest Path
+    ItemNameResolver.java          drop name -> item id, by walking item definitions a batch per tick
+    DropItems.java, DropSlot.java  drop ids/values handed to the panel; one item picture with its log status
     SlayerPanel.java               Swing side panel
     LocationPicker.java            which locations to show (Konar area, Krystilia Wilderness list, Wilderness toggle)
     ShortestPathBridge.java        PluginMessage("shortestpath", "path"/"clear") wrapper

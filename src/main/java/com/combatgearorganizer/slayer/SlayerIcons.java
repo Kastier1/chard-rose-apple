@@ -17,7 +17,8 @@ import net.runelite.client.util.ImageUtil;
 
 /**
  * Puts game icons on the panel's labels: skill icons for combat styles, the prayer book's protection prayers and
- * rune icons for elemental weaknesses. Sprites and item images load in the background and appear when ready.
+ * rune icons for elemental weaknesses, and item pictures for drops. Sprites and item images load in the background
+ * and appear when ready.
  */
 @Singleton
 public class SlayerIcons
@@ -66,6 +67,20 @@ public class SlayerIcons
 		AsyncBufferedImage image = itemManager.getImage(ItemID.MCANNONBALL);
 		image.onLoaded(() -> SwingUtilities.invokeLater(() ->
 			label.setIcon(scaled(allowed ? image : ImageUtil.grayscaleImage(image)))));
+	}
+
+	/**
+	 * A drop's item picture at full size, with the stack number when there can be more than one. Appears when the
+	 * game has drawn it; the label keeps its size until then.
+	 */
+	public void setItem(JLabel label, int itemId, int quantity)
+	{
+		AsyncBufferedImage image = itemManager.getImage(itemId, Math.max(1, quantity), quantity > 1);
+		image.onLoaded(() -> SwingUtilities.invokeLater(() ->
+		{
+			label.setIcon(new ImageIcon(image));
+			label.repaint();
+		}));
 	}
 
 	private static ImageIcon scaled(BufferedImage image)

@@ -1,6 +1,8 @@
 package com.combatgearorganizer.slayer;
 
 import com.combatgearorganizer.CombatGearOrganizerConfig;
+import com.combatgearorganizer.ItemValueMode;
+import com.combatgearorganizer.ItemValues;
 import com.google.gson.Gson;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -10,6 +12,7 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -20,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.ItemComposition;
 import net.runelite.api.Player;
 import net.runelite.api.Quest;
 import net.runelite.api.QuestState;
@@ -38,6 +42,7 @@ import net.runelite.client.chat.ChatMessageBuilder;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.events.PluginMessage;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.slayer.SlayerPluginService;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
@@ -57,6 +62,8 @@ public class SlayerHelper
 	private static final String MAP_MARKER_NAME = "Slayer location";
 	/** SLAYER_TARGET value for a boss task; the boss itself is in another varbit. */
 	private static final int BOSS_TASK_ID = 98;
+	/** Item definitions to read per tick while matching drop names to items. The game has about 30,000. */
+	private static final int ITEM_SCAN_BATCH = 2500;
 
 	@Inject
 	private Client client;
@@ -91,6 +98,12 @@ public class SlayerHelper
 	@Inject
 	private ChatMessageManager chatMessageManager;
 
+	@Inject
+	private ItemManager itemManager;
+
+	@Inject
+	private ItemValues itemValues;
+
 	private SlayerLocationData data;
 	private volatile SlayerPanel panel;
 	private NavigationButton navButton;
@@ -99,20 +112,27 @@ public class SlayerHelper
 	private SlayerLocationData.TaskEntry lastTask;
 	private boolean lastShortestPathAvailable;
 	private int lastClogVersion = -1;
+	private ItemNameResolver itemNames;
+	private boolean lastItemNamesDone;
 
 	public void start()
 	{
 		data = loadData();
 		List<String> dropNames = new ArrayList<>();
+		List<String> itemNamesWanted = new ArrayList<>();
 		for (SlayerLocationData.TaskEntry t : data.getTasks())
 		{
 			for (SlayerLocationData.Variant v : t.getVariants())
 			{
 				v.getDrops().forEach(d -> dropNames.add(d.getItem()));
+				itemNamesWanted.addAll(v.getAlwaysDrops());
 			}
 		}
+		itemNamesWanted.addAll(dropNames);
 		collectionLog.watch(dropNames);
 		lastClogVersion = -1;
+		itemNames = new ItemNameResolver(itemNamesWanted);
+		lastItemNamesDone = false;
 		BufferedImage icon = ImageUtil.loadImageResource(SlayerHelper.class, "slayer_icon.png");
 		markerImage = ImageUtil.resizeImage(icon, 24, 21);
 		panel = new SlayerPanel(icons, this::go, this::goNearest, this::clearPath);
@@ -145,6 +165,7 @@ public class SlayerHelper
 	public void onGameTick()
 	{
 		collectionLog.onGameTick();
+		scanItemNames();
 		Player player = client.getLocalPlayer();
 		shortestPath.onGameTick(player != null ? player.getWorldLocation() : null);
 		refresh(false);
@@ -199,12 +220,15 @@ public class SlayerHelper
 		boolean spAvailable = shortestPath.isAvailable();
 		collectionLog.ensureLoaded();
 		int clogVersion = collectionLog.getVersion();
-		if (!force && state.equals(lastState) && spAvailable == lastShortestPathAvailable && clogVersion == lastClogVersion)
+		boolean namesDone = itemNames.isDone();
+		if (!force && state.equals(lastState) && spAvailable == lastShortestPathAvailable && clogVersion == lastClogVersion
+			&& namesDone == lastItemNamesDone)
 		{
 			return;
 		}
 		lastShortestPathAvailable = spAvailable;
 		lastClogVersion = clogVersion;
+		lastItemNamesDone = namesDone;
 		CollectionLog.Snapshot clog = collectionLog.snapshot();
 
 		boolean taskEnded = lastState.hasTask() && !state.hasTask();
@@ -232,7 +256,55 @@ public class SlayerHelper
 				this::missingRequirements);
 		SlayerLocationData.TaskInfo info = task != null ? task.getInfo() : null;
 		List<SlayerLocationData.Variant> variants = task != null ? task.getVariants() : Collections.emptyList();
-		SwingUtilities.invokeLater(() -> p.showTask(state, info, variants, locations, task != null, spAvailable, clog));
+		DropItems items = dropItems(variants);
+		SwingUtilities.invokeLater(() -> p.showTask(state, info, variants, locations, task != null, spAvailable, clog, items));
+	}
+
+	/** Reads the next batch of item definitions to match drop names to items. Client thread only. */
+	private void scanItemNames()
+	{
+		if (itemNames == null || itemNames.isDone() || client.getGameState() != GameState.LOGGED_IN)
+		{
+			return;
+		}
+		itemNames.step(client.getItemCount(), ITEM_SCAN_BATCH, id ->
+		{
+			try
+			{
+				ItemComposition c = itemManager.getItemComposition(id);
+				return new ItemNameResolver.Candidate(c.getName(), c.getNote() != -1, c.getPlaceholderTemplateId() != -1,
+					c.isTradeable());
+			}
+			catch (RuntimeException e)
+			{
+				log.debug("Couldn't read item {}", id, e);
+				return null;
+			}
+		});
+	}
+
+	/** Item ids and values for the task's drops, with the current "Item value" setting. Client thread only. */
+	private DropItems dropItems(List<SlayerLocationData.Variant> variants)
+	{
+		ItemValueMode mode = itemValues.mode();
+		Map<String, DropItems.Item> items = new HashMap<>();
+		for (SlayerLocationData.Variant v : variants)
+		{
+			List<String> names = new ArrayList<>(v.getAlwaysDrops());
+			v.getDrops().forEach(d -> names.add(d.getItem()));
+			for (String name : names)
+			{
+				String key = CollectionLog.key(name);
+				int id = itemNames.idOf(name);
+				if (id < 0 || items.containsKey(key))
+				{
+					continue;
+				}
+				boolean tradeable = itemManager.getItemComposition(id).isTradeable();
+				items.put(key, new DropItems.Item(id, itemValues.value(mode, id), tradeable));
+			}
+		}
+		return new DropItems(Collections.unmodifiableMap(items), mode);
 	}
 
 	private SlayerTaskState readTask()

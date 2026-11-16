@@ -72,6 +72,8 @@ public class SlayerLocationData
 		private String rarity;
 		/** The better rate while on task, when there is one. */
 		private String onTask;
+		/** [lowest, highest] stack size when it can be more than one; null for one. */
+		private int[] quantity;
 		/** True when it's a collection log slot. */
 		private boolean clog;
 	}

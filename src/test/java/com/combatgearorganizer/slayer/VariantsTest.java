@@ -119,4 +119,40 @@ public class VariantsTest
 		assertNotNull(dogs);
 		assertEquals(Collections.singletonList("Jackal"), Variants.at(dogs.getVariants(), "west_of_nardah"));
 	}
+
+	private static SlayerLocationData.Drop drop(String item)
+	{
+		SlayerLocationData.Drop d = new SlayerLocationData.Drop();
+		d.setItem(item);
+		d.setRarity("1/100");
+		return d;
+	}
+
+	private static List<String> items(List<SlayerLocationData.Drop> drops)
+	{
+		return drops.stream().map(SlayerLocationData.Drop::getItem).collect(Collectors.toList());
+	}
+
+	@Test
+	public void notableDropsOfSuperiorsAndBosses()
+	{
+		Variant demon = variant("Abyssal demon", 150, false, "slayer_tower");
+		demon.setDrops(Arrays.asList(drop("Abyssal whip"), drop("Ancient shard")));
+		Variant greater = variant("Greater abyssal demon", 4200, true);
+		greater.setSuperiorOf("abyssal demon");
+		greater.setDrops(Arrays.asList(drop("Abyssal whip"), drop("Imbued heart"), drop("ancient shard")));
+		Variant sire = variant("Abyssal Sire", 478, false);
+		sire.setBoss(true);
+		sire.setDrops(Collections.singletonList(drop("Unsired")));
+		List<Variant> all = Arrays.asList(demon, greater, sire);
+
+		assertEquals(Collections.singletonList("Imbued heart"), items(Variants.notableDrops(all, greater)));
+		assertEquals(Collections.singletonList("Unsired"), items(Variants.notableDrops(all, sire)));
+
+		// Nothing of its own: show what it drops anyway
+		greater.setDrops(Collections.singletonList(drop("Abyssal whip")));
+		assertEquals(Collections.singletonList("Abyssal whip"), items(Variants.notableDrops(all, greater)));
+		// Base monster not in the list
+		assertEquals(1, Variants.notableDrops(Collections.singletonList(greater), greater).size());
+	}
 }

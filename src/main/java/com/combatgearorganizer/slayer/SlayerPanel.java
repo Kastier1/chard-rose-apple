@@ -1,5 +1,6 @@
 package com.combatgearorganizer.slayer;
 
+import com.combatgearorganizer.ItemValueMode;
 import com.combatgearorganizer.slayer.SlayerLocationData.Variant;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -53,6 +54,7 @@ public class SlayerPanel extends PluginPanel
 	private static final int PREVIEW_LENGTH = 22;
 	private static final int CAPTION_WIDTH = 46;
 	private static final Color WEAKNESS_COLOR = new Color(255, 200, 90);
+	private static final Color MISSING_TEXT_COLOR = new Color(255, 152, 31);
 
 	private final Consumer<LocationOption> onGo;
 	private final Consumer<List<LocationOption>> onGoNearest;
@@ -67,6 +69,8 @@ public class SlayerPanel extends PluginPanel
 		"\\b(crush|stab|slash|\\w*bane|weapons?)\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
 	private static final Color SUPERIOR_COLOR = new Color(255, 120, 60);
 	private static final ImageIcon SUPERIOR_STAR = starIcon();
+	/** Item pictures per row: five 36px slots fit the card. */
+	private static final int GRID_COLUMNS = 5;
 
 	private final JPanel content = new JPanel();
 	private final SlayerIcons icons;
@@ -80,6 +84,7 @@ public class SlayerPanel extends PluginPanel
 	private String variantTaskName;
 	private List<Variant> currentVariants = Collections.emptyList();
 	private CollectionLog.Snapshot currentClog = CollectionLog.Snapshot.EMPTY;
+	private DropItems currentItems = DropItems.EMPTY;
 
 	public SlayerPanel(SlayerIcons icons, Consumer<LocationOption> onGo, Consumer<List<LocationOption>> onGoNearest,
 		Runnable onClear)
@@ -108,10 +113,12 @@ public class SlayerPanel extends PluginPanel
 	}
 
 	public void showTask(SlayerTaskState task, SlayerLocationData.TaskInfo info, List<Variant> variants,
-		List<LocationOption> locations, boolean hasData, boolean shortestPathAvailable, CollectionLog.Snapshot clog)
+		List<LocationOption> locations, boolean hasData, boolean shortestPathAvailable, CollectionLog.Snapshot clog,
+		DropItems items)
 	{
-		lastShow = () -> showTask(task, info, variants, locations, hasData, shortestPathAvailable, clog);
+		lastShow = () -> showTask(task, info, variants, locations, hasData, shortestPathAvailable, clog, items);
 		currentClog = clog;
+		currentItems = items != null ? items : DropItems.EMPTY;
 
 		// Keep the player's chosen variant while the task lasts; pick a sensible one for a new task
 		if (task.getTaskId() != variantTaskId || !Objects.equals(task.getName(), variantTaskName))
@@ -339,6 +346,10 @@ public class SlayerPanel extends PluginPanel
 			sup.add(Box.createHorizontalStrut(4));
 			sup.add(textChip(String.join(", ", parts), ColorScheme.LIGHT_GRAY_COLOR));
 			card.add(factRow("Superior", sup));
+			for (Variant s : superiors)
+			{
+				addNotableDrops(card, currentVariants, s);
+			}
 		}
 
 		addDrops(card, selected);
@@ -356,8 +367,8 @@ public class SlayerPanel extends PluginPanel
 	}
 
 	/**
-	 * The selected monster's rare drops, rarest first, then what it always drops. Drops missing from the player's
-	 * collection log are orange.
+	 * The selected monster's rare drops, rarest first, then what it always drops, as a grid of item pictures. Hover
+	 * one for its rate, collection log status and value. Drops that couldn't be matched to an item are listed as text.
 	 */
 	private void addDrops(JPanel card, Variant selected)
 	{
@@ -365,34 +376,163 @@ public class SlayerPanel extends PluginPanel
 		{
 			return;
 		}
+		List<JComponent> slots = new ArrayList<>();
 		StringBuilder html = new StringBuilder();
-		boolean anyMissing = false;
+		int missing = 0;
+		boolean anyClog = false;
 		for (SlayerLocationData.Drop d : selected.getDrops())
 		{
 			CollectionLog.Status status = currentClog.status(d.getItem(), d.isClog());
-			anyMissing |= status == CollectionLog.Status.MISSING;
+			anyClog |= d.isClog();
+			if (status == CollectionLog.Status.MISSING)
+			{
+				missing++;
+			}
+			DropItems.Item item = currentItems.get(d.getItem());
+			if (item != null)
+			{
+				slots.add(dropSlot(item, d.getQuantity(), status, dropTooltip(d, null, status, item, currentItems.getMode(),
+					currentClog.isSynced())));
+				continue;
+			}
+			// No item to show: the old text line, with the log status spelled out as well as coloured
 			String color = status == CollectionLog.Status.MISSING ? "#ff981f"
 				: status == CollectionLog.Status.LOGGED ? "#9a9a9a" : "#c8c8c8";
 			String rate = d.getOnTask() != null ? d.getOnTask() + " on task" : d.getRarity();
 			html.append("<font color='").append(color).append("'>").append(escape(d.getItem())).append("</font> ")
-				.append("<font color='#8a8a8a'>").append(escape(rate)).append("</font><br>");
+				.append("<font color='#8a8a8a'>").append(escape(rate))
+				.append(status == CollectionLog.Status.MISSING ? ", not logged" : "").append("</font><br>");
 		}
-		if (!selected.getAlwaysDrops().isEmpty())
+		List<String> alwaysText = new ArrayList<>();
+		for (String always : selected.getAlwaysDrops())
 		{
-			html.append("<font color='#8a8a8a'>Always: ").append(escape(String.join(", ", selected.getAlwaysDrops())))
-				.append("</font>");
+			DropItems.Item item = currentItems.get(always);
+			if (item != null)
+			{
+				slots.add(dropSlot(item, null, CollectionLog.Status.UNKNOWN,
+					alwaysTooltip(always, item, currentItems.getMode())));
+			}
+			else
+			{
+				alwaysText.add(always);
+			}
 		}
-		JLabel drops = textChip(html.toString(), ColorScheme.LIGHT_GRAY_COLOR);
-		drops.setToolTipText(!currentClog.isSynced()
-			? "Open your collection log and search it to highlight drops you haven't logged"
-			: anyMissing ? "Orange: not in your collection log yet" : null);
-		card.add(factRow("Drops", drops));
+		if (!alwaysText.isEmpty())
+		{
+			html.append("<font color='#8a8a8a'>Always: ").append(escape(String.join(", ", alwaysText))).append("</font>");
+		}
 
-		if (!currentClog.isSynced() && selected.getDrops().stream().anyMatch(SlayerLocationData.Drop::isClog))
+		String summary = slots.isEmpty() ? null
+			: currentClog.isSynced() && anyClog
+				? (missing == 0 ? "All logged" : missing + " not logged yet")
+				: "Hover for rate and value";
+		if (summary != null)
 		{
-			card.add(factRow("", textChip("Open your collection log and search it once to highlight drops you're missing.",
+			JLabel head = textChip(escape(summary), missing > 0 ? MISSING_TEXT_COLOR : ColorScheme.LIGHT_GRAY_COLOR);
+			head.setToolTipText(missing > 0 ? "Faded with a dashed outline: not in your collection log yet" : null);
+			card.add(factRow("Drops", head));
+			card.add(dropGrid(slots));
+		}
+		if (html.length() > 0)
+		{
+			JLabel drops = textChip(html.toString(), ColorScheme.LIGHT_GRAY_COLOR);
+			drops.setToolTipText(!currentClog.isSynced()
+				? "Open your collection log and search it to highlight drops you haven't logged"
+				: missing > 0 ? "Orange: not in your collection log yet" : null);
+			card.add(factRow(summary == null ? "Drops" : "", drops));
+		}
+
+		if (!currentClog.isSynced() && anyClog)
+		{
+			card.add(factRow("", textChip("Open your collection log and search it once to mark drops you're missing.",
 				ColorScheme.MEDIUM_GRAY_COLOR)));
 		}
+	}
+
+	/** A superior's or boss's notable drops as a row of item pictures, when any of them match an item. */
+	private void addNotableDrops(JPanel card, List<Variant> variants, Variant v)
+	{
+		List<JComponent> slots = new ArrayList<>();
+		for (SlayerLocationData.Drop d : Variants.notableDrops(variants, v))
+		{
+			DropItems.Item item = currentItems.get(d.getItem());
+			if (item == null)
+			{
+				continue;
+			}
+			CollectionLog.Status status = currentClog.status(d.getItem(), d.isClog());
+			slots.add(dropSlot(item, d.getQuantity(), status, dropTooltip(d, v.getName(), status, item,
+				currentItems.getMode(), currentClog.isSynced())));
+			if (slots.size() == GRID_COLUMNS)
+			{
+				break;
+			}
+		}
+		if (!slots.isEmpty())
+		{
+			card.add(dropGrid(slots));
+		}
+	}
+
+	private DropSlot dropSlot(DropItems.Item item, int[] quantity, CollectionLog.Status status, String tooltip)
+	{
+		DropSlot slot = new DropSlot(status, tooltip);
+		int stack = quantity != null && quantity.length > 0 ? quantity[0] : 1;
+		icons.setItem(slot, item.getItemId(), stack);
+		return slot;
+	}
+
+	private static JPanel dropGrid(List<JComponent> slots)
+	{
+		JPanel grid = new JPanel(new GridLayout(0, GRID_COLUMNS, 0, 2));
+		grid.setOpaque(false);
+		grid.setAlignmentX(LEFT_ALIGNMENT);
+		grid.setBorder(new EmptyBorder(2, 0, 2, 0));
+		slots.forEach(grid::add);
+		// Keep empty cells after a short last row: the grid is always five pictures wide
+		for (int i = slots.size(); i < GRID_COLUMNS; i++)
+		{
+			grid.add(Box.createRigidArea(new Dimension(DropSlot.WIDTH, DropSlot.HEIGHT)));
+		}
+		grid.setMaximumSize(grid.getPreferredSize());
+		return grid;
+	}
+
+	/**
+	 * A drop's tooltip: its name, where it comes from (for a superior or boss), the drop rate, the better rate on
+	 * task, the stack size, the collection log status and the value.
+	 */
+	static String dropTooltip(SlayerLocationData.Drop d, String from, CollectionLog.Status status, DropItems.Item item,
+		ItemValueMode mode, boolean clogSynced)
+	{
+		StringBuilder tip = new StringBuilder("<html><b>").append(escape(d.getItem())).append("</b>");
+		if (from != null)
+		{
+			tip.append("<br>From ").append(escape(from));
+		}
+		tip.append("<br>Drop rate: ").append(escape(nullToEmpty(d.getRarity())));
+		if (d.getOnTask() != null && !d.getOnTask().equals(d.getRarity()))
+		{
+			tip.append("<br>On task: ").append(escape(d.getOnTask()));
+		}
+		String quantity = DropItems.quantityText(d.getQuantity());
+		if (quantity != null)
+		{
+			tip.append("<br>Stack: ").append(quantity);
+		}
+		if (d.isClog())
+		{
+			tip.append("<br>").append(status == CollectionLog.Status.LOGGED ? "In your collection log"
+				: status == CollectionLog.Status.MISSING ? "Not in your collection log yet"
+				: clogSynced ? "Collection log item" : "Collection log item. Search your log to check it.");
+		}
+		tip.append("<br>").append(DropItems.valueText(mode, item, d.getQuantity()));
+		return tip.append("</html>").toString();
+	}
+
+	static String alwaysTooltip(String name, DropItems.Item item, ItemValueMode mode)
+	{
+		return "<html><b>" + escape(name) + "</b><br>Always dropped<br>" + DropItems.valueText(mode, item, null) + "</html>";
 	}
 
 	/** "Can spawn a superior: Shadow Wyrm (3,520 XP)", or null when it has none. */
@@ -428,20 +568,20 @@ public class SlayerPanel extends PluginPanel
 		addSpecials(card, "Boss", variants, Variant::isBoss);
 	}
 
-	/** "Superior: Shadow Wyrm 3,520 XP, Magma strykewyrm 3,655 XP" */
-	private static void addSpecials(JPanel card, String caption, List<Variant> variants, Predicate<Variant> which)
+	/** "Superior: Shadow Wyrm 3,520 XP", one row per monster, each with its notable drops as pictures. */
+	private void addSpecials(JPanel card, String caption, List<Variant> variants, Predicate<Variant> which)
 	{
-		List<String> parts = new ArrayList<>();
+		boolean first = true;
 		for (Variant v : variants)
 		{
-			if (which.test(v))
+			if (!which.test(v))
 			{
-				parts.add(escape(v.getName()) + " <font color='#ffc85a'>" + Variants.xpEach(v.getXp()) + " XP</font>");
+				continue;
 			}
-		}
-		if (!parts.isEmpty())
-		{
-			card.add(factRow(caption, textChip(String.join(", ", parts), ColorScheme.LIGHT_GRAY_COLOR)));
+			card.add(factRow(first ? caption : "", textChip(escape(v.getName()) + " <font color='#ffc85a'>"
+				+ Variants.xpEach(v.getXp()) + " XP</font>", ColorScheme.LIGHT_GRAY_COLOR)));
+			addNotableDrops(card, variants, v);
+			first = false;
 		}
 	}
 

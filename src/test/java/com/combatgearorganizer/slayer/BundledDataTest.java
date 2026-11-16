@@ -6,9 +6,15 @@ import java.awt.Container;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
+import com.combatgearorganizer.ItemValueMode;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import javax.swing.JLabel;
 import javax.swing.SwingUtilities;
 import net.runelite.api.Quest;
@@ -189,6 +195,58 @@ public class BundledDataTest
 		public void setCannon(JLabel label, boolean allowed)
 		{
 		}
+
+		@Override
+		public void setItem(JLabel label, int itemId, int quantity)
+		{
+		}
+	}
+
+	/** Every drop name in the data matched to a made-up item, as the resolver does in game. */
+	private static DropItems stubItems(ItemValueMode mode)
+	{
+		Map<String, DropItems.Item> items = new HashMap<>();
+		int id = 1;
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			for (SlayerLocationData.Variant v : t.getVariants())
+			{
+				List<String> names = new ArrayList<>(v.getAlwaysDrops());
+				v.getDrops().forEach(d -> names.add(d.getItem()));
+				for (String name : names)
+				{
+					// Every fourth item untradeable, every tenth worth nothing
+					int n = id++;
+					long value = n % 10 == 0 ? 0 : mode == ItemValueMode.GRAND_EXCHANGE ? n * 1000L : n * 600L;
+					items.putIfAbsent(CollectionLog.key(name), new DropItems.Item(n, value, n % 4 != 0));
+				}
+			}
+		}
+		// Known values for the acceptance checks
+		items.put("abyssal whip", new DropItems.Item(4151, 1_200_000, true));
+		return new DropItems(items, mode);
+	}
+
+	private static List<DropSlot> slots(Component c)
+	{
+		List<DropSlot> out = new ArrayList<>();
+		if (c instanceof DropSlot)
+		{
+			out.add((DropSlot) c);
+		}
+		if (c instanceof Container)
+		{
+			for (Component child : ((Container) c).getComponents())
+			{
+				out.addAll(slots(child));
+			}
+		}
+		return out;
+	}
+
+	private static DropSlot slotFor(Component c, String item)
+	{
+		return slots(c).stream().filter(s -> s.getToolTipText().contains("<b>" + item + "</b>")).findFirst().orElse(null);
 	}
 
 	private static boolean containsText(Component c, String text)
@@ -213,6 +271,62 @@ public class BundledDataTest
 	@Test
 	public void panelDrawsEveryTaskAndMonster() throws Exception
 	{
+		drawEverything(CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+	}
+
+	@Test
+	public void panelDrawsEveryTaskAndMonsterWithItemPictures() throws Exception
+	{
+		// Some drops logged and the log searched, so all three log states are drawn
+		Set<String> logged = new HashSet<>(Arrays.asList("abyssal whip", "dragon chainbody", "vorki"));
+		CollectionLog.Snapshot clog = new CollectionLog.Snapshot(logged, true);
+		drawEverything(clog, stubItems(ItemValueMode.GRAND_EXCHANGE));
+		drawEverything(CollectionLog.Snapshot.EMPTY, stubItems(ItemValueMode.HIGH_ALCHEMY));
+	}
+
+	@Test
+	public void abyssalDemonDropsArePicturesWithRateAndValue() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Abyssal demons");
+		assertNotNull(t);
+		CollectionLog.Snapshot clog = new CollectionLog.Snapshot(Collections.singleton("abyssal whip"), true);
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		List<String> tips = new ArrayList<>();
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, clog, stubItems(ItemValueMode.GRAND_EXCHANGE));
+			assertEquals("Abyssal demon", panel.getSelectedVariant());
+			DropSlot whip = slotFor(panel, "Abyssal whip");
+			assertNotNull("whip shown as a picture", whip);
+			tips.add(whip.getToolTipText());
+			assertEquals(CollectionLog.Status.LOGGED, whip.getStatus());
+			DropSlot dagger = slotFor(panel, "Abyssal dagger");
+			assertNotNull(dagger);
+			assertEquals(CollectionLog.Status.MISSING, dagger.getStatus());
+			assertTrue(dagger.getToolTipText().contains("Not in your collection log yet"));
+			assertTrue(containsText(panel, "7 not logged yet"));
+			// The superior's own extras sit next to it
+			assertNotNull(slotFor(panel, "Imbued heart"));
+			// And the boss's
+			assertNotNull(slotFor(panel, "Unsired"));
+
+			// Switching the setting changes every value shown, with no restart
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, clog, stubItems(ItemValueMode.HIGH_ALCHEMY));
+			for (DropSlot s : slots(panel))
+			{
+				assertTrue(s.getToolTipText(), s.getToolTipText().contains("High alch: "));
+				assertTrue(s.getToolTipText(), !s.getToolTipText().contains("GE value"));
+			}
+		});
+		assertTrue(tips.get(0), tips.get(0).contains("Drop rate: 1/512"));
+		assertTrue(tips.get(0), tips.get(0).contains("GE value: 1.2M"));
+		assertTrue(tips.get(0), tips.get(0).contains("In your collection log"));
+	}
+
+	private void drawEverything(CollectionLog.Snapshot clog, DropItems items) throws Exception
+	{
 		List<String> problems = Collections.synchronizedList(new ArrayList<>());
 		SwingUtilities.invokeAndWait(() ->
 		{
@@ -223,7 +337,7 @@ public class BundledDataTest
 				List<LocationOption> locations = LocationPicker.pick(t, 5, 0, true);
 				try
 				{
-					panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY);
+					panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, clog, items);
 					List<String> names = new ArrayList<>();
 					for (SlayerLocationData.Variant v : Variants.listed(t.getVariants(), locations))
 					{

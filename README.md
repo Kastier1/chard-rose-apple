@@ -57,6 +57,8 @@ change your mind. Items you untag drop out of the layout on the next sort.
 - **Blank row between sections** – visual spacing between groups
 - **Re-organize after ::gearadd** (off by default)
 - **Organize hotkey**
+- **Item value** – value items at their Grand Exchange price (default) or their high alchemy value. Used for
+  every value the plugin shows; changing it updates the panel straight away.
 
 ## How items are classified
 
@@ -85,6 +87,10 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
 - Places whose quests or skills you don't have yet are listed last with what you need, and **Go to nearest**
   skips them.
 - Some places have no map point in the data yet; their Go button is greyed out.
+- **Drops** show as item pictures, with the stack size when a drop comes in a pile. Hover one for its drop rate,
+  the better rate on task, whether it's in your collection log, and its value. Drops you haven't logged are faded
+  with a dashed outline; logged ones have a small tick. Superiors and bosses show their notable drops the same way.
+  Drop names are matched to items in the first few seconds after you log in; until then they show as text.
 
 The task is read from the game and RuneLite's built-in Slayer plugin. Location data is bundled (see NOTICE.md),
 so the panel makes no network requests.

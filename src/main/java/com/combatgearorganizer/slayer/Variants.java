@@ -69,6 +69,28 @@ public final class Variants
 			.collect(Collectors.toList());
 	}
 
+	/**
+	 * The drops worth showing next to a superior or boss: a superior's own extras (what its normal monster doesn't
+	 * drop), or a boss's drops. Falls back to all of a superior's drops when they're all shared.
+	 */
+	public static List<SlayerLocationData.Drop> notableDrops(List<Variant> variants, Variant v)
+	{
+		if (!v.isSuperior() || v.getSuperiorOf() == null)
+		{
+			return v.getDrops();
+		}
+		Variant base = variants.stream().filter(b -> b.getName().equalsIgnoreCase(v.getSuperiorOf())).findFirst().orElse(null);
+		if (base == null)
+		{
+			return v.getDrops();
+		}
+		List<String> baseItems = base.getDrops().stream().map(d -> d.getItem().toLowerCase(Locale.ROOT)).collect(Collectors.toList());
+		List<SlayerLocationData.Drop> own = v.getDrops().stream()
+			.filter(d -> !baseItems.contains(d.getItem().toLowerCase(Locale.ROOT)))
+			.collect(Collectors.toList());
+		return own.isEmpty() ? v.getDrops() : own;
+	}
+
 	public static Variant byName(List<Variant> variants, String name)
 	{
 		if (name == null)

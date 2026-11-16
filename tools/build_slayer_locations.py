@@ -181,6 +181,9 @@ def drops_for(pages, wiki, generic):
             if p is None or (not in_log and min(p, p_alt or p) > RARE):
                 continue
             drop = {"item": item, "rarity": rarity}
+            # Stack size, for the icon's number: only when it can be more than one
+            if isinstance(high, (int, float)) and high > 1:
+                drop["quantity"] = [int(low or high), int(high)]
             if in_log:
                 drop["clog"] = True
             if p_alt and p_alt > p:
