@@ -494,9 +494,13 @@ public class CombatGearOrganizerPlugin extends Plugin
 		final String summary = OrganizeSummary.of(items);
 		// What the menu entry does: show the new layout without saving it, then ask
 		bankTags.openTag(tag, preview);
+		// Picking an option closes the menu too, and the close can run before or after the option (the close is
+		// queued on the client thread; a click runs the option at once, a key press queues it after the close)
+		final boolean[] answered = {false};
 		chatboxPanelManager.openTextMenuInput("Tab laid out using the '" + AUTO_LAYOUT_NAME + "' layout.")
 			.option("1. Keep", () -> clientThread.invoke(() ->
 			{
+				answered[0] = true;
 				layoutManager.saveLayout(preview);
 				// The plugin's own undo is for an older layout now
 				undoLayouts.remove(tag);
@@ -505,13 +509,21 @@ public class CombatGearOrganizerPlugin extends Plugin
 			}))
 			.option("2. Undo", () -> clientThread.invoke(() ->
 			{
+				answered[0] = true;
 				bankTags.openTag(tag, saved);
 				panelNote("Put back the old layout of '" + tag + "'.", null);
 			}))
 			.onClose(() ->
 			{
 				bankSearch.layoutBank();
-				panelNote("Not kept. Open the tab again to see your old layout.", null);
+				// Runs after a queued option, so only a menu closed without an answer (e.g. Escape) gets this note
+				clientThread.invokeLater(() ->
+				{
+					if (!answered[0])
+					{
+						panelNote("Not kept. Open the tab again to see your old layout.", null);
+					}
+				});
 			})
 			.build();
 		panelNote("Pick Keep or Undo in the chat box.", summary);

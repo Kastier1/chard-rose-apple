@@ -30,7 +30,8 @@ public class OrganizerPanel extends PluginPanel
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		final JPanel display = new JPanel();
+		// BorderLayout so the section gets the panel's full width, not just its preferred width
+		final JPanel display = new JPanel(new BorderLayout());
 		display.setOpaque(false);
 		tabs = new MaterialTabGroup(display);
 		tabs.setBorder(new EmptyBorder(0, 0, 8, 0));

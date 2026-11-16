@@ -150,6 +150,11 @@ public class CombatTabPanelTest
 				Grouping.BY_STYLE);
 			assertEquals("range", box.getSelectedItem());
 			assertTrue(events.isEmpty());
+
+			// Clearing the box doesn't clear the setting; the box shows the tag again
+			box.setSelectedItem("  ");
+			assertTrue(events.isEmpty());
+			assertEquals("range", box.getSelectedItem());
 		});
 	}
 

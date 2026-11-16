@@ -230,7 +230,24 @@ public class CombatTabPanel extends JPanel
 			return;
 		}
 		final String text = typed != null ? typed.toString().trim() : "";
-		if (!text.isEmpty() && !text.equalsIgnoreCase(status.getTag()))
+		if (text.isEmpty())
+		{
+			// A cleared box doesn't clear the setting: show the tag that's still set
+			if (!status.getTag().isEmpty())
+			{
+				updating = true;
+				try
+				{
+					tagBox.setSelectedItem(status.getTag());
+				}
+				finally
+				{
+					updating = false;
+				}
+			}
+			return;
+		}
+		if (!text.equalsIgnoreCase(status.getTag()))
 		{
 			onTagChosen.accept(text);
 		}

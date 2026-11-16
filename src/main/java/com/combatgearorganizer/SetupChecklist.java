@@ -34,7 +34,7 @@ public final class SetupChecklist
 		steps.add(step(BANK_TAGS, s.isBankTagsOn(),
 			"Click the wrench at the top of the side bar, search for Bank Tags and turn it on."));
 		steps.add(step(TAB_EXISTS, s.hasTagTab(),
-			"In your bank, click New tag tab (the + below the tabs on the left) and name it \"" + tab
+			"In your bank, click the + above the tag tabs on the left (New tag tab) and name it \"" + tab
 				+ "\". Or pick one of your tabs above."));
 		steps.add(step(HAS_GEAR, s.getTaggedItems() > 0,
 			"Wear your gear and click Add worn gear. Or drag items from your bank onto the \"" + tab + "\" tab."));
