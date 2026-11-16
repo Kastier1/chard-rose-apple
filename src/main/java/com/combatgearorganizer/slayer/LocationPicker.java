@@ -74,9 +74,10 @@ public final class LocationPicker
 			options.add(toOption(l, recommended, includeWilderness ? OnlyWilderness.BOTH : OnlyWilderness.NO, checker));
 		}
 
-		// Recommended first, then places the player can get into; otherwise keep the data's order (stable sort)
-		options.sort(Comparator.comparing((LocationOption o) -> !o.isRecommended())
-			.thenComparing(o -> !o.isAccessible()));
+		// Places the player can get into first, the recommended one at the top of those; otherwise keep the data's
+		// order (stable sort). A recommended place behind a quest the player hasn't done goes below the open ones.
+		options.sort(Comparator.comparing((LocationOption o) -> !o.isAccessible())
+			.thenComparing(o -> !o.isRecommended()));
 		return options;
 	}
 

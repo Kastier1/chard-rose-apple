@@ -25,6 +25,79 @@ public class SlayerLocationData
 		private List<LocationEntry> locations = Collections.emptyList();
 		/** Krystilia's Wilderness-only list for this task. */
 		private List<LocationEntry> wildernessLocations = Collections.emptyList();
+		/** What to bring and expect. Null when the data has none. */
+		private TaskInfo info;
+		/** Each monster that counts for the task, lowest level first; superiors and bosses last. */
+		private List<Variant> variants = Collections.emptyList();
+	}
+
+	/** One monster that counts for a task, from the OSRS Wiki. Several game versions are folded into ranges. */
+	@Data
+	public static class Variant
+	{
+		private String name;
+		/** [lowest, highest] combat level. */
+		private int[] level;
+		/** [lowest, highest] hitpoints; may be null. */
+		private int[] hitpoints;
+		/** [lowest, highest] slayer XP per kill. */
+		private double[] xp;
+		/** "melee", "ranged" and/or "magic": how the monster attacks you. */
+		private List<String> attackTypes = Collections.emptyList();
+		/** Null when the wiki lists no elemental weakness. */
+		private VariantWeakness weakness;
+		/** Superiors only appear while on task, by chance. */
+		private boolean superior;
+		private boolean boss;
+		/** Keys of the task's places where this monster spawns. */
+		private List<String> places = Collections.emptyList();
+		/** For a superior: the name of the monster it replaces. */
+		private String superiorOf;
+		/** Its own rare drops, rarest first. */
+		private List<Drop> drops = Collections.emptyList();
+		/** What it always drops worth naming: bones or ashes. */
+		private List<String> alwaysDrops = Collections.emptyList();
+
+		public boolean isRegular()
+		{
+			return !superior && !boss;
+		}
+	}
+
+	@Data
+	public static class Drop
+	{
+		private String item;
+		/** "1/10,000" */
+		private String rarity;
+		/** The better rate while on task, when there is one. */
+		private String onTask;
+		/** True when it's a collection log slot. */
+		private boolean clog;
+	}
+
+	@Data
+	public static class VariantWeakness
+	{
+		/** "air", "water", "earth" or "fire". */
+		private String element;
+		private Integer percent;
+	}
+
+	/** Short notes from the wiki, as written in the source data. Any field can be null. */
+	@Data
+	public static class TaskInfo
+	{
+		/** Prose, e.g. "Air spells: 30 to 50% elemental weakness." */
+		private String weakness;
+		/** Short form when the weakness is elemental, e.g. "Air 30 to 50%". */
+		private String elementalWeakness;
+		/** Style to kill them with, e.g. "Melee or magic (barrage)". */
+		private String style;
+		private String monsterAttackStyle;
+		private String protectionPrayer;
+		private String requiredItems;
+		private String notableDrops;
 	}
 
 	@Data

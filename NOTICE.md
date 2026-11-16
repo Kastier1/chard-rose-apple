@@ -11,6 +11,11 @@ whose content is licensed under [CC BY-NC-SA 3.0](https://creativecommons.org/li
 ([wiki licensing terms](https://meta.weirdgloop.org/w/Licensing)), and from RuneLite's world map data
 ([RuneLite](https://github.com/runelite/runelite), BSD 2-Clause).
 
+Each task's monster variants (combat level, hitpoints, slayer XP, attack styles, elemental weakness,
+superior and boss flags, notable drops, and spawn points used to match variants to places) come straight from the
+OSRS Wiki's Bucket API, fetched by `tools/fetch_wiki_monsters.py` into `tools/data/wiki_monsters.json`
+and merged in by the build script. That wiki data is also CC BY-NC-SA 3.0.
+
 The generated data file is shared under the same CC BY-NC-SA 3.0 licence. The plugin's code is not
 derived from it and is licensed separately (BSD 2-Clause, see LICENSE). A copy of these notices, with
 Slayer Sensei's full licence, ships inside the plugin jar as `META-INF/NOTICE.txt`.

@@ -19,6 +19,8 @@ import javax.swing.SwingUtilities;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.ScriptPreFired;
 import net.runelite.api.Quest;
 import net.runelite.api.QuestState;
 import net.runelite.api.Skill;
@@ -70,6 +72,12 @@ public class SlayerHelper
 	@Inject
 	private Gson gson;
 
+	@Inject
+	private SlayerIcons icons;
+
+	@Inject
+	private CollectionLog collectionLog;
+
 	private SlayerLocationData data;
 	private volatile SlayerPanel panel;
 	private NavigationButton navButton;
@@ -77,13 +85,24 @@ public class SlayerHelper
 	private SlayerTaskState lastState = SlayerTaskState.NONE;
 	private SlayerLocationData.TaskEntry lastTask;
 	private boolean lastShortestPathAvailable;
+	private int lastClogVersion = -1;
 
 	public void start()
 	{
 		data = loadData();
+		List<String> dropNames = new ArrayList<>();
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			for (SlayerLocationData.Variant v : t.getVariants())
+			{
+				v.getDrops().forEach(d -> dropNames.add(d.getItem()));
+			}
+		}
+		collectionLog.watch(dropNames);
+		lastClogVersion = -1;
 		BufferedImage icon = ImageUtil.loadImageResource(SlayerHelper.class, "slayer_icon.png");
 		markerImage = ImageUtil.resizeImage(icon, 24, 21);
-		panel = new SlayerPanel(this::go, this::goNearest, this::clearPath);
+		panel = new SlayerPanel(icons, this::go, this::goNearest, this::clearPath);
 		navButton = NavigationButton.builder()
 			.tooltip("Slayer task")
 			.icon(ImageUtil.resizeImage(icon, 18, 16))
@@ -106,7 +125,18 @@ public class SlayerHelper
 	/** Call every game tick on the client thread. Cheap when nothing changed. */
 	public void onGameTick()
 	{
+		collectionLog.flush();
 		refresh(false);
+	}
+
+	public void onScriptPreFired(ScriptPreFired event)
+	{
+		collectionLog.onScriptPreFired(event);
+	}
+
+	public void onChatMessage(ChatMessage event)
+	{
+		collectionLog.onChatMessage(event);
 	}
 
 	/** Call when the plugin's config changes, or when a plugin (such as Shortest Path) is turned on or off. */
@@ -126,11 +156,15 @@ public class SlayerHelper
 
 		SlayerTaskState state = readTask();
 		boolean spAvailable = shortestPath.isAvailable();
-		if (!force && state.equals(lastState) && spAvailable == lastShortestPathAvailable)
+		collectionLog.ensureLoaded();
+		int clogVersion = collectionLog.getVersion();
+		if (!force && state.equals(lastState) && spAvailable == lastShortestPathAvailable && clogVersion == lastClogVersion)
 		{
 			return;
 		}
 		lastShortestPathAvailable = spAvailable;
+		lastClogVersion = clogVersion;
+		CollectionLog.Snapshot clog = collectionLog.snapshot();
 
 		boolean taskEnded = lastState.hasTask() && !state.hasTask();
 		boolean taskChanged = state.getTaskId() != lastState.getTaskId() || !Objects.equals(state.getName(), lastState.getName());
@@ -153,7 +187,9 @@ public class SlayerHelper
 			? Collections.emptyList()
 			: LocationPicker.pick(task, state.getMasterId(), state.getKonarAreaId(), config.showWildernessLocations(),
 				this::missingRequirements);
-		SwingUtilities.invokeLater(() -> p.showTask(state, locations, task != null, spAvailable));
+		SlayerLocationData.TaskInfo info = task != null ? task.getInfo() : null;
+		List<SlayerLocationData.Variant> variants = task != null ? task.getVariants() : Collections.emptyList();
+		SwingUtilities.invokeLater(() -> p.showTask(state, info, variants, locations, task != null, spAvailable, clog));
 	}
 
 	private SlayerTaskState readTask()

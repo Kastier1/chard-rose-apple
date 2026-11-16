@@ -5,7 +5,10 @@ slayer_areas.json in Slayer Sensei (https://github.com/rRexhepi/slayer-sensei).
 That data was written from the Old School RuneScape Wiki
 (https://oldschool.runescape.wiki), licensed CC BY-NC-SA 3.0
 (https://creativecommons.org/licenses/by-nc-sa/3.0/), and from RuneLite world
-map data (BSD 2-Clause). The data file is shared under CC BY-NC-SA 3.0.
+map data (BSD 2-Clause). Monster variant facts (levels, hitpoints, slayer XP,
+attack styles, weaknesses, drops, spawn points) come directly from the Old School
+RuneScape Wiki, also CC BY-NC-SA 3.0. The data file is shared under
+CC BY-NC-SA 3.0.
 
 Slayer Sensei's licence:
 

@@ -2,17 +2,36 @@ package com.combatgearorganizer.slayer;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Graphics2D;
 import java.awt.GridLayout;
+import java.awt.RenderingHints;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
+import com.combatgearorganizer.slayer.SlayerLocationData.Variant;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.function.Predicate;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
@@ -28,15 +47,42 @@ public class SlayerPanel extends PluginPanel
 	/** Text widths in px, so labels wrap inside the 225px panel. */
 	private static final int FULL_TEXT_WIDTH = 165;
 	private static final int CARD_TEXT_WIDTH = 135;
+	private static final int INFO_TEXT_WIDTH = 140;
+	private static final int PREVIEW_LENGTH = 22;
+	private static final int CAPTION_WIDTH = 46;
+	private static final Color WEAKNESS_COLOR = new Color(255, 200, 90);
 
 	private final Consumer<LocationOption> onGo;
 	private final Consumer<List<LocationOption>> onGoNearest;
 	private final Runnable onClear;
 
-	private final JPanel content = new JPanel();
+	private static final ImageIcon ARROW_CLOSED = arrowIcon(false);
+	private static final ImageIcon ARROW_OPEN = arrowIcon(true);
+	private static final java.util.regex.Pattern ELEMENT_NOTE = java.util.regex.Pattern.compile(
+		"\\b(air|water|earth|fire)\\b[^.;]*\\b(spells?|weak(ness)?|%)|\\b(weak(ness)?|elemental)\\b[^.;]*\\b(air|water|earth|fire)\\b",
+		java.util.regex.Pattern.CASE_INSENSITIVE);
+	private static final java.util.regex.Pattern WEAPON_NOTE = java.util.regex.Pattern.compile(
+		"\\b(crush|stab|slash|\\w*bane|weapons?)\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
+	private static final Color SUPERIOR_COLOR = new Color(255, 120, 60);
+	private static final ImageIcon SUPERIOR_STAR = starIcon();
 
-	public SlayerPanel(Consumer<LocationOption> onGo, Consumer<List<LocationOption>> onGoNearest, Runnable onClear)
+	private final JPanel content = new JPanel();
+	private final SlayerIcons icons;
+	/** Drawer titles the player has opened; kept while the plugin runs. */
+	private final Set<String> openDrawers = new HashSet<>();
+	/** Last task shown, so a drawer click can redraw it. */
+	private Runnable lastShow;
+	/** The variant the player is looking at, by name, and which task it belongs to. */
+	private String selectedVariant;
+	private int variantTaskId = -1;
+	private String variantTaskName;
+	private List<Variant> currentVariants = Collections.emptyList();
+	private CollectionLog.Snapshot currentClog = CollectionLog.Snapshot.EMPTY;
+
+	public SlayerPanel(SlayerIcons icons, Consumer<LocationOption> onGo, Consumer<List<LocationOption>> onGoNearest,
+		Runnable onClear)
 	{
+		this.icons = icons;
 		this.onGo = onGo;
 		this.onGoNearest = onGoNearest;
 		this.onClear = onClear;
@@ -51,6 +97,7 @@ public class SlayerPanel extends PluginPanel
 
 	public void showNoTask()
 	{
+		lastShow = null;
 		content.removeAll();
 		content.add(title("Slayer task"));
 		content.add(Box.createVerticalStrut(8));
@@ -58,8 +105,27 @@ public class SlayerPanel extends PluginPanel
 		refresh();
 	}
 
-	public void showTask(SlayerTaskState task, List<LocationOption> locations, boolean hasData, boolean shortestPathAvailable)
+	public void showTask(SlayerTaskState task, SlayerLocationData.TaskInfo info, List<Variant> variants,
+		List<LocationOption> locations, boolean hasData, boolean shortestPathAvailable, CollectionLog.Snapshot clog)
 	{
+		lastShow = () -> showTask(task, info, variants, locations, hasData, shortestPathAvailable, clog);
+		currentClog = clog;
+
+		// Keep the player's chosen variant while the task lasts; pick a sensible one for a new task
+		if (task.getTaskId() != variantTaskId || !Objects.equals(task.getName(), variantTaskName))
+		{
+			variantTaskId = task.getTaskId();
+			variantTaskName = task.getName();
+			selectedVariant = null;
+		}
+		currentVariants = variants;
+		Variant selected = Variants.byName(Variants.listed(variants, locations), selectedVariant);
+		if (selected == null)
+		{
+			selected = Variants.pickDefault(variants, locations);
+		}
+		selectedVariant = selected == null ? null : selected.getName();
+
 		content.removeAll();
 		content.add(title(task.getName()));
 
@@ -78,6 +144,13 @@ public class SlayerPanel extends PluginPanel
 			content.add(line("From " + master, ColorScheme.LIGHT_GRAY_COLOR));
 		}
 		content.add(Box.createVerticalStrut(8));
+
+		boolean variantWeaknesses = Variants.regular(variants).stream().anyMatch(v -> v.getWeakness() != null);
+		if (info != null || selected != null)
+		{
+			content.add(taskCard(info, !variantWeaknesses, variants, selected, locations, task.getRemaining()));
+			content.add(Box.createVerticalStrut(8));
+		}
 
 		if (!hasData)
 		{
@@ -132,6 +205,603 @@ public class SlayerPanel extends PluginPanel
 		refresh();
 	}
 
+	/**
+	 * Everything about the task in one card: the monster table, how to fight it (task-wide), the selected monster's
+	 * facts, the longer notes as drawers, then superiors and bosses. Either half may be missing.
+	 */
+	private JPanel taskCard(SlayerLocationData.TaskInfo info, boolean showTaskWeakness, List<Variant> variants,
+		Variant selected, List<LocationOption> locations, int left)
+	{
+		JPanel card = new JPanel();
+		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+		card.setAlignmentX(LEFT_ALIGNMENT);
+		card.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		card.setBorder(new EmptyBorder(6, 8, 6, 8));
+
+		if (selected != null)
+		{
+			addVariantTable(card, variants, selected, locations, left);
+		}
+		if (info != null)
+		{
+			card.add(chips(info, TaskTags.from(info), showTaskWeakness));
+		}
+		if (selected != null)
+		{
+			addVariantDetails(card, selected, locations, left);
+		}
+		if (info != null)
+		{
+			// With a monster selected, its own drops replace the task-wide drop notes
+			addInfoDrawers(card, info, selected);
+		}
+		if (selected != null)
+		{
+			addVariantExtras(card, variants, locations);
+		}
+		return card;
+	}
+
+	/** The task's monsters as a clickable table: level, XP each, XP for the kills left. */
+	private void addVariantTable(JPanel card, List<Variant> variants, Variant selected, List<LocationOption> locations, int left)
+	{
+		card.add(variantRow("Monster", null, "Lvl", "XP", "Task", ColorScheme.MEDIUM_GRAY_COLOR, false, null));
+		for (Variant v : Variants.listed(variants, locations))
+		{
+			boolean on = v == selected;
+			card.add(variantRow(v.getName(), superiorTip(variants, v), Variants.range(v.getLevel()), Variants.xpEach(v.getXp()),
+				Variants.xpTotalShort(v.getXp(), left), on ? Color.WHITE : ColorScheme.LIGHT_GRAY_COLOR, on,
+				on ? null : () ->
+				{
+					selectedVariant = v.getName();
+					redraw();
+				}));
+		}
+		card.add(Box.createVerticalStrut(6));
+	}
+
+	/** The selected monster's own facts, under the task-wide attack and prayer rows. */
+	private void addVariantDetails(JPanel card, Variant selected, List<LocationOption> locations, int left)
+	{
+		String hp = selected.getHitpoints() != null ? " · " + Variants.range(selected.getHitpoints()) + " HP" : "";
+		card.add(factRow("Level", textChip(Variants.range(selected.getLevel()) + hp, Color.WHITE)));
+
+		if (!selected.getAttackTypes().isEmpty())
+		{
+			JPanel hits = iconRow();
+			String tip = "Attacks with " + String.join(", ", selected.getAttackTypes());
+			for (int i = 0; i < selected.getAttackTypes().size(); i++)
+			{
+				if (i > 0)
+				{
+					hits.add(chipText("+", ColorScheme.MEDIUM_GRAY_COLOR, tip));
+				}
+				TaskTags.Style style = TaskTags.Style.valueOf(selected.getAttackTypes().get(i).toUpperCase(Locale.ROOT));
+				JLabel icon = chipIcon(tip);
+				icons.setStyle(icon, style);
+				hits.add(icon);
+			}
+			card.add(factRow("Hits with", hits));
+		}
+
+		if (selected.getWeakness() != null)
+		{
+			JPanel weak = iconRow();
+			TaskTags.Element element = TaskTags.Element.valueOf(selected.getWeakness().getElement().toUpperCase(Locale.ROOT));
+			String tip = "Weak to " + selected.getWeakness().getElement() + " spells";
+			JLabel icon = chipIcon(tip);
+			icons.setElement(icon, element);
+			weak.add(icon);
+			if (selected.getWeakness().getPercent() != null)
+			{
+				weak.add(chipText(selected.getWeakness().getPercent() + "%", WEAKNESS_COLOR, tip));
+			}
+			card.add(factRow("Weak to", weak));
+		}
+
+		card.add(factRow("XP", textChip("<font color='#ffc85a'>" + Variants.xpEach(selected.getXp()) + "</font> each · "
+			+ "<font color='#ffc85a'>" + Variants.xpTotal(selected.getXp(), left) + "</font> for " + left + " left",
+			ColorScheme.LIGHT_GRAY_COLOR)));
+
+		List<Variant> superiors = Variants.superiorsOf(currentVariants, selected);
+		if (!superiors.isEmpty())
+		{
+			JPanel sup = iconRow();
+			List<String> parts = new ArrayList<>();
+			for (Variant s : superiors)
+			{
+				parts.add(escape(s.getName()) + " <font color='#ffc85a'>" + Variants.xpEach(s.getXp()) + " XP</font>");
+			}
+			JLabel star = new JLabel(SUPERIOR_STAR);
+			star.setToolTipText("Can spawn while on task with the Bigger and Badder unlock");
+			sup.add(star);
+			sup.add(Box.createHorizontalStrut(4));
+			sup.add(textChip(String.join(", ", parts), ColorScheme.LIGHT_GRAY_COLOR));
+			card.add(factRow("Superior", sup));
+		}
+
+		addDrops(card, selected);
+
+		List<String> where = new ArrayList<>();
+		for (LocationOption l : locations)
+		{
+			if (selected.getPlaces().contains(l.getKey()))
+			{
+				where.add(escape(l.getLabel()));
+			}
+		}
+		card.add(factRow("Found at", textChip(where.isEmpty() ? "Not matched to a listed place" : String.join(", ", where),
+			where.isEmpty() ? ColorScheme.MEDIUM_GRAY_COLOR : ColorScheme.LIGHT_GRAY_COLOR)));
+	}
+
+	/**
+	 * The selected monster's rare drops, rarest first, then what it always drops. Drops missing from the player's
+	 * collection log are orange.
+	 */
+	private void addDrops(JPanel card, Variant selected)
+	{
+		if (selected.getDrops().isEmpty() && selected.getAlwaysDrops().isEmpty())
+		{
+			return;
+		}
+		StringBuilder html = new StringBuilder();
+		boolean anyMissing = false;
+		for (SlayerLocationData.Drop d : selected.getDrops())
+		{
+			CollectionLog.Status status = currentClog.status(d.getItem(), d.isClog());
+			anyMissing |= status == CollectionLog.Status.MISSING;
+			String color = status == CollectionLog.Status.MISSING ? "#ff981f"
+				: status == CollectionLog.Status.LOGGED ? "#9a9a9a" : "#c8c8c8";
+			String rate = d.getOnTask() != null ? d.getOnTask() + " on task" : d.getRarity();
+			html.append("<font color='").append(color).append("'>").append(escape(d.getItem())).append("</font> ")
+				.append("<font color='#8a8a8a'>").append(escape(rate)).append("</font><br>");
+		}
+		if (!selected.getAlwaysDrops().isEmpty())
+		{
+			html.append("<font color='#8a8a8a'>Always: ").append(escape(String.join(", ", selected.getAlwaysDrops())))
+				.append("</font>");
+		}
+		JLabel drops = textChip(html.toString(), ColorScheme.LIGHT_GRAY_COLOR);
+		drops.setToolTipText(!currentClog.isSynced()
+			? "Open your collection log and search it to highlight drops you haven't logged"
+			: anyMissing ? "Orange: not in your collection log yet" : null);
+		card.add(factRow("Drops", drops));
+
+		if (!currentClog.isSynced() && selected.getDrops().stream().anyMatch(SlayerLocationData.Drop::isClog))
+		{
+			card.add(factRow("", textChip("Open your collection log and search it once to highlight drops you're missing.",
+				ColorScheme.MEDIUM_GRAY_COLOR)));
+		}
+	}
+
+	/** "Can spawn a superior: Shadow Wyrm (3,520 XP)", or null when it has none. */
+	private static String superiorTip(List<Variant> variants, Variant v)
+	{
+		List<String> names = new ArrayList<>();
+		for (Variant s : Variants.superiorsOf(variants, v))
+		{
+			names.add(s.getName() + " (" + Variants.xpEach(s.getXp()) + " XP)");
+		}
+		return names.isEmpty() ? null
+			: "Can spawn a superior: " + String.join(", ", names) + ". Needs the Bigger and Badder unlock.";
+	}
+
+	/** Monsters left out of the table, superiors and bosses. */
+	private void addVariantExtras(JPanel card, List<Variant> variants, List<LocationOption> locations)
+	{
+		// Monsters that count for the task but don't live at any listed place stay out of the way
+		List<String> elsewhere = new ArrayList<>();
+		for (Variant v : Variants.unlisted(variants, locations))
+		{
+			elsewhere.add(v.getName() + " (level " + Variants.range(v.getLevel()) + ", " + Variants.xpEach(v.getXp()) + " XP)");
+		}
+		if (!elsewhere.isEmpty())
+		{
+			addDrawer(card, "Also counts", String.join(", ", elsewhere) + ". Not at any of the places below.");
+		}
+
+		// Superiors already shown with their monster aren't repeated
+		List<Variant> listed = Variants.listed(variants, locations);
+		addSpecials(card, "Superior", variants, s -> s.isSuperior()
+			&& listed.stream().noneMatch(v -> Variants.superiorsOf(variants, v).contains(s)));
+		addSpecials(card, "Boss", variants, Variant::isBoss);
+	}
+
+	/** "Superior: Shadow Wyrm 3,520 XP, Magma strykewyrm 3,655 XP" */
+	private static void addSpecials(JPanel card, String caption, List<Variant> variants, Predicate<Variant> which)
+	{
+		List<String> parts = new ArrayList<>();
+		for (Variant v : variants)
+		{
+			if (which.test(v))
+			{
+				parts.add(escape(v.getName()) + " <font color='#ffc85a'>" + Variants.xpEach(v.getXp()) + " XP</font>");
+			}
+		}
+		if (!parts.isEmpty())
+		{
+			card.add(factRow(caption, textChip(String.join(", ", parts), ColorScheme.LIGHT_GRAY_COLOR)));
+		}
+	}
+
+	/** One line of the variant table. Clicking it runs onClick; null for the header and the selected row. */
+	private static JPanel variantRow(String name, String superiorTip, String level, String xp, String total, Color color,
+		boolean selected, Runnable onClick)
+	{
+		JPanel row = new JPanel(new GridBagLayout());
+		row.setOpaque(selected);
+		row.setBackground(ColorScheme.DARK_GRAY_HOVER_COLOR);
+		row.setAlignmentX(LEFT_ALIGNMENT);
+		row.setBorder(new EmptyBorder(2, 3, 2, 3));
+		GridBagConstraints c = new GridBagConstraints();
+		c.fill = GridBagConstraints.HORIZONTAL;
+		c.gridy = 0;
+
+		c.weightx = 1;
+		JLabel nameCell = cell(name, color, 0, SwingConstants.LEFT);
+		if (superiorTip != null)
+		{
+			// Star after the name; the tooltip says which superior
+			nameCell.setIcon(SUPERIOR_STAR);
+			nameCell.setHorizontalTextPosition(SwingConstants.LEFT);
+			nameCell.setIconTextGap(3);
+		}
+		// Let the name give up space (and clip) rather than squeezing the number columns
+		nameCell.setPreferredSize(new Dimension(10, 16));
+		nameCell.setMinimumSize(new Dimension(0, 16));
+		row.add(nameCell, c);
+		c.weightx = 0;
+		row.add(cell(level, color, 34, SwingConstants.RIGHT), c);
+		row.add(cell(xp, color, 38, SwingConstants.RIGHT), c);
+		row.add(cell(total, color, 40, SwingConstants.RIGHT), c);
+
+		if (onClick != null)
+		{
+			row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+			row.setToolTipText(superiorTip != null ? superiorTip : "Show " + name);
+			row.addMouseListener(new MouseAdapter()
+			{
+				@Override
+				public void mouseClicked(MouseEvent e)
+				{
+					onClick.run();
+				}
+
+				@Override
+				public void mouseEntered(MouseEvent e)
+				{
+					row.setOpaque(true);
+					row.repaint();
+				}
+
+				@Override
+				public void mouseExited(MouseEvent e)
+				{
+					row.setOpaque(false);
+					row.repaint();
+				}
+			});
+		}
+		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
+		return row;
+	}
+
+	private static JLabel cell(String text, Color color, int width, int align)
+	{
+		JLabel label = new JLabel(text);
+		label.setFont(FontManager.getRunescapeSmallFont());
+		label.setForeground(color);
+		label.setHorizontalAlignment(align);
+		if (width > 0)
+		{
+			label.setPreferredSize(new Dimension(width, 16));
+			label.setMinimumSize(new Dimension(width, 16));
+		}
+		return label;
+	}
+
+	/** Wrapping HTML text for the right-hand side of a fact row. */
+	private static JLabel textChip(String html, Color color)
+	{
+		JLabel label = new JLabel("<html><body style='width:" + (INFO_TEXT_WIDTH - CAPTION_WIDTH) + "px'>" + html + "</body></html>");
+		label.setFont(FontManager.getRunescapeSmallFont());
+		label.setForeground(color);
+		label.setBorder(new EmptyBorder(3, 0, 0, 0));
+		return label;
+	}
+
+	/** Drawers for the task's longer notes. */
+	private void addInfoDrawers(JPanel card, SlayerLocationData.TaskInfo info, Variant selected)
+	{
+		boolean showDrops = selected == null;
+		String weakness = info.getWeakness();
+		if (selected != null)
+		{
+			// The selected monster's own "Weak to" row covers elements (no row: the wiki gives it none). The
+			// task-wide notes can name another variant's element (Earth for wyrms while looking at lava strykewyrms)
+			weakness = withoutElementNotes(weakness);
+		}
+		else if (notBlank(info.getElementalWeakness()) && notBlank(weakness))
+		{
+			weakness = info.getElementalWeakness() + ". " + weakness;
+		}
+		addDrawer(card, "Weakness", weakness);
+		if (TaskTags.from(info).isPrayerNeedsDetail())
+		{
+			addDrawer(card, "Prayer", info.getProtectionPrayer());
+		}
+		addDrawer(card, "They attack with", info.getMonsterAttackStyle());
+		addDrawer(card, "Bring", info.getRequiredItems());
+		if (showDrops)
+		{
+			addDrawer(card, "Drops", info.getNotableDrops());
+		}
+	}
+
+	/** Labelled rows: what to attack with, what to pray, and elemental weaknesses (one row per variant group). */
+	private JPanel chips(SlayerLocationData.TaskInfo info, TaskTags tags, boolean showWeakness)
+	{
+		JPanel rows = new JPanel();
+		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
+		rows.setOpaque(false);
+		rows.setAlignmentX(LEFT_ALIGNMENT);
+
+		// Attack with: skill icons, best style first
+		String styleTip = "Attack with: " + nullToEmpty(info.getStyle());
+		JPanel attack = iconRow();
+		if (tags.getStyles().isEmpty())
+		{
+			attack.add(chipText("Any style", Color.WHITE, styleTip));
+		}
+		for (int i = 0; i < tags.getStyles().size(); i++)
+		{
+			if (i > 0)
+			{
+				attack.add(chipText("or", ColorScheme.MEDIUM_GRAY_COLOR, styleTip));
+			}
+			JLabel icon = chipIcon(styleTip);
+			icons.setStyle(icon, tags.getStyles().get(i));
+			attack.add(icon);
+		}
+		if (tags.getStyleNote() != null)
+		{
+			attack.add(chipText(tags.getStyleNote(), ColorScheme.LIGHT_GRAY_COLOR, styleTip));
+		}
+		rows.add(factRow("Attack", attack));
+
+		// Pray: protection prayer icons; several means it depends on the variant or phase
+		String prayerTip = "Pray: " + nullToEmpty(info.getProtectionPrayer());
+		JPanel pray = iconRow();
+		if (tags.getPrayers().isEmpty())
+		{
+			pray.add(chipText("No protection prayer", ColorScheme.LIGHT_GRAY_COLOR, prayerTip));
+		}
+		for (int i = 0; i < tags.getPrayers().size(); i++)
+		{
+			if (i > 0)
+			{
+				pray.add(chipText("/", ColorScheme.MEDIUM_GRAY_COLOR, prayerTip));
+			}
+			JLabel icon = chipIcon(prayerTip);
+			icons.setPrayer(icon, tags.getPrayers().get(i));
+			pray.add(icon);
+		}
+		if (tags.getPrayers().size() > 1)
+		{
+			pray.add(chipText("varies", WEAKNESS_COLOR, prayerTip));
+		}
+		else if (tags.isPrayerOptional())
+		{
+			pray.add(chipText("if needed", ColorScheme.LIGHT_GRAY_COLOR, prayerTip));
+		}
+		rows.add(factRow("Pray", pray));
+
+		// Weak to: one row per element, naming the variants when they differ
+		boolean first = true;
+		// Per-variant weaknesses are shown with the variants instead
+		for (TaskTags.Weakness w : showWeakness ? tags.getWeaknesses() : Collections.<TaskTags.Weakness>emptyList())
+		{
+			String tip = "Weak to " + info.getElementalWeakness();
+			JPanel row = new JPanel(new BorderLayout(4, 0));
+			row.setOpaque(false);
+			JLabel icon = chipIcon(tip);
+			icons.setElement(icon, w.getElement());
+			row.add(icon, BorderLayout.WEST);
+			String text = (w.getAmount() != null ? w.getAmount() : "")
+				+ (w.getVariants() != null ? " <font color='#a0a0a0'>" + escape(w.getVariants()) + "</font>" : "");
+			JLabel label = new JLabel("<html><body style='width:" + (INFO_TEXT_WIDTH - 70) + "px'>"
+				+ "<font color='#ffc85a'>" + text + "</font></body></html>");
+			label.setFont(FontManager.getRunescapeSmallFont());
+			label.setToolTipText(tip);
+			row.add(label, BorderLayout.CENTER);
+			rows.add(factRow(first ? "Weak to" : "", row));
+			first = false;
+		}
+		return rows;
+	}
+
+	private static JPanel iconRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		row.setOpaque(false);
+		return row;
+	}
+
+	/** A grey caption on the left ("Attack", "Pray") and its content on the right. */
+	private static JPanel factRow(String caption, JComponent content)
+	{
+		JPanel row = new JPanel(new BorderLayout(6, 0));
+		row.setOpaque(false);
+		row.setAlignmentX(LEFT_ALIGNMENT);
+		row.setBorder(new EmptyBorder(1, 0, 1, 0));
+		JLabel label = new JLabel(caption);
+		label.setFont(FontManager.getRunescapeSmallFont());
+		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		label.setPreferredSize(new Dimension(CAPTION_WIDTH, 20));
+		label.setVerticalAlignment(JLabel.TOP);
+		label.setBorder(new EmptyBorder(3, 0, 0, 0));
+		row.add(label, BorderLayout.WEST);
+		row.add(content, BorderLayout.CENTER);
+		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
+		return row;
+	}
+
+	private static JLabel chipIcon(String tooltip)
+	{
+		JLabel label = new JLabel();
+		label.setToolTipText(tooltip);
+		label.setBorder(new EmptyBorder(0, 0, 0, 3));
+		// Reserve the space before the icon loads so the row doesn't jump
+		label.setPreferredSize(new Dimension(20, 20));
+		return label;
+	}
+
+	private static JLabel chipText(String text, Color color, String tooltip)
+	{
+		JLabel label = new JLabel(text);
+		label.setFont(FontManager.getRunescapeSmallFont());
+		label.setForeground(color);
+		label.setToolTipText(tooltip);
+		label.setBorder(new EmptyBorder(0, 0, 0, 3));
+		return label;
+	}
+
+	private static JLabel gap()
+	{
+		JLabel gap = new JLabel();
+		gap.setPreferredSize(new Dimension(10, 20));
+		return gap;
+	}
+
+	/**
+	 * A row that shows the label and the start of the text, and opens to the full text when clicked.
+	 * Stays open or closed when the panel is rebuilt after each kill.
+	 */
+	private void addDrawer(JPanel card, String title, String text)
+	{
+		if (!notBlank(text))
+		{
+			return;
+		}
+		boolean open = openDrawers.contains(title);
+
+		JPanel drawer = new JPanel(new BorderLayout());
+		drawer.setOpaque(false);
+		drawer.setAlignmentX(LEFT_ALIGNMENT);
+		drawer.setBorder(new EmptyBorder(4, 0, 0, 0));
+
+		// The RuneScape font has no arrow characters, so draw the arrow
+		JLabel arrow = new JLabel(open ? ARROW_OPEN : ARROW_CLOSED);
+		arrow.setBorder(new EmptyBorder(0, 0, 0, 4));
+		JLabel header = new JLabel("<html><b>" + escape(title) + "</b>" + (open ? "" : "  " + escape(preview(text))) + "</html>");
+		header.setFont(FontManager.getRunescapeSmallFont());
+		header.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+
+		JPanel top = new JPanel(new BorderLayout());
+		top.setOpaque(false);
+		top.add(arrow, BorderLayout.WEST);
+		top.add(header, BorderLayout.CENTER);
+		top.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		top.setToolTipText(open ? "Hide" : "Show all");
+		top.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				if (!openDrawers.remove(title))
+				{
+					openDrawers.add(title);
+				}
+				redraw();
+			}
+		});
+		drawer.add(top, BorderLayout.NORTH);
+
+		if (open)
+		{
+			JLabel body = wrapped(text, Color.WHITE, FontManager.getRunescapeSmallFont(), INFO_TEXT_WIDTH);
+			body.setBorder(new EmptyBorder(2, 14, 0, 0));
+			drawer.add(body, BorderLayout.CENTER);
+		}
+		drawer.setMaximumSize(new Dimension(Integer.MAX_VALUE, drawer.getPreferredSize().height));
+		card.add(drawer);
+	}
+
+	/** A small orange star marking monsters that can spawn a superior. */
+	private static ImageIcon starIcon()
+	{
+		int size = 9;
+		int[] xs = new int[10];
+		int[] ys = new int[10];
+		for (int i = 0; i < 10; i++)
+		{
+			double r = i % 2 == 0 ? size / 2.0 : size / 4.6;
+			double a = Math.PI / 2 + i * Math.PI / 5;
+			xs[i] = (int) Math.round(size / 2.0 + r * Math.cos(a));
+			ys[i] = (int) Math.round(size / 2.0 - r * Math.sin(a) + 0.5);
+		}
+		BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = image.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(SUPERIOR_COLOR);
+		g.fillPolygon(xs, ys, 10);
+		g.dispose();
+		return new ImageIcon(image);
+	}
+
+	/** A small grey triangle pointing right (closed) or down (open). */
+	private static ImageIcon arrowIcon(boolean open)
+	{
+		BufferedImage image = new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = image.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(ColorScheme.LIGHT_GRAY_COLOR);
+		g.fillPolygon(open ? new int[]{0, 8, 4} : new int[]{1, 7, 1}, open ? new int[]{2, 2, 7} : new int[]{0, 4, 8}, 3);
+		g.dispose();
+		return new ImageIcon(image);
+	}
+
+	/** Drops the sentences of a note that talk about elemental (spell) weaknesses. */
+	static String withoutElementNotes(String note)
+	{
+		if (note == null)
+		{
+			return null;
+		}
+		StringBuilder kept = new StringBuilder();
+		for (String sentence : note.split("(?<=[.;])\\s+"))
+		{
+			// Keep sentences that also give weapon advice ("Water spells and demonbane weapons")
+			if (!ELEMENT_NOTE.matcher(sentence).find() || WEAPON_NOTE.matcher(sentence).find())
+			{
+				kept.append(kept.length() > 0 ? " " : "").append(sentence);
+			}
+		}
+		return kept.length() > 0 ? kept.toString() : null;
+	}
+
+	/** The first few words of a note, cut at a word boundary. */
+	static String preview(String text)
+	{
+		String t = text.trim();
+		if (t.length() <= PREVIEW_LENGTH)
+		{
+			return t;
+		}
+		int cut = t.lastIndexOf(' ', PREVIEW_LENGTH);
+		return t.substring(0, cut > PREVIEW_LENGTH / 2 ? cut : PREVIEW_LENGTH).replaceAll("[,;:.]$", "") + "...";
+	}
+
+	private static String nullToEmpty(String s)
+	{
+		return s == null ? "" : s;
+	}
+
+	private static boolean notBlank(String s)
+	{
+		return s != null && !s.trim().isEmpty();
+	}
+
 	private JPanel card(LocationOption location)
 	{
 		JPanel card = new JPanel(new BorderLayout(6, 2));
@@ -145,18 +815,50 @@ public class SlayerPanel extends PluginPanel
 
 		text.add(wrapped(location.getLabel(), Color.WHITE, FontManager.getRunescapeBoldFont(), CARD_TEXT_WIDTH));
 
-		List<String> tags = new ArrayList<>();
-		if (location.getCombat() != null)
+		// Combat type, and whether a cannon can be set up here
+		boolean cannonKnown = "yes".equals(location.getCannon()) || "no".equals(location.getCannon());
+		if (location.getCombat() != null || cannonKnown)
 		{
-			tags.add(capitalise(location.getCombat()) + "-combat");
+			JPanel facts = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+			facts.setOpaque(false);
+			facts.setAlignmentX(LEFT_ALIGNMENT);
+			if (location.getCombat() != null)
+			{
+				JLabel combat = line(capitalise(location.getCombat()) + "-combat", ColorScheme.LIGHT_GRAY_COLOR);
+				combat.setBorder(new EmptyBorder(0, 0, 0, 8));
+				facts.add(combat);
+			}
+			if (cannonKnown)
+			{
+				boolean allowed = "yes".equals(location.getCannon());
+				JLabel ball = chipIcon(allowed ? "You can use a cannon here" : "Cannons can't be set up here");
+				ball.setPreferredSize(new Dimension(16, 18));
+				icons.setCannon(ball, allowed);
+				facts.add(ball);
+				facts.add(chipText(allowed ? "Cannon" : "No cannon",
+					allowed ? RECOMMENDED_COLOR : ColorScheme.MEDIUM_GRAY_COLOR,
+					ball.getToolTipText()));
+			}
+			facts.setMaximumSize(new Dimension(Integer.MAX_VALUE, facts.getPreferredSize().height));
+			text.add(facts);
 		}
-		if ("yes".equals(location.getCannon()))
+		List<String> here = Variants.at(currentVariants, location.getKey());
+		if (!here.isEmpty())
 		{
-			tags.add("Cannon");
-		}
-		if (!tags.isEmpty())
-		{
-			text.add(line(String.join(" · ", tags), ColorScheme.LIGHT_GRAY_COLOR));
+			StringBuilder names = new StringBuilder();
+			for (String name : here)
+			{
+				if (names.length() > 0)
+				{
+					names.append(", ");
+				}
+				names.append(name.equals(selectedVariant) ? "<font color='#ff981f'>" + escape(name) + "</font>" : escape(name));
+			}
+			JLabel monsters = new JLabel("<html><body style='width:" + CARD_TEXT_WIDTH + "px'>" + names + "</body></html>");
+			monsters.setFont(FontManager.getRunescapeSmallFont());
+			monsters.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			monsters.setAlignmentX(LEFT_ALIGNMENT);
+			text.add(monsters);
 		}
 		if (location.isRecommended())
 		{
@@ -188,7 +890,16 @@ public class SlayerPanel extends PluginPanel
 		go.setToolTipText(!location.isRoutable() ? "No map point for this place yet"
 			: location.isAccessible() ? "Path to " + location.getLabel()
 			: "Path to " + location.getLabel() + " (you may not be able to get in yet)");
-		go.addActionListener(e -> onGo.accept(location));
+		go.addActionListener(e ->
+		{
+			// Going somewhere switches the variant details to what lives there
+			if (!here.isEmpty() && !here.contains(selectedVariant))
+			{
+				selectedVariant = here.get(0);
+				redraw();
+			}
+			onGo.accept(location);
+		});
 		JPanel goWrap = new JPanel(new BorderLayout());
 		goWrap.setOpaque(false);
 		goWrap.add(go, BorderLayout.NORTH);
@@ -238,6 +949,14 @@ public class SlayerPanel extends PluginPanel
 	private static String capitalise(String s)
 	{
 		return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
+	}
+
+	private void redraw()
+	{
+		if (lastShow != null)
+		{
+			lastShow.run();
+		}
 	}
 
 	private void refresh()
