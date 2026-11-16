@@ -80,7 +80,7 @@ task progress when the account changes. After Go a route line shows at the top w
 (within 6 tiles, same plane), on clear, or when another path replaces ours; `SlayerHelper` polls it each tick and
 pushes a `Route` to the panel with `showRoute`, which redraws only the route line. New "Compact panel" setting: task
 header, kill rate line, route line and the place list only. Empty and waiting states are the constants at the top of
-`SlayerPanel` (title plus one sentence; "Log in to see your task." while logged out). Part of #16: a kill (same task,
+`SlayerPanel` (title plus one sentence; "Log in to see your task." while logged out). Part of #16: a kill (same task, the same places needing the same things,
 nothing else changed) calls `SlayerPanel.updateCount`, which updates the count, progress lines and the XP for the
 kills left without rebuilding the panel. Not yet seen in a logged-in client.
 

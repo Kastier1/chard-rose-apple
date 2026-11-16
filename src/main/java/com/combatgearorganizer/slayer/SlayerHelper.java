@@ -128,6 +128,8 @@ public class SlayerHelper
 	private BufferedImage markerImage;
 	private SlayerTaskState lastState = SlayerTaskState.NONE;
 	private SlayerLocationData.TaskEntry lastTask;
+	/** The places last drawn for {@link #lastTask}, so a kill only updates the count while they stay the same. */
+	private List<LocationOption> lastLocations = Collections.emptyList();
 	private boolean lastShortestPathAvailable;
 	private int lastClogVersion = -1;
 	private ItemNameResolver itemNames;
@@ -382,6 +384,11 @@ public class SlayerHelper
 		boolean countOnly = !force && state.hasTask() && state.sameTaskAs(lastState) && lastTask != null
 			&& spAvailable == lastShortestPathAvailable && clogVersion == lastClogVersion && namesDone == lastItemNamesDone
 			&& valueMode == lastValueMode;
+		if (countOnly)
+		{
+			// A level gained or a quest finished since the last draw changes what the place cards say
+			countOnly = sameRequirements(pickLocations(lastTask, state), lastLocations);
+		}
 		lastProgressVersion = progressVersion;
 		lastValueMode = valueMode;
 		TaskProgress tp = progress.getProgress();
@@ -418,10 +425,8 @@ public class SlayerHelper
 
 		SlayerLocationData.TaskEntry task = data.findTask(state.getTaskId(), state.getName());
 		lastTask = task;
-		List<LocationOption> locations = task == null
-			? Collections.emptyList()
-			: LocationPicker.pick(task, state.getMasterId(), state.getKonarAreaId(), config.showWildernessLocations(),
-				this::missingRequirements);
+		List<LocationOption> locations = task == null ? Collections.<LocationOption>emptyList() : pickLocations(task, state);
+		lastLocations = locations;
 		SlayerLocationData.TaskInfo info = task != null ? task.getInfo() : null;
 		List<SlayerLocationData.Variant> variants = task != null ? task.getVariants() : Collections.emptyList();
 		DropItems items = dropItems(variants);
@@ -432,6 +437,31 @@ public class SlayerHelper
 			p.setCompact(compact);
 			p.showTask(state, info, variants, locations, task != null, spAvailable, clog, items, view);
 		});
+	}
+
+	/** The task's places for this master, with what the player still needs for each. Client thread. */
+	private List<LocationOption> pickLocations(SlayerLocationData.TaskEntry task, SlayerTaskState state)
+	{
+		return LocationPicker.pick(task, state.getMasterId(), state.getKonarAreaId(), config.showWildernessLocations(),
+			this::missingRequirements);
+	}
+
+	/** Whether the places are the same and each still needs the same things. */
+	static boolean sameRequirements(List<LocationOption> a, List<LocationOption> b)
+	{
+		if (a.size() != b.size())
+		{
+			return false;
+		}
+		for (int i = 0; i < a.size(); i++)
+		{
+			if (!Objects.equals(a.get(i).getKey(), b.get(i).getKey())
+				|| !a.get(i).getMissingRequirements().equals(b.get(i).getMissingRequirements()))
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/** Feeds this tick's count to the progress tracker, loading the account's saved progress first. Client thread. */
@@ -694,6 +724,8 @@ public class SlayerHelper
 		{
 			if (shortestPath.isAvailable())
 			{
+				// The route line shows one route: drop markers left from before Shortest Path was turned on
+				removeMapMarkers();
 				shortestPath.path(targets, allowWilderness);
 				setRoute(Route.shortestPath(place));
 				if (allowWilderness)
