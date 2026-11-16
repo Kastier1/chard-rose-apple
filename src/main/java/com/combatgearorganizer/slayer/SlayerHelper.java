@@ -26,7 +26,10 @@ import net.runelite.api.QuestState;
 import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.ScriptPreFired;
+import net.runelite.api.events.WidgetLoaded;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
@@ -132,6 +135,7 @@ public class SlayerHelper
 			// No time to ask Shortest Path whose path it is, so leave the path but never our Wilderness override
 			shortestPath.release();
 			removeMapMarkers();
+			collectionLog.flush();
 		});
 		panel = null;
 		navButton = null;
@@ -140,7 +144,7 @@ public class SlayerHelper
 	/** Call every game tick on the client thread. Cheap when nothing changed. */
 	public void onGameTick()
 	{
-		collectionLog.flush();
+		collectionLog.onGameTick();
 		Player player = client.getLocalPlayer();
 		shortestPath.onGameTick(player != null ? player.getWorldLocation() : null);
 		refresh(false);
@@ -160,6 +164,20 @@ public class SlayerHelper
 	public void onChatMessage(ChatMessage event)
 	{
 		collectionLog.onChatMessage(event);
+	}
+
+	public void onWidgetLoaded(WidgetLoaded event)
+	{
+		if (event.getGroupId() == InterfaceID.MENU || event.getGroupId() == InterfaceID.MENU_NEW)
+		{
+			// The Adventure Log, possibly someone else's in their house
+			collectionLog.onAdventureLogOpened();
+		}
+	}
+
+	public void onGameStateChanged(GameStateChanged event)
+	{
+		collectionLog.onGameStateChanged(event.getGameState());
 	}
 
 	/** Call when the plugin's config changes, or when a plugin (such as Shortest Path) is turned on or off. */
