@@ -49,6 +49,11 @@ public class SlayerPanel extends JPanel
 	/** Text widths in px, so labels wrap inside the 225px panel. */
 	private static final int FULL_TEXT_WIDTH = 165;
 	private static final int CARD_TEXT_WIDTH = 135;
+	/**
+	 * The route line shares its row with the Cancel button. Swing draws an HTML label about 1.3 times wider than its
+	 * CSS width, so this keeps "On route to Catacombs of Kourend" wrapping instead of being cut off.
+	 */
+	private static final int ROUTE_TEXT_WIDTH = 105;
 	private static final int INFO_TEXT_WIDTH = 140;
 	private static final int PREVIEW_LENGTH = 22;
 	private static final int CAPTION_WIDTH = 46;
@@ -412,7 +417,7 @@ public class SlayerPanel extends JPanel
 		JPanel row = new JPanel(new BorderLayout(6, 0));
 		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		row.setBorder(new EmptyBorder(5, 8, 5, 6));
-		row.add(wrapped(route.text(), RECOMMENDED_COLOR, FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH),
+		row.add(wrapped(route.text(), RECOMMENDED_COLOR, FontManager.getRunescapeSmallFont(), ROUTE_TEXT_WIDTH),
 			BorderLayout.CENTER);
 		JButton stop = new JButton(route.buttonText());
 		stop.setMargin(new java.awt.Insets(0, 4, 0, 4));
@@ -1266,7 +1271,8 @@ public class SlayerPanel extends JPanel
 			{
 				boolean allowed = "yes".equals(location.getCannon());
 				JLabel ball = chipIcon(allowed ? "You can use a cannon here" : "Cannons can't be set up here");
-				ball.setPreferredSize(new Dimension(16, 18));
+				// Room for the 16px icon plus the chip's 3px right border, so the text doesn't touch the ball
+				ball.setPreferredSize(new Dimension(20, 18));
 				icons.setCannon(ball, allowed);
 				facts.add(ball);
 				facts.add(chipText(allowed ? "Cannon" : "No cannon",

@@ -124,7 +124,8 @@ public class CombatTabPanel extends JPanel
 			group.add(button);
 			groupingButtons.put(g, button);
 			add(button);
-			final JLabel description = wrapped(g.getDescription(), ColorScheme.LIGHT_GRAY_COLOR, TEXT_WIDTH);
+			// Indented under the radio button, so it gets the narrower width the checklist's indented text uses
+			final JLabel description = wrapped(g.getDescription(), ColorScheme.LIGHT_GRAY_COLOR, STEP_TEXT_WIDTH);
 			description.setBorder(new EmptyBorder(0, 22, 4, 0));
 			add(description);
 		}
