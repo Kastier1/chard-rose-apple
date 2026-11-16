@@ -60,7 +60,7 @@ public interface CombatGearOrganizerConfig extends Config
 	)
 	default boolean organizeOnAdd()
 	{
-		return true;
+		return false;
 	}
 
 	@ConfigItem(

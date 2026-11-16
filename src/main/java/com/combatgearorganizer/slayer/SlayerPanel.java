@@ -81,7 +81,9 @@ public class SlayerPanel extends PluginPanel
 
 		if (!hasData)
 		{
-			content.add(wrapped("No location data for this task yet.", ColorScheme.LIGHT_GRAY_COLOR));
+			content.add(wrapped(task.getTaskId() == 98
+				? "Boss tasks don't have location data yet."
+				: "No location data for this task yet.", ColorScheme.LIGHT_GRAY_COLOR));
 			refresh();
 			return;
 		}
@@ -94,7 +96,8 @@ public class SlayerPanel extends PluginPanel
 		}
 
 		List<LocationOption> routable = new ArrayList<>();
-		locations.stream().filter(LocationOption::isRoutable).forEach(routable::add);
+		// "Nearest" leaves out places the player can't get into yet
+		locations.stream().filter(l -> l.isRoutable() && l.isAccessible()).forEach(routable::add);
 
 		JPanel actions = new JPanel(new GridLayout(1, 2, 4, 0));
 		actions.setBackground(ColorScheme.DARK_GRAY_COLOR);
@@ -111,7 +114,11 @@ public class SlayerPanel extends PluginPanel
 		content.add(actions);
 		content.add(Box.createVerticalStrut(8));
 
-		if (locations.isEmpty())
+		if (locations.isEmpty() && task.getMasterId() == SlayerMasters.KRYSTILIA)
+		{
+			content.add(wrapped("No Wilderness places in the data for this task yet.", ColorScheme.LIGHT_GRAY_COLOR));
+		}
+		else if (locations.isEmpty())
 		{
 			content.add(wrapped("All places for this task are in the Wilderness. Turn on \"Show Wilderness locations\" in the plugin settings to see them.",
 				ColorScheme.LIGHT_GRAY_COLOR));
@@ -163,6 +170,11 @@ public class SlayerPanel extends PluginPanel
 		{
 			text.add(line("Some spawns in the Wilderness", WILDERNESS_COLOR));
 		}
+		if (!location.isAccessible())
+		{
+			text.add(wrapped("Needs " + String.join(", ", location.getMissingRequirements()), WILDERNESS_COLOR,
+				FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH));
+		}
 		if (location.getNote() != null)
 		{
 			text.add(wrapped(location.getNote(), ColorScheme.LIGHT_GRAY_COLOR, FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH));
@@ -173,7 +185,9 @@ public class SlayerPanel extends PluginPanel
 		go.setPreferredSize(new Dimension(40, 22));
 		go.setMargin(new java.awt.Insets(0, 0, 0, 0));
 		go.setEnabled(location.isRoutable());
-		go.setToolTipText(location.isRoutable() ? "Path to " + location.getLabel() : "No map point for this place yet");
+		go.setToolTipText(!location.isRoutable() ? "No map point for this place yet"
+			: location.isAccessible() ? "Path to " + location.getLabel()
+			: "Path to " + location.getLabel() + " (you may not be able to get in yet)");
 		go.addActionListener(e -> onGo.accept(location));
 		JPanel goWrap = new JPanel(new BorderLayout());
 		goWrap.setOpaque(false);

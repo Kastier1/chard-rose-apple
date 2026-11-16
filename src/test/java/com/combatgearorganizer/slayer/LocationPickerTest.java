@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import com.combatgearorganizer.slayer.SlayerLocationData.LocationEntry;
+import com.combatgearorganizer.slayer.SlayerLocationData.Requirements;
 import com.combatgearorganizer.slayer.SlayerLocationData.TaskEntry;
 import com.google.gson.Gson;
 import java.io.InputStreamReader;
@@ -110,6 +111,58 @@ public class LocationPickerTest
 
 			int[] point = demons.getLocations().get(0).getPoints().get(0);
 			assertEquals(3, point.length);
+		}
+	}
+
+	@Test
+	public void krystiliaNeverFallsBackToPlacesOutsideTheWilderness()
+	{
+		TaskEntry t = abyssalDemons();
+		t.setWildernessLocations(Collections.emptyList());
+		List<LocationOption> options = LocationPicker.pick(t, SlayerMasters.KRYSTILIA, 0, false);
+		assertEquals(1, options.size());
+		assertEquals("wildy_cave", options.get(0).getKey());
+		assertTrue(options.get(0).isWilderness());
+	}
+
+	@Test
+	public void placesYouCantEnterGoLastAndSayWhy()
+	{
+		TaskEntry t = abyssalDemons();
+		Requirements needsPriest = new Requirements();
+		needsPriest.setQuestsFinished(Collections.singletonList("PRIEST_IN_PERIL"));
+		t.getLocations().get(0).setRequirements(needsPriest); // slayer_tower
+		t.setRecommended(null);
+
+		RequirementChecker checker = r -> r.getQuestsFinished().isEmpty()
+			? Collections.emptyList()
+			: Collections.singletonList("Priest in Peril");
+		List<LocationOption> options = LocationPicker.pick(t, 5, 0, false, checker);
+		assertEquals("catacombs", options.get(0).getKey());
+		LocationOption tower = options.stream().filter(o -> o.getKey().equals("slayer_tower")).findFirst().get();
+		assertFalse(tower.isAccessible());
+		assertEquals(Collections.singletonList("Priest in Peril"), tower.getMissingRequirements());
+	}
+
+	@Test
+	public void everyKrystiliaTaskInTheSourceIsInTheData() throws Exception
+	{
+		try (Reader r = new InputStreamReader(SlayerHelper.class.getResourceAsStream("slayer_locations.json"), StandardCharsets.UTF_8))
+		{
+			SlayerLocationData data = new Gson().fromJson(r, SlayerLocationData.class);
+			// These were dropped before because they're only on Krystilia's list
+			for (String name : Arrays.asList("Revenants", "Pirates", "Black knights", "Chaos druids", "Lava dragons",
+				"Green dragons", "Dark warriors", "Bandits", "Ents", "Rogues", "Mammoths", "Earth warriors", "Magic axes"))
+			{
+				TaskEntry task = data.findTask(-1, name);
+				assertNotNull(name, task);
+				assertFalse(name, LocationPicker.pick(task, SlayerMasters.KRYSTILIA, 0, false).isEmpty());
+			}
+
+			// Requirements made it through
+			TaskEntry demons = data.findTask(42, null);
+			assertTrue(demons.getLocations().stream().anyMatch(l -> l.getRequirements() != null
+				&& l.getRequirements().getQuestsFinished().contains("PRIEST_IN_PERIL")));
 		}
 	}
 }

@@ -12,7 +12,8 @@ whose content is licensed under [CC BY-NC-SA 3.0](https://creativecommons.org/li
 ([RuneLite](https://github.com/runelite/runelite), BSD 2-Clause).
 
 The generated data file is shared under the same CC BY-NC-SA 3.0 licence. The plugin's code is not
-derived from it and is licensed separately.
+derived from it and is licensed separately (BSD 2-Clause, see LICENSE). A copy of these notices, with
+Slayer Sensei's full licence, ships inside the plugin jar as `META-INF/NOTICE.txt`.
 
 ## Item icons in the README preview
 

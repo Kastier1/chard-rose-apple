@@ -14,12 +14,14 @@ Ranged   | same slot order
 (blank)
 Magic    | same slot order
 (blank)
-Prayer   | prayer-bonus gear with no offensive stats
-Utility  | other equipables (teleport jewellery, graceful, etc.)
+Prayer   | prayer-bonus gear with no offensive stats or penalties
+Utility  | void, slayer helmets, black masks, salve amulets, and other equipables (teleport jewellery, graceful…)
 Supplies | non-equipables you've tagged (potions, food, runes…), alphabetical
 ```
 
-Within each slot your strongest item comes first, so best-in-slot is always top-left.
+Within each slot the item with the most damage comes first (strength counts double, defence only breaks ties).
+It's a rough ordering from bonuses, not a DPS calculation: weapons like the Twisted bow, Tumeken's shadow and
+Scythe of Vitur get a fixed bonus because their strength isn't in their stats.
 
 Switch **Group by** to *Equipment slot* if you'd rather have one row-block per slot (all weapons together,
 all helms together, …), each ordered melee → ranged → magic.
@@ -29,31 +31,44 @@ all helms together, …), each ordered melee → ranged → magic.
 1. Make sure the built-in **Bank Tags** plugin is enabled.
 2. Put your gear in a tag (default name: `combat`, change it in the plugin config), either by tagging items in the
    bank as usual, or by wearing a setup and typing `::gearadd`.
-3. Type `::gearsort` (or press the configured hotkey). The tab is re-laid out and redrawn if it's open.
+3. Open the tag tab and pick **Auto layout: Combat gear** from its menu (right-click the tab, where *Disable
+   layout* is). You get a preview with **Keep** / **Undo**.
+   Or type `::gearsort` (or press the configured hotkey), which saves straight away; `::gearsort undo` puts the
+   previous layout back.
 
 | Command | What it does |
 | --- | --- |
 | `::gearsort` | Organize the configured tag tab |
 | `::gearsort <tag>` | Organize a different tag tab, e.g. `::gearsort slayer` |
-| `::gearadd` | Tag everything you're wearing (any charge/degrade state) and re-organize |
+| `::gearsort undo` | Put back the layout from before the last `::gearsort` (since the plugin started) |
+| `::gearadd` | Tag everything you're wearing (any charge/degrade state); re-organizes too if that setting is on |
 | `::gearadd <tag>` | Same, for another tag |
 
 Nothing in your actual bank is moved — this only changes the Bank Tags layout for that tab, so you can still drag
-items around afterwards (re-running `::gearsort` will reset them).
+items around afterwards. Re-sorting resets them, so use the Auto layout preview or `::gearsort undo` if you
+change your mind. Items you untag drop out of the layout on the next sort.
 
 ## Config
 
 - **Bank tag** – the tag tab to organize (default `combat`)
 - **Group by** – combat style or equipment slot
 - **Blank row between sections** – visual spacing between groups
-- **Re-organize after ::gearadd**
+- **Re-organize after ::gearadd** (off by default)
 - **Organize hotkey**
 
 ## How items are classified
 
-Using RuneLite's item stats: the highest of melee (best attack + strength), ranged (ranged attack + ranged strength)
-and magic (magic attack + magic damage) wins. Items with no offensive bonuses fall back to: prayer bonus → Prayer;
-penalises magic *and* ranged (e.g. rune platebody) → Melee; penalises only magic → Ranged; otherwise Utility.
+Using RuneLite's item stats:
+
+1. Void, slayer helmets, black masks and salve amulets → Utility, so they stay together whatever their bonuses.
+2. A weapon with 10+ magic attack → Magic (staves have big melee bonuses, but they're magic weapons).
+3. Otherwise the highest of melee (best attack + strength), ranged (ranged attack + ranged strength) and magic
+   (magic attack + magic damage) wins.
+4. Items with no offensive bonuses: penalises magic *and* ranged (rune platebody, Bandos) → Melee; penalises only
+   magic → Ranged; prayer bonus → Prayer; otherwise Utility.
+
+For items tagged "any version" (as `::gearadd` does), the version you own is laid out, not the first version in
+RuneLite's list (which is often the broken or uncharged one).
 
 ## Slayer task panel
 
@@ -65,6 +80,8 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
 - **Konar**: only the place she assigned is shown.
 - **Krystilia**: only her Wilderness places are shown, and the route is allowed through the Wilderness.
 - **Other masters**: Wilderness places are hidden unless you turn on *Show Wilderness locations*.
+- Places whose quests or skills you don't have yet are listed last with what you need, and **Go to nearest**
+  skips them.
 - Some places have no map point in the data yet; their Go button is greyed out.
 
 The task is read from the game and RuneLite's built-in Slayer plugin. Location data is bundled (see NOTICE.md),

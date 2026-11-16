@@ -32,6 +32,8 @@ public final class SlayerMasters
 				return "Krystilia";
 			case KONAR:
 				return "Konar";
+			case 9:
+				return "Spria";
 			case 10:
 				return "Mortimer";
 			default:

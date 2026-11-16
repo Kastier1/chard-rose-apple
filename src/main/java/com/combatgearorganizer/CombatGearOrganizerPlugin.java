@@ -3,8 +3,8 @@ package com.combatgearorganizer;
 import com.combatgearorganizer.slayer.SlayerHelper;
 import com.google.inject.Provides;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -31,10 +31,13 @@ import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.game.ItemEquipmentStats;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
+import net.runelite.client.game.ItemVariationMapping;
+import net.runelite.client.events.PluginChanged;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDependency;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.plugins.PluginManager;
 import net.runelite.client.plugins.banktags.BankTagsPlugin;
 import net.runelite.client.plugins.banktags.BankTagsService;
 import net.runelite.client.plugins.banktags.TagManager;
@@ -56,6 +59,9 @@ public class CombatGearOrganizerPlugin extends Plugin
 {
 	static final String ORGANIZE_COMMAND = "gearsort";
 	static final String ADD_WORN_COMMAND = "gearadd";
+	static final String UNDO_ARGUMENT = "undo";
+	/** Shows as "Auto layout: Combat gear" on a laid-out tag tab's menu, with a preview and Keep / Undo. */
+	static final String AUTO_LAYOUT_NAME = "Combat gear";
 
 	@Inject
 	private Client client;
@@ -87,7 +93,13 @@ public class CombatGearOrganizerPlugin extends Plugin
 	@Inject
 	private SlayerHelper slayerHelper;
 
+	@Inject
+	private PluginManager pluginManager;
+
 	private boolean slayerStarted;
+
+	/** Layout of each tag before this plugin last overwrote it, for ::gearsort undo. Cleared on shutdown. */
+	private final Map<String, int[]> undoLayouts = new HashMap<>();
 
 	private final HotkeyListener hotkeyListener = new HotkeyListener(() -> config.hotkey())
 	{
@@ -108,6 +120,8 @@ public class CombatGearOrganizerPlugin extends Plugin
 	protected void startUp()
 	{
 		keyManager.registerKeyListener(hotkeyListener);
+		layoutManager.registerAutoLayout(this, AUTO_LAYOUT_NAME,
+			previous -> new Layout(previous.getTag(), buildArrangement(previous.getTag(), previous)));
 		updateSlayerPanel();
 	}
 
@@ -115,6 +129,8 @@ public class CombatGearOrganizerPlugin extends Plugin
 	protected void shutDown()
 	{
 		keyManager.unregisterKeyListener(hotkeyListener);
+		layoutManager.unregisterAutoLayout(AUTO_LAYOUT_NAME);
+		undoLayouts.clear();
 		if (slayerStarted)
 		{
 			slayerHelper.stop();
@@ -160,12 +176,29 @@ public class CombatGearOrganizerPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onPluginChanged(PluginChanged event)
+	{
+		// e.g. Shortest Path turned on or off: update the panel's directions text
+		if (slayerStarted && event.getPlugin() != this)
+		{
+			slayerHelper.onConfigChanged();
+		}
+	}
+
+	@Subscribe
 	public void onCommandExecuted(CommandExecuted event)
 	{
 		final String command = event.getCommand().toLowerCase();
 		final String[] args = event.getArguments();
-		final String tag = args.length > 0 ? String.join(" ", args) : config.tagName();
 
+		if (ORGANIZE_COMMAND.equals(command) && args.length > 0 && UNDO_ARGUMENT.equalsIgnoreCase(args[0]))
+		{
+			final String tag = args.length > 1 ? joinFrom(args, 1) : config.tagName();
+			clientThread.invokeLater(() -> undo(tag));
+			return;
+		}
+
+		final String tag = args.length > 0 ? joinFrom(args, 0) : config.tagName();
 		if (ORGANIZE_COMMAND.equals(command))
 		{
 			clientThread.invokeLater(() -> organize(tag));
@@ -232,51 +265,151 @@ public class CombatGearOrganizerPlugin extends Plugin
 			return;
 		}
 
-		final Set<Integer> itemIds = collectItemIds(tag);
-		if (itemIds.isEmpty())
+		if (!isBankTagsActive())
+		{
+			sendMessage("Turn on the Bank Tags plugin first; the layout is drawn by its tag tabs.");
+			return;
+		}
+
+		final Layout existing = layoutManager.loadLayout(tag);
+		final List<GearItem> items = gearItems(tag, existing);
+		if (items.isEmpty())
 		{
 			sendMessage("Bank tag '" + tag + "' has no items. Tag some gear first, or wear it and type ::" + ADD_WORN_COMMAND);
 			return;
 		}
 
-		final List<GearItem> items = itemIds.stream()
-			.map(this::toGearItem)
-			.collect(Collectors.toList());
-
 		final int[] arrangement = LayoutBuilder.build(items, config.grouping(), config.blankRow());
+		undoLayouts.put(tag, existing != null ? existing.getLayout().clone() : null);
 		layoutManager.saveLayout(new Layout(tag, arrangement));
+		redrawIfOpen(tag);
 
+		sendMessage("Organized " + items.size() + " items in '" + tag + "': " + summarize(items)
+			+ ". Type ::" + ORGANIZE_COMMAND + " " + UNDO_ARGUMENT + " to put it back.");
+	}
+
+	/** @PluginDependency loads Bank Tags but doesn't turn it on, and without it no layout is drawn. */
+	private boolean isBankTagsActive()
+	{
+		// Look the instance up: injecting BankTagsPlugin here would make Guice build a second, inactive one
+		for (Plugin plugin : pluginManager.getPlugins())
+		{
+			if (plugin instanceof BankTagsPlugin)
+			{
+				return pluginManager.isPluginActive(plugin);
+			}
+		}
+		return false;
+	}
+
+	/** Puts back the layout from before the last ::gearsort of this tag. Must be called on the client thread. */
+	private void undo(String rawTag)
+	{
+		final String tag = Text.standardize(rawTag);
+		if (!undoLayouts.containsKey(tag))
+		{
+			sendMessage("Nothing to undo for '" + tag + "' since the plugin started.");
+			return;
+		}
+		final int[] previous = undoLayouts.remove(tag);
+		if (previous == null)
+		{
+			layoutManager.removeLayout(tag);
+		}
+		else
+		{
+			layoutManager.saveLayout(new Layout(tag, previous));
+		}
+		redrawIfOpen(tag);
+		sendMessage("Put back the previous layout of '" + tag + "'.");
+	}
+
+	/** Builds the layout for the auto layout menu entry, which shows a preview with Keep / Undo. */
+	private int[] buildArrangement(String tag, Layout previous)
+	{
+		final List<GearItem> items = gearItems(Text.standardize(tag), previous);
+		return items.isEmpty()
+			? previous.getLayout()
+			: LayoutBuilder.build(items, config.grouping(), config.blankRow());
+	}
+
+	private void redrawIfOpen(String tag)
+	{
 		// Redraw the tab if it's what the player is looking at
 		final String activeTag = bankTagsService.getActiveTag();
 		if (activeTag != null && tag.equals(Text.standardize(activeTag)))
 		{
 			bankTagsService.openBankTag(tag, BankTagsService.OPTION_ALLOW_MODIFICATIONS);
 		}
-
-		sendMessage("Organized " + items.size() + " items in '" + tag + "': " + summarize(items));
 	}
 
-	private Set<Integer> collectItemIds(String tag)
+	/** The tag's items, each as the concrete version the player has. Must be called on the client thread. */
+	private List<GearItem> gearItems(String tag, Layout existing)
+	{
+		final TagItemResolver.Items lookup = new TagItemResolver.Items()
+		{
+			@Override
+			public int canonicalize(int itemId)
+			{
+				return itemManager.canonicalize(itemId);
+			}
+
+			@Override
+			public int variationBase(int itemId)
+			{
+				return ItemVariationMapping.map(itemId);
+			}
+		};
+
+		final List<Integer> ids = TagItemResolver.resolve(
+			tagManager.getItemsForTag(tag),
+			existing != null ? existing.getLayout() : null,
+			ownedItemIds(),
+			lookup,
+			this::bestVariation);
+
+		return ids.stream()
+			.map(this::toGearItem)
+			.collect(Collectors.toList());
+	}
+
+	/** Everything in the bank, worn and in the inventory. The bank is remembered after it's closed. */
+	private Set<Integer> ownedItemIds()
 	{
 		final Set<Integer> ids = new LinkedHashSet<>();
-
-		// Negative ids are "variation" tags (any version of the item); the absolute value is the base item
-		for (int id : tagManager.getItemsForTag(tag))
+		for (int inventoryId : new int[]{InventoryID.WORN, InventoryID.BANK, InventoryID.INV})
 		{
-			ids.add(itemManager.canonicalize(Math.abs(id)));
+			final ItemContainer container = client.getItemContainer(inventoryId);
+			if (container == null)
+			{
+				continue;
+			}
+			for (Item item : container.getItems())
+			{
+				if (item.getId() > 0)
+				{
+					ids.add(item.getId());
+				}
+			}
 		}
-
-		// Keep anything already placed in the existing layout as well
-		final Layout existing = layoutManager.loadLayout(tag);
-		if (existing != null)
-		{
-			Arrays.stream(existing.getLayout())
-				.filter(id -> id > 0)
-				.map(itemManager::canonicalize)
-				.forEach(ids::add);
-		}
-
 		return ids;
+	}
+
+	/** For a tagged variation group the player has none of: the version with the best stats. */
+	private int bestVariation(int baseId)
+	{
+		int best = baseId;
+		int bestPower = Integer.MIN_VALUE;
+		for (int id : ItemVariationMapping.getVariations(baseId))
+		{
+			final GearItem item = toGearItem(itemManager.canonicalize(id));
+			if (item.getStyle() != GearStyle.SUPPLIES && item.getPower() > bestPower)
+			{
+				best = item.getItemId();
+				bestPower = item.getPower();
+			}
+		}
+		return best;
 	}
 
 	private GearItem toGearItem(int itemId)
@@ -308,8 +441,14 @@ public class CombatGearOrganizerPlugin extends Plugin
 			.prayer(e.getPrayer())
 			.build();
 
-		final GearStyle style = GearClassifier.classify(bonuses);
-		return new GearItem(itemId, name, GearSlot.fromEquipmentIndex(e.getSlot()), style, GearClassifier.power(style, bonuses));
+		final GearSlot slot = GearSlot.fromEquipmentIndex(e.getSlot());
+		final GearStyle style = GearClassifier.classify(name, slot, bonuses);
+		return new GearItem(itemId, name, slot, style, GearClassifier.power(style, name, slot, bonuses));
+	}
+
+	private static String joinFrom(String[] args, int from)
+	{
+		return String.join(" ", java.util.Arrays.copyOfRange(args, from, args.length));
 	}
 
 	private static String summarize(List<GearItem> items)

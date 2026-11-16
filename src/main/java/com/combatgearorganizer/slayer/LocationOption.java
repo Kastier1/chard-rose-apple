@@ -21,9 +21,16 @@ public class LocationOption
 	String note;
 	/** Points to path to, as [x, y, plane]. Empty when the data has no map point for this place yet. */
 	List<int[]> targets;
+	/** Quests and skills the player still needs to get in. Empty when they can go. */
+	List<String> missingRequirements;
 
 	public boolean isRoutable()
 	{
 		return !targets.isEmpty();
+	}
+
+	public boolean isAccessible()
+	{
+		return missingRequirements.isEmpty();
 	}
 }

@@ -29,8 +29,23 @@ def access_note(access):
     return " ".join(notes) or None
 
 
-def place(label, key, points, entrance, extra):
-    pts = points or ([entrance] if entrance else [])
+def requirements(*accesses):
+    """Merges the source's access blocks into one {questsFinished, questsStarted, skills} dict (all required)."""
+    finished, started, skills = [], [], {}
+    for access in accesses:
+        for a in (access if isinstance(access, list) else [access]) if access else []:
+            finished += [q for q in a.get("questsFinished", []) if q not in finished]
+            started += [q for q in a.get("questsStarted", []) if q not in started]
+            for skill, level in a.get("skills", {}).items():
+                skills[skill] = max(level, skills.get(skill, 0))
+    out = {k: v for k, v in (("questsFinished", finished), ("questsStarted", started), ("skills", skills)) if v}
+    return out or None
+
+
+def place(label, key, points, entrance, extra, entrance_routable=True):
+    # Some entrances can't be pathed to by Shortest Path; leave those without a point so Go is greyed out
+    usable_entrance = entrance if entrance and entrance_routable is not False else None
+    pts = points or ([usable_entrance] if usable_entrance else [])
     out = {
         "key": key,
         "label": label,
@@ -46,9 +61,13 @@ def main(src):
     locations = {l["key"]: l for l in data["locations"]}
     wild = {t["taskId"]: t for t in data["wildernessTaskLocations"]}
 
+    normal = {t["taskId"]: t for t in data["taskLocations"]}
+
     tasks = []
-    for t in data["taskLocations"]:
-        tid = t["taskId"]
+    # Some of Krystilia's tasks only appear in her Wilderness list, so walk the union of both
+    for tid in sorted(set(normal) | set(wild)):
+        # Wilderness-only names come title-cased ("Black Knights"); match the normal list's "Black knights"
+        t = normal.get(tid) or {"taskId": tid, "task": wild[tid]["task"].capitalize(), "locations": []}
         entries = []
         for key in t["locations"]:
             loc = locations[key]
@@ -59,9 +78,20 @@ def main(src):
                 "combat": per_task.get("combat") or loc.get("combat"),
                 "cannon": per_task.get("cannon") or loc.get("cannon"),
                 "note": " ".join(notes) or None,
-            }))
-        wild_entries = [place(p["label"], p["key"], p.get("spots"), p.get("entrance"), {})
-                        for p in wild.get(tid, {}).get("places", [])]
+                "requirements": requirements(loc.get("access"), per_task.get("access")),
+            }, loc.get("entranceRoutable")))
+        wild_entries = []
+        for p in wild.get(tid, {}).get("places", []):
+            # Wilderness places often share a key with a normal place; borrow its facts and access
+            loc = locations.get(p["key"], {})
+            per_task = next((x for x in loc.get("tasks", []) if x["taskId"] == tid), {})
+            notes = [n for n in (loc.get("note"), access_note(loc.get("access")), per_task.get("note")) if n]
+            wild_entries.append(place(p["label"], p["key"], p.get("spots"), p.get("entrance"), {
+                "combat": p.get("combat") or per_task.get("combat") or loc.get("combat"),
+                "cannon": p.get("cannon") or per_task.get("cannon") or loc.get("cannon"),
+                "note": " ".join(notes) or None,
+                "requirements": requirements(loc.get("access"), per_task.get("access")),
+            }, p.get("entranceRoutable", loc.get("entranceRoutable"))))
         tasks.append({
             "taskId": tid,
             "name": t["task"],
@@ -77,8 +107,9 @@ def main(src):
         "tasks": tasks,
     }
     OUT.write_text(json.dumps(out, separators=(",", ":")))
-    routable = sum(1 for t in tasks for l in t["locations"] if l["points"] or l["wildernessPoints"])
-    total = sum(len(t["locations"]) for t in tasks)
+    every = [l for t in tasks for l in t["locations"] + t["wildernessLocations"]]
+    routable = sum(1 for l in every if l["points"] or l["wildernessPoints"])
+    total = len(every)
     print(f"{len(tasks)} tasks, {total} locations ({routable} with map points) -> {OUT}")
 
 

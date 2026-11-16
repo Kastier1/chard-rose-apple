@@ -2,6 +2,7 @@ package com.combatgearorganizer.slayer;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import lombok.Data;
 
 /**
@@ -42,6 +43,19 @@ public class SlayerLocationData
 		/** "yes" or "no". */
 		private String cannon;
 		private String note;
+		/** Quests and skills needed to get in. Null when there are none. */
+		private Requirements requirements;
+	}
+
+	@Data
+	public static class Requirements
+	{
+		/** RuneLite {@code Quest} enum names that must be finished. */
+		private List<String> questsFinished = Collections.emptyList();
+		/** RuneLite {@code Quest} enum names that must at least be started. */
+		private List<String> questsStarted = Collections.emptyList();
+		/** RuneLite {@code Skill} enum name to the real level needed. */
+		private Map<String, Integer> skills = Collections.emptyMap();
 	}
 
 	public TaskEntry findTask(int taskId, String name)

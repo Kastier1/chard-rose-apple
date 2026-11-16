@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -18,6 +19,9 @@ import javax.swing.SwingUtilities;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.Quest;
+import net.runelite.api.QuestState;
+import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
@@ -39,6 +43,8 @@ public class SlayerHelper
 {
 	private static final String DATA_FILE = "slayer_locations.json";
 	private static final String MAP_MARKER_NAME = "Slayer location";
+	/** SLAYER_TARGET value for a boss task; the boss itself is in another varbit. */
+	private static final int BOSS_TASK_ID = 98;
 
 	@Inject
 	private Client client;
@@ -65,11 +71,12 @@ public class SlayerHelper
 	private Gson gson;
 
 	private SlayerLocationData data;
-	private SlayerPanel panel;
+	private volatile SlayerPanel panel;
 	private NavigationButton navButton;
 	private BufferedImage markerImage;
 	private SlayerTaskState lastState = SlayerTaskState.NONE;
 	private SlayerLocationData.TaskEntry lastTask;
+	private boolean lastShortestPathAvailable;
 
 	public void start()
 	{
@@ -102,7 +109,7 @@ public class SlayerHelper
 		refresh(false);
 	}
 
-	/** Call when the plugin's config changes. */
+	/** Call when the plugin's config changes, or when a plugin (such as Shortest Path) is turned on or off. */
 	public void onConfigChanged()
 	{
 		clientThread.invokeLater(() -> refresh(true));
@@ -110,16 +117,20 @@ public class SlayerHelper
 
 	private void refresh(boolean force)
 	{
-		if (panel == null || client.getGameState() != GameState.LOGGED_IN)
+		// stop() can null the field from the Swing thread at any time, so read it once
+		final SlayerPanel p = panel;
+		if (p == null || client.getGameState() != GameState.LOGGED_IN)
 		{
 			return;
 		}
 
 		SlayerTaskState state = readTask();
-		if (!force && state.equals(lastState))
+		boolean spAvailable = shortestPath.isAvailable();
+		if (!force && state.equals(lastState) && spAvailable == lastShortestPathAvailable)
 		{
 			return;
 		}
+		lastShortestPathAvailable = spAvailable;
 
 		boolean taskEnded = lastState.hasTask() && !state.hasTask();
 		boolean taskChanged = state.getTaskId() != lastState.getTaskId() || !Objects.equals(state.getName(), lastState.getName());
@@ -132,7 +143,7 @@ public class SlayerHelper
 		if (!state.hasTask())
 		{
 			lastTask = null;
-			SwingUtilities.invokeLater(panel::showNoTask);
+			SwingUtilities.invokeLater(p::showNoTask);
 			return;
 		}
 
@@ -140,9 +151,8 @@ public class SlayerHelper
 		lastTask = task;
 		List<LocationOption> locations = task == null
 			? Collections.emptyList()
-			: LocationPicker.pick(task, state.getMasterId(), state.getKonarAreaId(), config.showWildernessLocations());
-		boolean spAvailable = shortestPath.isAvailable();
-		SlayerPanel p = panel;
+			: LocationPicker.pick(task, state.getMasterId(), state.getKonarAreaId(), config.showWildernessLocations(),
+				this::missingRequirements);
 		SwingUtilities.invokeLater(() -> p.showTask(state, locations, task != null, spAvailable));
 	}
 
@@ -158,19 +168,27 @@ public class SlayerHelper
 		int areaId = client.getVarpValue(VarPlayerID.SLAYER_AREA);
 		int masterId = client.getVarbitValue(VarbitID.SLAYER_MASTER);
 
-		// The core Slayer plugin resolves names for every task, including boss tasks; fall back to our data
-		String name = slayerPluginService.getTask();
-		if (name == null || name.isEmpty())
+		// Prefer our data's name: the core Slayer plugin updates its name a tick after the varps change.
+		// Boss tasks all share one id, so for those only the Slayer plugin knows which boss it is.
+		String name = null;
+		if (taskId != BOSS_TASK_ID)
 		{
 			SlayerLocationData.TaskEntry entry = data.findTask(taskId, null);
 			name = entry != null ? entry.getName() : null;
 		}
-		if (name == null)
+		if (name == null || name.isEmpty())
 		{
-			return SlayerTaskState.NONE;
+			name = slayerPluginService.getTask();
+		}
+		if (name == null || name.isEmpty())
+		{
+			// Still a task, just one we can't name (e.g. the core Slayer plugin is off)
+			name = taskId == BOSS_TASK_ID ? "Boss task" : "Task #" + taskId;
 		}
 
-		int initial = Math.max(slayerPluginService.getInitialAmount(), client.getVarpValue(VarPlayerID.SLAYER_COUNT_ORIGINAL));
+		// The Slayer plugin's amount includes Mortimer's modifier, which can be negative
+		int pluginInitial = slayerPluginService.getInitialAmount();
+		int initial = pluginInitial > 0 ? pluginInitial : client.getVarpValue(VarPlayerID.SLAYER_COUNT_ORIGINAL);
 		String konarArea = areaId > 0 ? slayerPluginService.getTaskLocation() : null;
 		return new SlayerTaskState(taskId, name, remaining, initial, masterId, areaId, konarArea);
 	}
@@ -188,19 +206,20 @@ public class SlayerHelper
 	private void route(List<LocationOption> locations)
 	{
 		List<int[]> targets = new ArrayList<>();
-		boolean wilderness = false;
+		// Only lift the player's "avoid Wilderness" setting when every place is in the Wilderness. With a mix,
+		// lifting it would let the route head into the Wilderness, or through it, for the other places too.
+		boolean allWilderness = !locations.isEmpty();
 		for (LocationOption l : locations)
 		{
 			targets.addAll(l.getTargets());
-			// Only lift the player's "avoid Wilderness" setting when the place can't be reached any other way
-			wilderness |= l.isWilderness();
+			allWilderness &= l.isWilderness();
 		}
 		if (targets.isEmpty())
 		{
 			return;
 		}
 
-		final boolean allowWilderness = wilderness;
+		final boolean allowWilderness = allWilderness;
 		clientThread.invokeLater(() ->
 		{
 			if (shortestPath.isAvailable())
@@ -212,6 +231,63 @@ public class SlayerHelper
 				markOnWorldMap(targets);
 			}
 		});
+	}
+
+	/** Must run on the client thread: reads quest states and skill levels. */
+	private List<String> missingRequirements(SlayerLocationData.Requirements r)
+	{
+		List<String> missing = new ArrayList<>();
+		for (String q : r.getQuestsFinished())
+		{
+			Quest quest = quest(q);
+			if (quest != null && quest.getState(client) != QuestState.FINISHED)
+			{
+				missing.add(quest.getName());
+			}
+		}
+		for (String q : r.getQuestsStarted())
+		{
+			Quest quest = quest(q);
+			if (quest != null && quest.getState(client) == QuestState.NOT_STARTED)
+			{
+				missing.add(quest.getName() + " (started)");
+			}
+		}
+		for (Map.Entry<String, Integer> e : r.getSkills().entrySet())
+		{
+			Skill skill = skill(e.getKey());
+			if (skill != null && client.getRealSkillLevel(skill) < e.getValue())
+			{
+				missing.add(e.getValue() + " " + skill.getName());
+			}
+		}
+		return missing;
+	}
+
+	private static Quest quest(String name)
+	{
+		try
+		{
+			return Quest.valueOf(name);
+		}
+		catch (IllegalArgumentException e)
+		{
+			log.debug("Unknown quest {} in slayer data", name);
+			return null;
+		}
+	}
+
+	private static Skill skill(String name)
+	{
+		try
+		{
+			return Skill.valueOf(name);
+		}
+		catch (IllegalArgumentException e)
+		{
+			log.debug("Unknown skill {} in slayer data", name);
+			return null;
+		}
 	}
 
 	private void markOnWorldMap(List<int[]> targets)
