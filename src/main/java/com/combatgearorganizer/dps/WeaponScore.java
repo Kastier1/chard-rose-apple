@@ -3,6 +3,7 @@ package com.combatgearorganizer.dps;
 import com.combatgearorganizer.GearStyle;
 import java.util.List;
 import lombok.Value;
+import lombok.With;
 
 /** One owned weapon's expected damage against a monster, and why. */
 @Value
@@ -23,4 +24,7 @@ public class WeaponScore
 	List<String> effects;
 	/** The slayer helmet, black mask or salve amulet worn with it, or null. */
 	String slayerItem;
+	/** The other items the score assumes are worn (not the weapon or ammo), head first as on the equipment screen. */
+	@With
+	List<String> gear;
 }

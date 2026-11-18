@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -281,6 +282,75 @@ public class WeaponRankerTest
 			WeaponRanker.meleeAverage("Dual macuahuitl", 0.5, 41, 1), 1e-12);
 		// "Osmumten's fang": 15% to 85% of 60 is 9 to 51
 		assertEquals(30, WeaponRanker.meleeAverage("Osmumten's fang", 1, 60, 1), 1e-12);
+	}
+
+	@Test
+	public void abyssalWhipWorkedByHandFromTheWikiFormulas()
+	{
+		// Only the whip, maxed levels, a super combat potion and Piety, against defence 100 with no slash bonus.
+		// Attack and Strength 99 + 5 + 14 = 118; defence roll (100 + 9) x 64 = 6976; whip +82 slash, +82 strength.
+		OwnedGear whip = new OwnedGear(true, WikiGear.all("Abyssal whip"), Levels.MAXED);
+		WeaponScore s = WeaponRanker.rank(whip, PLAIN).best(GearStyle.MELEE).get(0);
+		// Accurate: attack floor(118 x 1.2) + 3 + 8 = 152, strength floor(118 x 1.23) + 8 = 153
+		double accurateHit = 1 - (6976 + 2.0) / (2.0 * (152 * 146 + 1));
+		int accurateMax = (int) Math.floor(0.5 + 153 * 146 / 640.0);
+		// Aggressive: attack 141 + 8 = 149, strength 145 + 3 + 8 = 156
+		double aggressiveHit = 1 - (6976 + 2.0) / (2.0 * (149 * 146 + 1));
+		int aggressiveMax = (int) Math.floor(0.5 + 156 * 146 / 640.0);
+		assertEquals(35, accurateMax);
+		assertEquals(36, aggressiveMax);
+		double accurate = accurateHit * (accurateMax / 2.0 + 1.0 / (accurateMax + 1)) / 2.4;
+		double aggressive = aggressiveHit * (aggressiveMax / 2.0 + 1.0 / (aggressiveMax + 1)) / 2.4;
+		assertTrue(aggressive > accurate);
+		assertEquals(aggressive, s.getDps(), 1e-9);
+		assertEquals(36, s.getMaxHit());
+		assertEquals(aggressiveHit, s.getHitChance(), 1e-12);
+		assertEquals(4, s.getSpeed());
+		assertEquals("slash", s.getUsing());
+		assertTrue(s.getGear().isEmpty());
+	}
+
+	@Test
+	public void silverlightAndBurningClawsAreDemonbane()
+	{
+		OwnedGear bank = WikiGear.bank("Silverlight", "Burning claws");
+		List<WeaponScore> demon = WeaponRanker.rank(bank, GREATER_DEMON).best(GearStyle.MELEE);
+		List<WeaponScore> plain = WeaponRanker.rank(bank, GREATER_DEMON.toBuilder().attributes(new HashSet<>()).build())
+			.best(GearStyle.MELEE);
+		for (String name : new String[]{"Silverlight", "Burning claws"})
+		{
+			assertTrue(names(demon), score(demon, name).getEffects().contains("demonbane"));
+			assertTrue(names(plain), score(plain, name).getEffects().isEmpty());
+		}
+		// 60% more accuracy and damage: Silverlight's hit chance goes up on demons too, not just its max hit
+		assertTrue(score(demon, "Silverlight").getHitChance() > score(plain, "Silverlight").getHitChance());
+		assertEquals(score(plain, "Silverlight").getMaxHit() * 160 / 100, score(demon, "Silverlight").getMaxHit());
+		assertEquals(score(plain, "Burning claws").getMaxHit() * 105 / 100, score(demon, "Burning claws").getMaxHit());
+	}
+
+	@Test
+	public void scoresListTheGearTheyAssume()
+	{
+		OwnedGear bank = WikiGear.bank("Abyssal whip", "Dual macuahuitl", "Armadyl crossbow", "Dragon bolts", "Kodai wand",
+			"Slayer helmet (i)");
+		GearRanking r = WeaponRanker.rank(bank, GREATER_DEMON);
+		WeaponScore whip = score(r.best(GearStyle.MELEE), "Abyssal whip");
+		// On task the helmet replaces the faceguard; every other melee slot is the best melee piece, shield included
+		assertEquals("Slayer helmet (i)", whip.getSlayerItem());
+		assertTrue(whip.getGear().toString(), whip.getGear().contains("Slayer helmet (i)"));
+		assertFalse(whip.getGear().toString(), whip.getGear().contains("Neitiznot faceguard"));
+		assertTrue(whip.getGear().toString(), whip.getGear().contains("Avernic defender"));
+		assertEquals(9, whip.getGear().size());
+		// Two-handed: no shield
+		WeaponScore mac = score(r.best(GearStyle.MELEE), "Dual macuahuitl");
+		assertFalse(mac.getGear().toString(), mac.getGear().contains("Avernic defender"));
+		assertEquals(8, mac.getGear().size());
+		// Ranged: the ammo is what it shoots, not part of the worn list; the gear is ranged gear
+		WeaponScore acb = r.best(GearStyle.RANGED).get(0);
+		assertEquals("Dragon bolts", acb.getUsing());
+		assertFalse(acb.getGear().contains("Dragon bolts"));
+		assertTrue(acb.getGear().contains("Masori body (f)"));
+		assertTrue(r.best(GearStyle.MAGIC).get(0).getGear().contains("Ancestral robe top"));
 	}
 
 	@Test

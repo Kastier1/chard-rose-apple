@@ -91,6 +91,8 @@ public final class WikiGear
 			piece("Salve amulet(i)", GearSlot.NECK, false, 0, 0, 0, 0, 0, 0, 0, 0f, 0),
 			piece("Salve amulet (e)", GearSlot.NECK, false, 0, 0, 0, 0, 0, 0, 0, 0f, 0),
 			piece("Black mask (i)", GearSlot.HEAD, false, 0, 0, 0, 0, 0, 0, 0, 0f, 0),
+			piece("Silverlight", GearSlot.WEAPON, false, 9, 14, -2, 0, 0, 12, 0, 0f, 5),
+			piece("Burning claws", GearSlot.WEAPON, true, 43, 54, 0, 0, 0, 32, 0, 0f, 4),
 		})
 		{
 			BY_NAME.put(p.getName(), p);

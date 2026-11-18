@@ -9,6 +9,7 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -87,6 +88,9 @@ public class GearUpTest
 		assertTrue(melee.getNext(), melee.getNext().startsWith("then "));
 		assertTrue(melee.getTooltip(), melee.getTooltip().contains("Wearing your Slayer helmet (i)"));
 		assertTrue(melee.getTooltip(), melee.getTooltip().contains("Next: "));
+		// The rest of the gear the number assumes, so it can be checked against the wiki's DPS calculator
+		assertTrue(melee.getTooltip(), melee.getTooltip().contains("\nWith Slayer helmet (i), "));
+		assertTrue(melee.getTooltip(), melee.getTooltip().contains("Bandos chestplate"));
 		assertTrue(melee.getTooltip(), melee.getTooltip().contains("Dual macuahuitl"));
 		assertTrue(melee.getTooltip().endsWith(GearUp.ASSUMPTIONS));
 		GearUp.Row magic = row(rows, GearStyle.MAGIC);
@@ -112,8 +116,11 @@ public class GearUpTest
 		assertTrue(GearUp.target(ankou).is("undead"));
 		for (GearUp.Row r : GearUp.rows(bank, ankou))
 		{
-			// The salve or the helmet, never both
-			assertFalse(r.getTooltip(), r.getTooltip().contains("Slayer helmet (i)") && r.getTooltip().contains("Salve amulet(ei)"));
+			// The salve's bonus or the helmet's, never both
+			long boosts = Arrays.stream(r.getTooltip().split("\n")).filter(l -> l.startsWith("Wearing your ")).count();
+			assertTrue(r.getTooltip(), boosts <= 1);
+			assertFalse(r.getTooltip(), r.getTooltip().contains("Wearing your Slayer helmet (i)")
+				&& r.getTooltip().contains("Wearing your Salve amulet(ei)"));
 		}
 
 		SlayerLocationData.Variant kurask = variant("Kurask", "Kurask");

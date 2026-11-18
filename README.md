@@ -168,7 +168,7 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
 - **Best with what you have** names your best weapon per style (melee, ranged, magic) for the selected monster,
   with its expected damage per second and why, for example `Arclight 12.2 DPS (demonbane)` and under it
   `then Dual macuahuitl 10.4`. Hover a line for the max hit, hit chance, attack speed, ammo or spell, the slayer
-  helmet or salve it assumes you wear, the next three weapons and the assumptions.
+  helmet or salve it assumes you wear, the rest of the gear it assumes, the next three weapons and the assumptions.
   - It uses the items in your bank from the last time you opened it (remembered per account, across relogs), plus
     your inventory and what you wear. Until you open your bank once it says "Open your bank once so the plugin can
     see your gear."
@@ -181,8 +181,8 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
     cast their own spell on accurate; other staves cast the best standard elemental spell (strike to surge) your
     Magic level allows, or Magic Dart from a staff that casts it. No special attacks, set effects, void, bolt
     effects or ancient spells.
-  - Monster bonuses: demonbane (Arclight and Emberlight +70%, Darklight +60%, Silverlight +60% damage, scorching
-    bow +30%), dragonbane (dragon hunter lance +20%, crossbow +30% accuracy and +25% damage, wand +75% and +40%),
+  - Monster bonuses: demonbane (Arclight and Emberlight +70%, Darklight and Silverlight +60%, burning claws +5%,
+    scorching bow +30%), dragonbane (dragon hunter lance +20%, crossbow +30% accuracy and +25% damage, wand +75% and +40%),
     the keris against kalphites, the leaf-bladed battleaxe against turoth and kurask, silver and blisterwood or
     Ivandis weapons against vampyres, Twisted bow scaling, Tumeken's shadow, the scythe's extra hits on big
     monsters, the dual macuahuitl's split hit and Osmumten's fang's double accuracy roll, and the spell's elemental

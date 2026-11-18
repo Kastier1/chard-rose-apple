@@ -38,7 +38,13 @@ public class WeaponRulesTest
 		assertEquals(70, WeaponRules.demonbane("Emberlight").accuracy);
 		assertEquals(60, WeaponRules.demonbane("Darklight").damage);
 		assertEquals(60, WeaponRules.demonbane("Darklight").accuracy);
-		assertEquals(0, WeaponRules.demonbane("Silverlight").accuracy);
+		// "Silverlight": "the player's maximum hit and accuracy are increased by 60%", like Darklight
+		assertEquals(60, WeaponRules.demonbane("Silverlight").accuracy);
+		assertEquals(60, WeaponRules.demonbane("Silverlight").damage);
+		// "Burning claws": 5% accuracy and damage against demons
+		assertEquals(5, WeaponRules.demonbane("Burning claws").accuracy);
+		assertEquals(5, WeaponRules.demonbane("Burning claws").damage);
+		assertNull(WeaponRules.demonbane("Dragon claws"));
 		assertTrue(WeaponRules.demonbane("Scorching bow").addsToSlayerHelm);
 		assertNull(WeaponRules.demonbane("Abyssal whip"));
 

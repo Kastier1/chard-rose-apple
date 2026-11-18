@@ -30,12 +30,13 @@ final class WeaponRules
 		}
 	}
 
-	// "Demonbane weapons", "Arclight", "Darklight", "Emberlight", "Scorching bow", "Demon (attribute)":
-	// Arclight and Emberlight +70% accuracy and damage, Darklight +60% accuracy and damage, Silverlight +60% damage,
-	// scorching bow +30% accuracy and damage, added to the slayer helmet (i)'s bonus.
+	// "Arclight", "Emberlight": +70% accuracy and damage against demons. "Darklight", "Silverlight": +60% accuracy and
+	// damage (each item's page; the "Demonbane weapons" summary only mentions damage, the item pages both).
+	// "Burning claws": +5% accuracy and damage. "Scorching bow": +30% accuracy and damage, added to the slayer
+	// helmet (i)'s bonus.
 	private static final Bane ARCLIGHT = new Bane(70, 70, false, "demonbane");
 	private static final Bane DARKLIGHT = new Bane(60, 60, false, "demonbane");
-	private static final Bane SILVERLIGHT = new Bane(0, 60, false, "demonbane");
+	private static final Bane BURNING_CLAWS = new Bane(5, 5, false, "demonbane");
 	private static final Bane SCORCHING_BOW = new Bane(30, 30, true, "demonbane");
 	// "Dragon hunter lance": +20% accuracy and damage, times the slayer helmet or salve. "Dragon hunter crossbow":
 	// +30% accuracy, +25% damage, added to the slayer helmet (i)'s bonus, times a salve amulet's.
@@ -69,13 +70,13 @@ final class WeaponRules
 		{
 			return ARCLIGHT;
 		}
-		if (n.startsWith("darklight"))
+		if (n.startsWith("darklight") || n.startsWith("silverlight"))
 		{
 			return DARKLIGHT;
 		}
-		if (n.startsWith("silverlight"))
+		if (n.startsWith("burning claws"))
 		{
-			return SILVERLIGHT;
+			return BURNING_CLAWS;
 		}
 		if (n.startsWith("scorching bow"))
 		{

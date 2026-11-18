@@ -38,6 +38,10 @@ public final class WeaponRanker
 	private static final GearSlot[] OTHER_SLOTS = {GearSlot.SHIELD, GearSlot.HEAD, GearSlot.BODY, GearSlot.LEGS,
 		GearSlot.HANDS, GearSlot.FEET, GearSlot.CAPE, GearSlot.NECK, GearSlot.RING};
 
+	/** The equipment screen's order, for listing the gear a score assumes. */
+	private static final GearSlot[] SHOWN_ORDER = {GearSlot.HEAD, GearSlot.CAPE, GearSlot.NECK, GearSlot.BODY,
+		GearSlot.SHIELD, GearSlot.LEGS, GearSlot.HANDS, GearSlot.FEET, GearSlot.RING};
+
 	// Prayers ("Maximum melee hit", "Damage per second/Ranged", "Damage per second/Magic")
 	private static final int PIETY_ATTACK_NUM = 120;
 	private static final int PIETY_STRENGTH_NUM = 123;
@@ -260,15 +264,33 @@ public final class WeaponRanker
 		{
 			effects.add("salve");
 		}
+		WeaponScore score;
 		switch (style)
 		{
 			case MELEE:
-				return melee(weapon, worn, boost, owned.getLevels(), target, effects, why);
+				score = melee(weapon, worn, boost, owned.getLevels(), target, effects, why);
+				break;
 			case RANGED:
-				return ranged(weapon, worn, boost, owned, target, effects, why);
+				score = ranged(weapon, worn, boost, owned, target, effects, why);
+				break;
 			default:
-				return magic(weapon, worn, boost, owned.getLevels(), target, effects, why);
+				score = magic(weapon, worn, boost, owned.getLevels(), target, effects, why);
+				break;
 		}
+		if (score == null)
+		{
+			return null;
+		}
+		List<String> gear = new ArrayList<>();
+		for (GearSlot slot : SHOWN_ORDER)
+		{
+			GearPiece p = worn.get(slot);
+			if (p != null)
+			{
+				gear.add(p.getName());
+			}
+		}
+		return score.withGear(Collections.unmodifiableList(gear));
 	}
 
 	private static WeaponScore melee(GearPiece weapon, Map<GearSlot, GearPiece> worn, SlayerBoost boost, Levels levels,
@@ -366,7 +388,7 @@ public final class WeaponRanker
 				if (best == null || dps > best.getDps())
 				{
 					best = new WeaponScore(GearStyle.MELEE, weapon.getItemId(), name, dps, max, hit, speed, type,
-						Collections.unmodifiableList(new ArrayList<>(effects)), boost.item);
+						Collections.unmodifiableList(new ArrayList<>(effects)), boost.item, Collections.emptyList());
 				}
 			}
 		}
@@ -519,7 +541,7 @@ public final class WeaponRanker
 		int speed = Math.max(1, speed(weapon) - 1);
 		double dps = CombatMath.dps(CombatMath.averageHit(hit, max), speed);
 		return new WeaponScore(GearStyle.RANGED, weapon.getItemId(), name, dps, max, hit, speed, using,
-			Collections.unmodifiableList(effects), boost.item);
+			Collections.unmodifiableList(effects), boost.item, Collections.emptyList());
 	}
 
 	private static int rangedDefence(Target t, RangedAmmo.Defence d)
@@ -691,7 +713,7 @@ public final class WeaponRanker
 					fx.add(element + " weakness");
 				}
 				best = new WeaponScore(GearStyle.MAGIC, weapon.getItemId(), name, dps, max, hit, speed, spell,
-					Collections.unmodifiableList(fx), boost.item);
+					Collections.unmodifiableList(fx), boost.item, Collections.emptyList());
 			}
 		}
 		return best;

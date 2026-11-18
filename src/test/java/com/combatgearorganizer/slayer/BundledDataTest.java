@@ -255,6 +255,27 @@ public class BundledDataTest
 		return slots(c).stream().filter(s -> s.getToolTipText().contains("<b>" + item + "</b>")).findFirst().orElse(null);
 	}
 
+	/** The tooltip of the first label whose text contains this, or null. */
+	private static String tooltipOf(Component c, String text)
+	{
+		if (c instanceof JLabel && ((JLabel) c).getText() != null && ((JLabel) c).getText().contains(text))
+		{
+			return ((JLabel) c).getToolTipText();
+		}
+		if (c instanceof Container)
+		{
+			for (Component child : ((Container) c).getComponents())
+			{
+				String tip = tooltipOf(child, text);
+				if (tip != null)
+				{
+					return tip;
+				}
+			}
+		}
+		return null;
+	}
+
 	private static boolean containsText(Component c, String text)
 	{
 		if (c instanceof JLabel && ((JLabel) c).getText() != null && ((JLabel) c).getText().contains(text))
@@ -338,6 +359,14 @@ public class BundledDataTest
 			assertTrue(containsText(panel, "Arclight "));
 			assertTrue(containsText(panel, " DPS (demonbane)"));
 			assertTrue(containsText(panel, "then "));
+			// The long tooltips wrap instead of running across the screen, and are escaped HTML
+			String tip = tooltipOf(panel, "Arclight ");
+			assertNotNull(tip);
+			assertTrue(tip, tip.startsWith("<html><body style='width:"));
+			assertTrue(tip, tip.contains("<br>With Slayer helmet (i), "));
+			assertTrue(tip, !tip.contains("\n"));
+			String heading = tooltipOf(panel, SlayerPanel.BEST_GEAR);
+			assertTrue(heading, heading.startsWith("<html><body style='width:") && heading.contains("Piety"));
 
 			panel.setGear(WikiGear.bank());
 			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,

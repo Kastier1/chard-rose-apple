@@ -91,7 +91,8 @@ Have a task, and open the **Slayer** tab.
 - [ ] **Best with what you have** (under *Carry*):
   - [ ] Before opening your bank on this account: it says "Open your bank once so the plugin can see your gear."
   - [ ] Open your bank, close it: one line per style you have a weapon for, best first, with DPS. Hover: max hit,
-    hit chance, speed, ammo or spell, the next weapons, the assumptions.
+    hit chance, speed, ammo or spell, the gear it assumes ("With ..."), the next weapons, the assumptions. The
+    tooltip wraps at a readable width rather than running across the screen.
   - [ ] Relog (or restart the client) without opening the bank: the lines are still there. Switch to another account:
     it asks you to open the bank again.
   - [ ] Greater demons with Arclight (or Emberlight) and a dual macuahuitl in the bank: the sword is first, marked

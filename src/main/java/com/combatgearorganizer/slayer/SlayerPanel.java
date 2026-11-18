@@ -62,6 +62,8 @@ public class SlayerPanel extends JPanel
 	private static final int INFO_TEXT_WIDTH = 140;
 	private static final int PREVIEW_LENGTH = 22;
 	private static final int CAPTION_WIDTH = 46;
+	/** Long tooltips wrap at this width instead of running across the screen. */
+	private static final int TOOLTIP_WIDTH = 250;
 	private static final Color WEAKNESS_COLOR = new Color(255, 200, 90);
 	private static final Color MISSING_TEXT_COLOR = new Color(255, 152, 31);
 	private static final Color LAST_TIME_COLOR = new Color(140, 190, 255);
@@ -723,7 +725,7 @@ public class SlayerPanel extends JPanel
 		heading.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		heading.setAlignmentX(LEFT_ALIGNMENT);
 		heading.setBorder(new EmptyBorder(4, 0, 1, 0));
-		heading.setToolTipText(GearUp.ASSUMPTIONS);
+		heading.setToolTipText(wrappedTooltip(GearUp.ASSUMPTIONS));
 		card.add(heading);
 		if (!gear.isBankSeen())
 		{
@@ -745,8 +747,7 @@ public class SlayerPanel extends JPanel
 				html += "<br><font color='#a0a0a0'>" + escape(row.getNext()) + "</font>";
 			}
 			JLabel text = textChip(html, row.isUsable() ? Color.WHITE : ColorScheme.MEDIUM_GRAY_COLOR);
-			String tip = "<html>" + escape(row.getTooltip()).replace("\n", "<br>") + "</html>";
-			text.setToolTipText(tip);
+			text.setToolTipText(wrappedTooltip(row.getTooltip()));
 			card.add(factRow(row.getStyle().getDisplayName(), text));
 		}
 	}
@@ -1533,6 +1534,13 @@ public class SlayerPanel extends JPanel
 		label.setForeground(color);
 		label.setAlignmentX(LEFT_ALIGNMENT);
 		return label;
+	}
+
+	/** Plain text with line breaks as a tooltip that wraps at {@link #TOOLTIP_WIDTH}. */
+	static String wrappedTooltip(String text)
+	{
+		return "<html><body style='width:" + TOOLTIP_WIDTH + "px'>" + escape(text).replace("\n", "<br>")
+			+ "</body></html>";
 	}
 
 	private static String escape(String s)

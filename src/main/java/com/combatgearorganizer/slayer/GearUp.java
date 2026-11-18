@@ -28,7 +28,8 @@ public final class GearUp
 	public static final String ASSUMPTIONS = "Assumes your real levels with a super combat, ranging or magic potion "
 		+ "and Piety, Rigour or Augury; your best other gear for the style from your bank; and that you're on task. "
 		+ "Melee uses accurate or aggressive, whichever does more; ranged uses rapid. Staves cast the best standard "
-		+ "spell you can (or Magic Dart). No special attacks, set effects, void or bolt effects.";
+		+ "spell you can (or Magic Dart). No special attacks, set effects, void or bolt effects. Level needs to "
+		+ "wield an item aren't checked.";
 
 	private GearUp()
 	{
@@ -132,6 +133,10 @@ public final class GearUp
 		if (top.getSlayerItem() != null)
 		{
 			tip.append("Wearing your ").append(top.getSlayerItem()).append('\n');
+		}
+		if (!top.getGear().isEmpty())
+		{
+			tip.append("With ").append(String.join(", ", top.getGear())).append('\n');
 		}
 		if (best.size() > 1)
 		{
