@@ -225,6 +225,10 @@ def generic_items(wiki):
     return {item for item, n in count.items() if n >= 50 and item not in GENERIC_KEEP}
 
 
+def in_game_name(item):
+    return item[:-len(" (item)")] if item.endswith(" (item)") else item
+
+
 def drops_for(pages, wiki, generic):
     """A monster's own rare drops and collection log slots (rarest first), and what it always drops."""
     clog = {n.lower() for n in wiki.get("collection_log_items", [])}
@@ -243,7 +247,9 @@ def drops_for(pages, wiki, generic):
             p_alt = chance(alt)
             if p is None or (not in_log and min(p, p_alt or p) > RARE):
                 continue
-            drop = {"item": item, "rarity": rarity}
+            # The wiki adds "(item)" to tell an item from a monster of the same name ("Crawling hand (item)"); the
+            # game, and so the collection log, calls it "Crawling hand"
+            drop = {"item": in_game_name(item), "rarity": rarity}
             # Stack size, for the icon's number: only when it can be more than one
             if isinstance(high, (int, float)) and high > 1:
                 drop["quantity"] = [int(low or high), int(high)]
