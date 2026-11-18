@@ -28,6 +28,29 @@ Scythe of Vitur get a fixed bonus because their strength isn't in their stats.
 Switch **Group by** to *Equipment slot* if you'd rather have one row-block per slot (all weapons together,
 all helms together, …), each ordered melee → ranged → magic.
 
+Switch it to *Gear set* to line up your armour sets: armour slots are rows (helms, bodies, legs, gloves, boots) and
+each set is one column, so Bandos, Karil's or Ahrim's reads straight down. For example:
+
+```
+-                     Dharok's helm         Karil's coif          Ahrim's hood          Helm of neitiznot
+Bandos chestplate     Dharok's platebody    Karil's leathertop    Ahrim's robetop       Fighter torso
+Bandos tassets        Dharok's platelegs    Karil's leatherskirt  Ahrim's robeskirt
+-                     -                     -                     -                     Barrows gloves
+(blank)
+weapons, shields, capes, amulets, rings, ammo and supplies: one row block each, as with Equipment slot
+```
+
+- Sets are found from item names (charged and degraded versions count), from a table in `GearSets.java`: Barrows,
+  Bandos, Armadyl, Torva, Masori, Virtus, Ancestral, Inquisitor's, Justiciar, void, the moon sets, Sunfire fanatic,
+  Proselyte, Crystal, Obsidian, d'hide and blessed d'hide, rune / dragon / god armour, Mystic, Infinity, Lunar,
+  Dagon'hai, Elder chaos, Ghostly, Graceful, Spirit angler and others.
+- Melee sets come first, then ranged, then magic (a set's style is that of most of its pieces), strongest first.
+- Armour that isn't in a set, or is the only piece of its set in the tab, goes to the right of the sets in its own
+  row. So does a second piece for a slot a set already has (a second void helm).
+- More than 8 columns wrap into another block of rows below.
+- Adding a weapon, jewellery or an odd piece of armour never moves a set. A new set, or a set getting stronger, can
+  move the sets that come after it.
+
 ## Usage
 
 1. Make sure the built-in **Bank Tags** plugin is enabled.
@@ -43,7 +66,7 @@ all helms together, …), each ordered melee → ranged → magic.
 Click the plugin's button in the side bar and pick **Combat tab** at the top (next to **Slayer**). There you can:
 
 - pick the **Bank tag** from your tag tabs, or type a new name;
-- pick the **Layout**: *By style* or *By slot* (the same as the **Group by** setting; changing one changes the other);
+- pick the **Layout**: *By style*, *By slot* or *By set* (the same as the **Group by** setting; changing one changes the other);
 - click **Organize now** with your bank open. It opens the tab with the new layout and asks **Keep** / **Undo** in
   the chat box, like the Auto layout menu entry. It then shows a line like
   `48 items: 14 melee, 12 ranged, 10 magic, 12 other`;
@@ -68,7 +91,7 @@ change your mind. Items you untag drop out of the layout on the next sort.
 ## Config
 
 - **Bank tag** – the tag tab to organize (default `combat`)
-- **Group by** – combat style or equipment slot
+- **Group by** – combat style, equipment slot or gear set
 - **Blank row between sections** – visual spacing between groups
 - **Re-organize after ::gearadd** (off by default)
 - **Organize hotkey**

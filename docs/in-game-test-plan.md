@@ -51,7 +51,16 @@ log in in the window that opens, pick your character, then *Play Now*. Next time
   Ahrim's staff.
 - [ ] Wear a set and click **Add worn gear**. Items you wear show as themselves, not as a broken or uncharged
   version, and there's no greyed-out duplicate.
-- [ ] Switch **By style** / **By slot** in the panel; the plugin settings follow, and the other way round.
+- [ ] Switch **By style** / **By slot** / **By set** in the panel; the plugin settings follow, and the other way
+  round.
+- [ ] **By set**: each set you have two or more pieces of (Bandos, Dharok's, Karil's, black d'hide, Ahrim's,
+  Mystic...) reads straight down one column: melee sets, then ranged, then magic. Helms, bodies, legs, gloves and
+  boots are the rows.
+  - [ ] Odd pieces (Helm of neitiznot, Fighter torso, a lone Verac's helm, Barrows gloves) sit to the right of the
+    sets in their own row.
+  - [ ] A degraded or charged piece (Dharok's helm 100, Torva full helm (damaged)) still lines up with its set.
+  - [ ] Weapons, shields, capes, amulets and rings follow below the armour, a row block each.
+  - [ ] Tag one more odd item (a weapon, a ring, a helm) and organize again: no set changes column.
 - [ ] `::gearsort` and `::gearsort undo` still work.
 
 ## 3. Slayer panel

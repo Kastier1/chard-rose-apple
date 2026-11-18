@@ -109,6 +109,7 @@ public class CombatTabPanelTest
 			assertTrue(radio(p, Grouping.BY_STYLE.getShortName()).isSelected());
 			assertTrue(containsText(p, Grouping.BY_STYLE.getDescription()));
 			assertTrue(containsText(p, Grouping.BY_SLOT.getDescription()));
+			assertTrue(containsText(p, Grouping.BY_SET.getDescription()));
 
 			// Changed in the settings: shown, and not sent back
 			p.update(status(true, 48, true, false), Grouping.BY_SLOT);
@@ -119,6 +120,14 @@ public class CombatTabPanelTest
 			// Picked in the panel: sent to the settings
 			radio(p, Grouping.BY_STYLE.getShortName()).doClick(0);
 			assertEquals(Collections.singletonList("grouping " + Grouping.BY_STYLE), events);
+
+			// By set is a choice like the others
+			events.clear();
+			p.update(status(true, 48, true, false), Grouping.BY_SET);
+			assertTrue(radio(p, Grouping.BY_SET.getShortName()).isSelected());
+			assertTrue(events.isEmpty());
+			radio(p, Grouping.BY_SLOT.getShortName()).doClick(0);
+			assertEquals(Collections.singletonList("grouping " + Grouping.BY_SLOT), events);
 		});
 	}
 

@@ -71,7 +71,7 @@ public class CombatTabPanel extends JPanel
 
 	/**
 	 * @param onTagChosen      the player picked or typed a tag; called on the Swing thread with the raw text
-	 * @param onGroupingChosen the player picked By style or By slot
+	 * @param onGroupingChosen the player picked By style, By slot or By set
 	 * @param onOrganize       Organize now
 	 * @param onUndo           Undo (after an organize that had no Keep / Undo preview)
 	 * @param onAddWorn        Add worn gear

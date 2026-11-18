@@ -592,7 +592,7 @@ public class CombatGearOrganizerPlugin extends Plugin
 		}
 	}
 
-	/** The player picked By style or By slot in the panel. Swing thread. */
+	/** The player picked By style, By slot or By set in the panel. Swing thread. */
 	private void chooseGrouping(Grouping grouping)
 	{
 		if (grouping != config.grouping())
@@ -784,6 +784,19 @@ public class CombatGearOrganizerPlugin extends Plugin
 		return ids;
 	}
 
+	/**
+	 * The armour set of the item, from its name or else the name of its variation group base (its uncharged or
+	 * undamaged version). Client thread.
+	 */
+	private String setOf(int itemId, String name)
+	{
+		return GearSets.setOf(name, () ->
+		{
+			final int base = ItemVariationMapping.map(itemId);
+			return base == itemId ? null : itemManager.getItemComposition(base).getName();
+		});
+	}
+
 	/** For a tagged variation group the player has none of: the version with the best stats. */
 	private int bestVariation(int baseId)
 	{
@@ -809,7 +822,7 @@ public class CombatGearOrganizerPlugin extends Plugin
 
 		if (stats == null || !stats.isEquipable() || stats.getEquipment() == null)
 		{
-			return new GearItem(itemId, name, GearSlot.NONE, GearStyle.SUPPLIES, 0);
+			return new GearItem(itemId, name, GearSlot.NONE, GearStyle.SUPPLIES, 0, null);
 		}
 
 		final ItemEquipmentStats e = stats.getEquipment();
@@ -833,7 +846,8 @@ public class CombatGearOrganizerPlugin extends Plugin
 
 		final GearSlot slot = GearSlot.fromEquipmentIndex(e.getSlot());
 		final GearStyle style = GearClassifier.classify(name, slot, bonuses);
-		return new GearItem(itemId, name, slot, style, GearClassifier.power(style, name, slot, bonuses));
+		return new GearItem(itemId, name, slot, style, GearClassifier.power(style, name, slot, bonuses),
+			LayoutBuilder.isArmourSlot(slot) ? setOf(itemId, name) : null);
 	}
 
 	private static String joinFrom(String[] args, int from)

@@ -42,7 +42,8 @@ public interface CombatGearOrganizerConfig extends Config
 		keyName = GROUPING_KEY,
 		name = "Group by",
 		description = "Combat style: melee / ranged / magic / prayer sections, each ordered by slot.<br>"
-			+ "Equipment slot: one section per slot, each ordered by combat style.",
+			+ "Equipment slot: one section per slot, each ordered by combat style.<br>"
+			+ "Gear set: armour slots as rows and sets as columns, so each set lines up; other slots as by slot.",
 		position = 1
 	)
 	default Grouping grouping()

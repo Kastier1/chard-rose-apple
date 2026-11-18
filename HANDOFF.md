@@ -123,8 +123,19 @@ variation groups in `CarryItemTest`. Tooltip reasons can hold `\n`, shown as lin
 Vorkath needs a shield and super antifire together (the wiki table: super antifire alone still lets 60 through, a
 shield with regular antifire 10). Not yet seen in a logged-in client.
 
+**Update 2026-11-18 (issue #31):** new layout choice *By set* (`Grouping.BY_SET`, "Gear set" in the settings, a third
+radio in the Combat tab panel). `LayoutBuilder` puts armour (head, body, legs, hands, feet) in a grid: rows are slots,
+columns are sets, then the armour in no set to the right in its row (style, then power order); columns past 8 wrap
+into another block (blank row between if that setting is on); every other slot then gets its own rows as in By slot.
+Sets come from `GearSets`, a prefix table (whole words, longest prefix wins, names normalized: no apostrophes,
+"dragonhide" = "dhide"); `GearItem.set` holds it, and the plugin also tries the name of the item's variation group
+base. A set needs pieces for two slots in the tab; its column is its strongest piece per slot, and a second piece for
+a slot goes with the unsetted armour so it can't widen the set. Sets are ordered by style (majority of the column;
+tie goes to melee, ranged, magic order) then strength (sum of power). Adding a weapon, jewellery or odd armour never
+moves a set; a new set or a stronger set can move the sets after it. Not yet seen in a logged-in client.
+
 Still open from the review: boss/Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
-hybrid items, per-slot rows (the "Loadout" grouping), and the scope doc's wrong required items.
+hybrid items, per-slot rows (the "Loadout" grouping; By set covers armour only), and the scope doc's wrong required items.
 
 Branch: `claude/loving-faraday-7nz9t9` on `Kastier1/chard-rose-apple`. No pull request yet.
 
