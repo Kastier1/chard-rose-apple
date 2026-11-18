@@ -136,16 +136,25 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
 - The **monster table** lists every monster that counts for the task, those at a listed place first. A monster's
   *Found at* row names its places, or says "Not at any of the places below" (for example a Wilderness place while
   *Show Wilderness locations* is off) or "No place in the data yet".
+- **Bosses** that count for the task (Vorkath on Blue dragons, K'ril Tsutsaroth and Skotizo on Greater demons,
+  Cerberus on Hellhounds, Obor on Hill giants, Scurrius on Rats...) are rows of the table too, after the regular
+  monsters, marked with a crown (the tooltip says "Boss"). Click one for its own card: level, hitpoints, XP, drops,
+  what to carry, *Best with what you have* and *Found at*. There's no prayer advice while a boss is selected. Each boss
+  has its lair as a place, listed last: its Go takes you to where you walk in (Vorkath's ice chunks on Ungael, the
+  crawl-through cave to Cerberus' Lair, the God Wars Dungeon entrance), and the card shows what you still need (91
+  Slayer for Cerberus, Dragon Slayer II for Vorkath). **Go to nearest** never picks a lair. A Wilderness lair is on
+  Krystilia's list when the boss counts for her, and a lair counts as Konar's area where the wiki says it does. The
+  God Wars Dungeon bodyguards aren't listed: they're part of their general's fight.
 - Monsters that live away from every place in the slayer location guide (tormented demons for Greater demons,
   ice spiders, penguins...) get a place of their own made from their OSRS Wiki spawn points, such as
   "Tormented Demon (Ancient Guthixian Temple)". Its card says so. If the wiki names the spot like one of the task's
-  places (God Wars bodyguards, mithril dragons), the monster joins that place instead. A place named like a guide
+  places (mithril dragons in the Ancient Cavern), the monster joins that place instead. A place named like a guide
   place elsewhere (Ancient Cavern) takes that place's quest and skill needs, and the temple needs While Guthix
   Sleeps; otherwise the card says the data has no access details.
   **Go to nearest** only uses these places when no guide place can be reached.
 - **Drops** show as item pictures, with the stack size when a drop comes in a pile. Hover one for its drop rate,
   the better rate on task, whether it's in your collection log, and its value. Drops you haven't logged are faded
-  with a dashed outline; logged ones have a small tick. Superiors and bosses show their notable drops the same way.
+  with a dashed outline; logged ones have a small tick. Superiors show their notable drops the same way next to their monster.
   Drop names are matched to items in the first few seconds after you log in; until then they show as text.
 - **Carry** suggests the protection, prayer and storage items worth an inventory slot for the selected monster, and
   ticks the ones you already have in your inventory or worn:

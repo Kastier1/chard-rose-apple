@@ -14,6 +14,10 @@ tools/data/wiki_monsters.json, made by tools/fetch_wiki_monsters.py from the OSR
 A monster whose spawns are near none of a task's places gets a place of its own made from those spawns
 (source "wiki"), named from the wiki's location for them.
 
+Bosses that count for a task (BOSSES, checked against the OSRS Wiki; see the citations there) are listed as monsters of
+that task, after the regular ones, each with its lair as its only place (source "boss", BOSS_LAIRS): the entrance the
+player walks to, and the quests and skill levels the wiki says it needs. God Wars Dungeon bodyguards are left out.
+
 Usage: python3 tools/build_slayer_locations.py path/to/slayer_areas.json
 """
 import json
@@ -77,6 +81,11 @@ CATEGORY_ALIASES = {
 }
 # Not killed on a normal task: Arceuus reanimations, Leagues echoes, quest/minigame rematches
 NOT_A_TASK_KILL = re.compile(r"^reanimated |\((echo|hard)\)", re.IGNORECASE)
+# Wiki pages of the same monster that aren't fought on a task: the PvM Arena copies of bosses ("Kree'arra (PvM Arena)")
+NOT_A_TASK_PAGE = re.compile(r"\(PvM Arena\)$", re.IGNORECASE)
+# Versions only fought during a quest ("Vorkath": "Dragon Slayer II" beside "Post-quest"; "Amoxliatl": "Quest"), which
+# would widen the level, hitpoints and XP ranges with a fight the player can't have on a task
+QUEST_VERSIONS = {"quest", "dragon slayer ii"}
 # A variant belongs to a place when one of its spawns is this close (tiles) to one of the place's points
 NEAR = 40
 # Most dungeons sit 6400 tiles north of their entrance on the world map; an entrance-only place gets a looser match
@@ -130,6 +139,8 @@ def near(spawns, points, radius, dy=0):
 def places_for(spawns, places, all_points):
     keys = []
     for pl in places:
+        if pl.get("source") == BOSS_SOURCE:
+            continue  # a boss's lair is for the boss alone
         pts = all_points.get(pl["key"]) or (pl["points"] + pl["wildernessPoints"])
         if near(spawns, pts, NEAR):
             keys.append(pl["key"])
@@ -281,14 +292,24 @@ def drops_for(pages, wiki, generic):
 
 
 def task_monsters(task_name, wiki):
-    """monster name -> its wiki versions that count for this task, in the wiki data's order."""
+    """monster name -> its wiki versions that count for this task, in the wiki data's order.
+
+    Leaves out the God Wars Dungeon bodyguards, and bosses that aren't in BOSSES for this task (the wiki's category for
+    a boss can be wider than what counts); a boss in BOSSES for the task is found by name even outside the category.
+    """
     category = CATEGORY_ALIASES.get(task_name.lower(), task_name.lower())
     league_only = set(wiki.get("superiors_league_only", []))
+    bosses = bosses_of(task_name)
     by_name = {}
     for m in wiki["monsters"]:
-        if category not in (c.lower() for c in m.get("slayer_category", [])):
+        categories = [c.lower() for c in m.get("slayer_category", [])]
+        if m["name"] not in bosses and (category not in categories or "bosses" in categories):
             continue
-        if NOT_A_TASK_KILL.search(m["name"]) or not m.get("combat_level") or m["page_name"] in league_only:
+        if m["name"] in GWD_MINIONS or NOT_A_TASK_KILL.search(m["name"]) or NOT_A_TASK_PAGE.search(m["page_name"]):
+            continue
+        if (m.get("version_anchor") or "").lower() in QUEST_VERSIONS:
+            continue
+        if not m.get("combat_level") or m["page_name"] in league_only:
             continue
         by_name.setdefault(m["name"], []).append(m)
     return by_name
@@ -298,8 +319,8 @@ def is_superior(name, pages, wiki):
     return bool(pages.intersection(wiki["superiors"])) or name in wiki["superiors"]
 
 
-def is_boss(versions):
-    return any(c.lower() == "bosses" for v in versions for c in v.get("slayer_category", []))
+def is_boss(name, task_name):
+    return name in bosses_of(task_name)
 
 
 def spawns_of(pages, wiki):
@@ -321,6 +342,349 @@ WIKI_ACCESS = {
     # "They can be found throughout the Ancient Guthixian Temple after completion of the quest."
     "ancientguthixiantemple": {"questsFinished": ["WHILE_GUTHIX_SLEEPS"]},
 }
+
+
+# God Wars Dungeon bodyguards: they only appear in their general's room and are killed as part of the boss fight, so
+# they aren't listed as monsters for a task even where the wiki puts them in its category (Tstanon Karlak under greater
+# demons). Each wiki page says "<name> is one of <general>'s bodyguards", e.g.
+# https://oldschool.runescape.wiki/w/Tstanon_Karlak, https://oldschool.runescape.wiki/w/Wingman_Skree,
+# https://oldschool.runescape.wiki/w/Sergeant_Strongstack, https://oldschool.runescape.wiki/w/Starlight. Nex's
+# generals (https://oldschool.runescape.wiki/w/Nex) are left out the same way.
+GWD_MINIONS = {
+    "Tstanon Karlak", "Zakl'n Gritch", "Balfrug Kreeyath",  # K'ril Tsutsaroth
+    "Wingman Skree", "Flockleader Geerin", "Flight Kilisa",  # Kree'arra
+    "Sergeant Strongstack", "Sergeant Grimspike", "Sergeant Steelwill",  # General Graardor
+    "Starlight", "Growler", "Bree",  # Commander Zilyana
+    "Fumus", "Umbra", "Cruor", "Glacies",  # Nex
+}
+
+# Where each boss that counts for a normal slayer task is fought. Every point is where the player walks in (the
+# entrance object, or the tile Shortest Path uses for it), never a spot inside an instance. The plugin never sends
+# "Go to nearest" to these places: a boss is a choice the player makes. Requirements use RuneLite Quest and Skill enum
+# names; what they can't say (Wilderness diaries, keys, kill count) is in the note. "konar": the guide place whose
+# Konar area the lair counts as (the wiki says the boss can be killed on her task there; each of these drops a brimstone
+# key on her tasks). "krystilia": the lair is in the Wilderness and the boss counts on her task.
+BOSS_LAIRS = {
+    # https://oldschool.runescape.wiki/w/Abyssal_Sire: "requires level 85 Slayer". https://oldschool.runescape.wiki/w/
+    # Abyssal_Nexus: "a one-way entrance in the southern part of the outer ring of the Abyss ... the code DIP in the fairy
+    # ring network". Point: the DIP fairy ring (Shortest Path fairy_rings.tsv).
+    "abyssal_nexus": {
+        "label": "Abyssal Nexus",
+        "points": [[3037, 4763, 0]],
+        "requirements": {"skills": {"SLAYER": 85}},
+        "note": "Fairy ring DIP, or the one-way entrance in the south of the Abyss's outer ring. "
+                "The Sire is fought in one of four chambers.",
+        "konar": "the_abyss",
+    },
+    # https://oldschool.runescape.wiki/w/Araxxor: "requires level 92 Slayer". Point: the web tunnel into his lair in the
+    # Morytania Spider Cave (Shortest Path transports.tsv "Araxxor lair", 92 Slayer; wiki Web tunnel 3656,9816).
+    "araxxor": {
+        "label": "Araxxor's lair (Morytania Spider Cave)",
+        "points": [[3658, 9815, 0]],
+        "requirements": {"questsFinished": ["PRIEST_IN_PERIL"], "skills": {"SLAYER": 92}},
+        "note": "Squeeze through the web tunnel on the west side of the Morytania Spider Cave.",
+    },
+    # https://oldschool.runescape.wiki/w/God_Wars_Dungeon: entrance and access (as the guide's place).
+    # https://oldschool.runescape.wiki/w/Kree%27arra/Strategies: "70 Ranged and a mithril grapple"; 40 kill count.
+    "kreearra": {
+        "label": "Kree'arra's room (God Wars Dungeon)",
+        "points": [[2917, 3747, 0]],
+        "requirements": {"skills": {"RANGED": 70}},
+        "note": "Go takes you to the dungeon entrance. Needs part of Troll Stronghold or the easy Combat Achievements, "
+                "60 Strength or 60 Agility, a crossbow and mithril grapple to reach Armadyl's Eyrie, and 40 Armadyl "
+                "kill count to open the door.",
+        "konar": "god_wars_dungeon",
+    },
+    # https://oldschool.runescape.wiki/w/K%27ril_Tsutsaroth/Strategies: "requires 70 Hitpoints to cross the river"; 40
+    # kill count. Entrance as above.
+    "kril": {
+        "label": "K'ril Tsutsaroth's room (God Wars Dungeon)",
+        "points": [[2917, 3747, 0]],
+        "requirements": {"skills": {"HITPOINTS": 70}},
+        "note": "Go takes you to the dungeon entrance. Needs part of Troll Stronghold or the easy Combat Achievements, "
+                "60 Strength or 60 Agility, 70 Hitpoints to cross the river to Zamorak's Fortress, and 40 Zamorak "
+                "kill count to open the door.",
+    },
+    # https://oldschool.runescape.wiki/w/Callisto: "requires the medium Wilderness Diary ... a bear Slayer task does not
+    # bypass the diary requirement". Point: RuneLite world map DungeonLocation.CALLISTOS_DEN (wiki 3292,3849).
+    "callistos_den": {
+        "label": "Callisto's Den",
+        "points": [[3292, 3850, 0]],
+        "note": "Needs the medium Wilderness Diary or a Callisto boss task (a bear task alone doesn't let you in). "
+                "50,000 coins to enter, taken from the bank.",
+        "krystilia": True,
+    },
+    # https://oldschool.runescape.wiki/w/Hunter%27s_End: hard Wilderness Diary or a Callisto boss task. Point: RuneLite
+    # DungeonLocation.HUNTERS_END (wiki Artio/Strategies 3116,3677).
+    "hunters_end": {
+        "label": "Hunter's End",
+        "points": [[3115, 3677, 0]],
+        "note": "Needs the hard Wilderness Diary or a Callisto boss task (a bear task alone doesn't let you in). "
+                "50,000 coins to enter, taken from the bank.",
+        "krystilia": True,
+    },
+    # https://oldschool.runescape.wiki/w/Vet%27ion%27s_Rest: medium Wilderness Diary or a Vet'ion boss task. Point:
+    # RuneLite DungeonLocation.VETIONS_REST (wiki Crevice (Vet'ion's Rest) 3222,3788).
+    "vetions_rest": {
+        "label": "Vet'ion's Rest",
+        "points": [[3221, 3788, 0]],
+        "note": "Needs the medium Wilderness Diary or a Vet'ion boss task (a skeleton task alone doesn't let you in). "
+                "50,000 coins to enter, taken from the bank.",
+        "krystilia": True,
+    },
+    # https://oldschool.runescape.wiki/w/Skeletal_Tomb: "the hard Wilderness diary, OR ... a Vet'ion boss Slayer task (a
+    # skeleton Slayer task does not bypass the diary requirement)". Point: RuneLite DungeonLocation.SKELETAL_TOMB.
+    "skeletal_tomb": {
+        "label": "Skeletal Tomb (Graveyard of Shadows)",
+        "points": [[3179, 3684, 0]],
+        "note": "Needs the hard Wilderness Diary or a Vet'ion boss task (a skeleton task alone doesn't let you in). "
+                "50,000 coins to enter, taken from the bank.",
+        "krystilia": True,
+    },
+    # https://oldschool.runescape.wiki/w/Silk_Chasm: medium Wilderness Diary or a Venenatis boss task. Point: RuneLite
+    # DungeonLocation.SILK_CHASM (wiki Cave entrance (Silk Chasm) 3321,3794).
+    "silk_chasm": {
+        "label": "Silk Chasm",
+        "points": [[3320, 3798, 0]],
+        "note": "Needs the medium Wilderness Diary or a Venenatis boss task (a spider task alone doesn't let you in). "
+                "50,000 coins to enter, taken from the bank.",
+        "krystilia": True,
+    },
+    # https://oldschool.runescape.wiki/w/Web_Chasm: "the hard Wilderness diary, OR ... a Venenatis boss Slayer task (a
+    # spider Slayer task does not bypass the diary requirement)". Point: RuneLite DungeonLocation.WEB_CHASM.
+    "web_chasm": {
+        "label": "Web Chasm (eastern ruins)",
+        "points": [[3184, 3745, 0]],
+        "note": "Needs the hard Wilderness Diary or a Venenatis boss task (a spider task alone doesn't let you in). "
+                "50,000 coins to enter, taken from the bank.",
+        "krystilia": True,
+    },
+    # https://oldschool.runescape.wiki/w/Scorpia: in the cave under the Scorpion Pit. Points: the three "Enter Cavern"
+    # entrances (Shortest Path transports.tsv; RuneLite DungeonLocation.SCORPIA_N/E/S).
+    "scorpias_cave": {
+        "label": "Scorpia's cave (Scorpion Pit)",
+        "points": [[3233, 3950, 0], [3242, 3948, 0], [3232, 3938, 0]],
+        "note": "Any of the three cave entrances around the Scorpion Pit. Deep Wilderness.",
+        "krystilia": True,
+    },
+    # https://oldschool.runescape.wiki/w/King_Black_Dragon: "counts towards a black dragon Slayer task, except when
+    # assigned by Krystilia". Point: the lever in the Lava Maze Dungeon (wiki Lever (Lava Maze Dungeon); Shortest Path
+    # teleportation_levers.tsv).
+    "king_black_dragon": {
+        "label": "King Black Dragon's lair (lever in the Lava Maze Dungeon)",
+        "points": [[3067, 10253, 0]],
+        "note": "Pull the lever in the Lava Maze Dungeon, deep in the Wilderness. Doesn't count on a task from "
+                "Krystilia.",
+    },
+    # https://oldschool.runescape.wiki/w/Vorkath: "Vorkath is considered a blue dragon and zombie for the purpose of a
+    # Slayer task"; fought after Dragon Slayer II. Point: Ice chunks (Vorkath) on Ungael, from the wiki's map.
+    "vorkath": {
+        "label": "Ungael (Vorkath)",
+        "points": [[2272, 4053, 0]],
+        "requirements": {"questsFinished": ["DRAGON_SLAYER_II"]},
+        "note": "Torfinn's boat from Rellekka's north-east pier, then climb over the ice chunks.",
+        "replaces": "ungael",
+    },
+    # https://oldschool.runescape.wiki/w/Kraken: "Players need level 87 Slayer ... it can only be attacked if the player
+    # has it, or cave krakens as a Slayer task". Point: Kraken Cove's entrance (as the guide's place; Shortest Path has
+    # no way into the cove).
+    "kraken": {
+        "label": "Kraken's chamber (Kraken Cove)",
+        "points": [[2277, 3611, 0]],
+        "requirements": {"skills": {"SLAYER": 87}},
+        "note": "Go takes you to the cove's entrance. The boss's crevice is at the north end of the cove, with a "
+                "public room or a private one for a fee.",
+        "konar": "kraken_cove",
+    },
+    # https://oldschool.runescape.wiki/w/Thermonuclear_smoke_devil: "requires level 93 Slayer". Point: the crevice into
+    # its room (Shortest Path "Use Crevice 535"; RuneLite DungeonLocation.SMOKE_DEVIL_BOSS).
+    "thermonuclear_smoke_devil": {
+        "label": "Thermonuclear smoke devil's room (Smoke Devil Dungeon)",
+        "points": [[2379, 9452, 0]],
+        "requirements": {"skills": {"SLAYER": 93}},
+        "note": "The crevice in the north-west of the Smoke Devil Dungeon.",
+        "konar": "smoke_devil_dungeon",
+    },
+    # https://oldschool.runescape.wiki/w/Cerberus: "Defeating Cerberus requires a Slayer level of 91". Point: the cave in
+    # Taverley Dungeon you crawl through (Shortest Path "Crawl Cave 26568"); Konar: "Cerberus lives in her chamber linked
+    # to Taverley dungeon".
+    "cerberus": {
+        "label": "Cerberus' Lair (Taverley Dungeon)",
+        "points": [[2873, 9848, 0]],
+        "requirements": {"skills": {"SLAYER": 91}},
+        "note": "Crawl through the cave in the hellhound area of Taverley Dungeon (a dusty key, or 70 Agility for the "
+                "pipe shortcut). Then pick one of the three arenas.",
+        "konar": "taverley_dungeon",
+    },
+    # https://oldschool.runescape.wiki/w/Alchemical_Hydra: "requires level 95 Slayer ... can only be killed while on a
+    # hydra Slayer task". The lair door has no wiki coordinate, so Go takes the player to the dungeon's entrance.
+    "alchemical_hydra": {
+        "label": "Alchemical Hydra's lair (Karuulm Slayer Dungeon)",
+        "points": [[1308, 3807, 0]],
+        "requirements": {"skills": {"SLAYER": 95}},
+        "note": "Go takes you to the dungeon's entrance; the lair is at the north side of the bottom level. Wear boots "
+                "of stone, boots of brimstone or granite boots for the hot floor (not needed with the elite Kourend & "
+                "Kebos Diary).",
+        "konar": "karuulm_slayer_dungeon",
+    },
+    # https://oldschool.runescape.wiki/w/Kalphite_Queen: lower level of the Kalphite Lair. Point: the tunnel down to her
+    # (Shortest Path "Climb-down Tunnel entrance 23609").
+    "kalphite_queen": {
+        "label": "Kalphite Queen's chamber (Kalphite Lair)",
+        "points": [[3508, 9498, 2]],
+        "note": "Down the tunnel at the east of the Kalphite Lair. Needs a rope for the entrance and one for the "
+                "tunnel (not after the hard Desert Diary).",
+        "konar": "kalphite_lair",
+    },
+    # https://oldschool.runescape.wiki/w/Dagannoth_Kings: "a Slayer-only lair for players who have been assigned
+    # dagannoth". Point: the Waterbirth Island Dungeon entrance (as the guide's place; Shortest Path can't path the
+    # dungeon's doors).
+    "dagannoth_kings": {
+        "label": "Dagannoth Kings' lair (Waterbirth Island Dungeon)",
+        "points": [[2520, 3740, 0]],
+        "note": "Go takes you to the dungeon entrance. Take the Kings' ladder at the bottom of the dungeon and pick "
+                "\"Slayer\" for the task-only lair. The doors need a rune thrownaxe and a pet rock (or a friend), or "
+                "85 Agility for the shortcut.",
+        "konar": "waterbirth_island",
+    },
+    # https://oldschool.runescape.wiki/w/Sarachnis: "She can be killed as part of a spider Slayer task". Point: Thick Web
+    # in the Forthos Dungeon, from the wiki's map.
+    "sarachnis": {
+        "label": "Sarachnis' crypt (Forthos Dungeon)",
+        "points": [[1841, 9912, 0]],
+        "note": "Through the thick web in the south of the Forthos Dungeon.",
+        "konar": "forthos_dungeon",
+    },
+    # https://oldschool.runescape.wiki/w/Grotesque_Guardians: "requires level 75 Slayer ... can only be killed while the
+    # player is assigned gargoyles". Point: Roof Entrance of the Slayer Tower, from the wiki's map.
+    "grotesque_guardians": {
+        "label": "Slayer Tower roof (Grotesque Guardians)",
+        "points": [[3426, 3542, 2]],
+        "requirements": {"questsFinished": ["PRIEST_IN_PERIL"], "skills": {"SLAYER": 75}},
+        "note": "The roof entrance at the top of the Slayer Tower. The first visit needs a brittle key.",
+        "konar": "slayer_tower",
+    },
+    # https://oldschool.runescape.wiki/w/Skotizo: "can be substituted for both black demon and greater demon kills";
+    # "Skotizo's Lair is part of the Catacombs of Kourend, and does count as such for the purpose of Konar Slayer tasks".
+    # Point: Altar (Catacombs of Kourend), from the wiki's map.
+    "skotizo": {
+        "label": "Skotizo's lair (Catacombs of Kourend altar)",
+        "points": [[1664, 10048, 0]],
+        "note": "Use a dark totem on the altar in the middle of the Catacombs. One totem per kill.",
+        "konar": "catacombs_of_kourend",
+    },
+    # https://oldschool.runescape.wiki/w/Obor (counts for hill giants: wiki Slayer task page, "Superiors and
+    # alternatives"). Point: Gate (Obor) in the Edgeville Dungeon, from the wiki's map.
+    "obor": {
+        "label": "Obor's lair (Edgeville Dungeon)",
+        "points": [[3095, 9832, 0]],
+        "note": "The gate at the west of the Edgeville Dungeon's hill giant room. One giant key per kill.",
+    },
+    # https://oldschool.runescape.wiki/w/Slayer_task/Moss_giants: "Bryophyta, the moss giant boss". Point: Gate
+    # (Bryophyta) in the Varrock Sewers, from the wiki's map.
+    "bryophyta": {
+        "label": "Bryophyta's lair (Varrock Sewers)",
+        "points": [[3174, 9901, 0]],
+        "note": "The gate in the west of the Varrock Sewers' moss giant area. One mossy key per kill.",
+    },
+    # https://oldschool.runescape.wiki/w/Scurrius: "Scurrius now counts towards rat Slayer tasks". Point: Broken bars in
+    # the Varrock Sewers, from the wiki's map.
+    "scurrius": {
+        "label": "Scurrius' lair (Varrock Sewers)",
+        "points": [[3282, 9868, 0]],
+        "note": "Climb through the broken bars in the east of the Varrock Sewers.",
+    },
+    # https://oldschool.runescape.wiki/w/Slayer_task/Cows: "Brutus can be killed on a cow task"; "may be fought
+    # repeatedly after the quest" (https://oldschool.runescape.wiki/w/Brutus). Point: Warning Sign (Brutus).
+    "brutus": {
+        "label": "Brutus' pen (Lumbridge cow field)",
+        "points": [[3260, 3294, 0]],
+        "requirements": {"questsFinished": ["THE_IDES_OF_MILK"]},
+        "note": "By the warning sign at the cow field east of Lumbridge.",
+    },
+    # https://oldschool.runescape.wiki/w/Royal_Titans: "The entrance tunnel to the bosses can be found in the western part
+    # of the dungeon". Point: Scoreboard (Royal Titans), which "can be found by the tunnel".
+    "royal_titans": {
+        "label": "Royal Titans (Asgarnian Ice Dungeon)",
+        "points": [[2954, 9577, 0]],
+        "note": "The tunnel in the west of the Asgarnian Ice Dungeon (60 Agility opens a shortcut from the ladder).",
+    },
+    # https://oldschool.runescape.wiki/w/Shellbane_gryphon: "requiring level 51 Slayer and completion of Troubled
+    # Tortugans". Point: the cave entrance on the Great Conch, from the wiki's map.
+    "shellbane_gryphon": {
+        "label": "Shellbane gryphon's nest (Great Conch)",
+        "points": [[3176, 2477, 0]],
+        "requirements": {"questsFinished": ["TROUBLED_TORTUGANS"], "skills": {"SLAYER": 51}},
+        "note": "The cave north of fairy ring CJQ, in the middle of the Great Conch. Bring a tortugan shield.",
+    },
+    # https://oldschool.runescape.wiki/w/Slayer_task/Lesser_Nagua: "those assigned Nagua at the Ruins of Tapoyauik may
+    # kill Amoxliatl". Point: the Twilight Temple lift down to her (Shortest Path "Use Lift Platform 54524", needs The
+    # Heart of Darkness).
+    "amoxliatl": {
+        "label": "Amoxliatl's chamber (Ruins of Tapoyauik)",
+        "points": [[1642, 3222, 0]],
+        "requirements": {"questsFinished": ["THE_HEART_OF_DARKNESS"]},
+        "note": "The lift platform at the Twilight Temple. Counts on a Nagua task at the Ruins of Tapoyauik.",
+        "konar": "ruins_of_tapoyauik",
+    },
+}
+
+# Bosses that count for a normal slayer task (wiki name -> lair and the tasks it counts for), from the OSRS Wiki's
+# https://oldschool.runescape.wiki/w/Slayer_task "Superiors and alternatives" column and each boss's page (cited at its
+# lair above). Only these bosses are listed: a monster in the wiki's "Bosses" category that isn't here is left out (Zulrah,
+# the Desert Treasure II bosses and the like count only on a boss task). Not here on purpose: Kolodion and Porazdir (Mage
+# Arena fights, once each; Kolodion stays as a normal monster), Elvarg (Dragon Slayer I only), TzTok-Jad and TzKal-Zuk
+# (offered instead of a TzHaar task, not killed on one), the Giant Sea Snake (not fightable after Royal Trouble) and the
+# Hell-Rat Behemoth (your cat fights it).
+BOSSES = {
+    "Abyssal Sire": {"lair": "abyssal_nexus", "tasks": ["Abyssal demons"]},
+    "Araxxor": {"lair": "araxxor", "tasks": ["Araxytes", "Spiders"]},
+    "Kree'arra": {"lair": "kreearra", "tasks": ["Aviansies"]},
+    "K'ril Tsutsaroth": {"lair": "kril", "tasks": ["Greater demons"]},
+    "Callisto": {"lair": "callistos_den", "tasks": ["Bears"]},
+    "Artio": {"lair": "hunters_end", "tasks": ["Bears"]},
+    "Vet'ion": {"lair": "vetions_rest", "tasks": ["Skeletons"]},
+    "Calvar'ion": {"lair": "skeletal_tomb", "tasks": ["Skeletons"]},
+    "Venenatis": {"lair": "silk_chasm", "tasks": ["Spiders"]},
+    "Spindel": {"lair": "web_chasm", "tasks": ["Spiders"]},
+    "Scorpia": {"lair": "scorpias_cave", "tasks": ["Scorpions"]},
+    "King Black Dragon": {"lair": "king_black_dragon", "tasks": ["Black dragons"]},
+    "Vorkath": {"lair": "vorkath", "tasks": ["Blue dragons", "Zombies"]},
+    "Kraken": {"lair": "kraken", "tasks": ["Cave kraken"]},
+    "Thermonuclear smoke devil": {"lair": "thermonuclear_smoke_devil", "tasks": ["Smoke devils"]},
+    "Cerberus": {"lair": "cerberus", "tasks": ["Hellhounds"]},
+    "Alchemical Hydra": {"lair": "alchemical_hydra", "tasks": ["Hydras"]},
+    "Kalphite Queen": {"lair": "kalphite_queen", "tasks": ["Kalphite"]},
+    "Dagannoth Prime": {"lair": "dagannoth_kings", "tasks": ["Dagannoth"]},
+    "Dagannoth Rex": {"lair": "dagannoth_kings", "tasks": ["Dagannoth"]},
+    "Dagannoth Supreme": {"lair": "dagannoth_kings", "tasks": ["Dagannoth"]},
+    "Sarachnis": {"lair": "sarachnis", "tasks": ["Spiders"]},
+    # The wiki's page for the pair is Dusk's (Dawn has no infobox of her own); the core Slayer plugin counts both names
+    "Dusk": {"lair": "grotesque_guardians", "tasks": ["Gargoyles"], "display": "Grotesque Guardians"},
+    "Skotizo": {"lair": "skotizo", "tasks": ["Black demons", "Greater demons"]},
+    "Obor": {"lair": "obor", "tasks": ["Hill giants"]},
+    "Bryophyta": {"lair": "bryophyta", "tasks": ["Moss giants"]},
+    "Scurrius": {"lair": "scurrius", "tasks": ["Rats"]},
+    "Brutus": {"lair": "brutus", "tasks": ["Cows"]},
+    # https://oldschool.runescape.wiki/w/Slayer_task/Fire_giants: "Players who are not assigned fire giants from Konar or
+    # Krystilia can also choose to kill Branda the Fire Queen"
+    "Branda the Fire Queen": {"lair": "royal_titans", "tasks": ["Fire giants"],
+                              "note": "Doesn't count on a fire giant task from Konar or Krystilia."},
+    # https://oldschool.runescape.wiki/w/Slayer_task/Ice_giants: "Eldric the Ice King ... can be killed in place of
+    # normal ice giants if assigned by Vannaka"
+    "Eldric the Ice King": {"lair": "royal_titans", "tasks": ["Ice giants"],
+                            "note": "Counts only on an ice giant task from Vannaka."},
+    "Shellbane gryphon": {"lair": "shellbane_gryphon", "tasks": ["Gryphons"]},
+    "Amoxliatl": {"lair": "amoxliatl", "tasks": ["Lesser Nagua"]},
+}
+# Where a lair's place comes from (LocationEntry.source): never used by "Go to nearest"
+BOSS_SOURCE = "boss"
+BOSS_KEY_PREFIX = "boss_"
+
+
+def bosses_of(task_name):
+    """{wiki name: BOSSES entry} for the bosses that count for this task."""
+    return {name: b for name, b in BOSSES.items() if task_name in b["tasks"]}
 
 
 def slug(text):
@@ -430,7 +794,7 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
     taken = {pl["key"] for pl in places}
     for name, versions in task_monsters(task_name, wiki).items():
         pages = {v["page_name"] for v in versions}
-        if is_superior(name, pages, wiki) or is_boss(versions):
+        if is_superior(name, pages, wiki) or is_boss(name, task_name):
             continue
         spawns = spawns_of(pages, wiki)
         if not spawns or places_of(name, spawns, places, all_points):
@@ -488,9 +852,38 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
     return out, {k: sorted(v) for k, v in sorted(joined.items())}
 
 
-def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joined=None):
+def lair_places(task_name, locations, taken):
+    """The lairs of the bosses that count for this task as [(lair id, place)], and {boss wiki name: lair key}.
+
+    A lair's Konar area comes from the guide place it counts as, when that place is on the task's list (locations: the
+    guide's places by key, as listed for this task). Keys start with "boss_" and don't clash with the task's others.
+    """
+    out, keys = [], {}
+    by_lair = {}
+    for name, boss in bosses_of(task_name).items():
+        by_lair.setdefault(boss["lair"], []).append(name)
+    for lair_id, names in by_lair.items():
+        lair = BOSS_LAIRS[lair_id]
+        key, n = BOSS_KEY_PREFIX + lair_id, 2
+        while key in taken:
+            key, n = f"{BOSS_KEY_PREFIX}{lair_id}_{n}", n + 1
+        taken.add(key)
+        notes = [lair.get("note")] + [BOSSES[name].get("note") for name in names]
+        konar = locations.get(lair.get("konar"))
+        out.append((lair_id, place(lair["label"], key, lair["points"], None, {
+            "areaId": konar.get("areaId") if konar else None,
+            "note": " ".join(n for n in notes if n) or None,
+            "requirements": lair.get("requirements"),
+            "source": BOSS_SOURCE,
+        })))
+        keys.update({name: key for name in names})
+    return out, keys
+
+
+def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joined=None, lairs=None):
     """Each distinct monster on the task, with the keys of the places it spawns near, plus those wiki_places found by
-    name (joined: monster name -> keys).
+    name (joined: monster name -> keys). A boss's only place is its lair (lairs: boss wiki name -> lair key); a boss
+    with no lair on this task is left out.
 
     With wilderness_only (a task only Krystilia gives), a monster that never spawns in the Wilderness is left out:
     her kills only count there.
@@ -499,22 +892,28 @@ def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joi
         return []
     generic = generic_items(wiki)
     superior_of = wiki.get("superior_of", {})
+    lairs = lairs or {}
 
     out = []
     for name, versions in task_monsters(task_name, wiki).items():
         pages = {v["page_name"] for v in versions}
         superior = is_superior(name, pages, wiki)
         spawns = spawns_of(pages, wiki)
-        if not spawns and not superior:
+        boss = is_boss(name, task_name)
+        if boss:
+            if name not in lairs:
+                continue  # its lair isn't on this task's list (Krystilia's only task, outside the Wilderness)
+            found = [lairs[name]]
+        elif not spawns and not superior:
             continue  # minigame, quest or instance only
-        boss = is_boss(versions)
-        if wilderness_only and not superior and not boss and not any(in_wilderness(pt) for pt in spawns):
+        elif wilderness_only and not superior and not any(in_wilderness(pt) for pt in spawns):
             continue  # doesn't count for Krystilia, the only master who gives this task
+        else:
+            found = places_of(name, spawns, places, all_points) + (joined or {}).get(name, [])
         weak = Counter((v["elemental_weakness"], v.get("elemental_weakness_percent"))
                        for v in versions if v.get("elemental_weakness"))
-        found = places_of(name, spawns, places, all_points) + (joined or {}).get(name, [])
         variant = {
-            "name": name,
+            "name": BOSSES[name].get("display", name) if boss else name,
             "level": span(v.get("combat_level") for v in versions),
             "hitpoints": span(v.get("hitpoints") for v in versions),
             "xp": span(v.get("slayer_experience") for v in versions),
@@ -671,6 +1070,31 @@ def validate(tasks):
         prayer = (t.get("info") or {}).get("protectionPrayer")
         if prayer and PRAYER_SWITCHING.search(prayer):
             problems.append(f'{t["name"]}: prayer-switching advice {prayer!r}; add it to PRAYER_REWRITES')
+        places = {pl["key"]: pl for pl in t["locations"] + t["wildernessLocations"]}
+        for v in t.get("variants", []):
+            if not v["boss"]:
+                continue
+            lairs = [places.get(k) for k in v["places"]]
+            if len(lairs) != 1 or not lairs[0] or lairs[0].get("source") != BOSS_SOURCE:
+                problems.append(f'{t["name"]} / {v["name"]}: a boss needs exactly one place, its lair: {v["places"]}')
+            elif not lairs[0]["points"] and not lairs[0]["wildernessPoints"]:
+                problems.append(f'{t["name"]} / {v["name"]}: its lair has no point for Go')
+        for pl in places.values():
+            # Never prayer advice for a boss (plugin hub rules): not even in a lair's note
+            if pl.get("source") == BOSS_SOURCE and re.search(r"\bpray", pl.get("note") or "", re.IGNORECASE):
+                problems.append(f'{t["name"]} / {pl["key"]}: prayer advice in a boss lair note')
+        found = {v["name"] for v in t.get("variants", []) if v["boss"]}
+        for name, boss in bosses_of(t["name"]).items():
+            if boss.get("display", name) not in found and (t["locations"] or BOSS_LAIRS[boss["lair"]].get("krystilia")):
+                problems.append(f'{t["name"]} / {name}: in BOSSES but not in the wiki data for the task')
+        for v in t.get("variants", []):
+            if v["name"] in GWD_MINIONS:
+                problems.append(f'{t["name"]} / {v["name"]}: a God Wars Dungeon bodyguard')
+    names = {t["name"] for t in tasks}
+    for name, boss in BOSSES.items():
+        problems += [f"BOSSES / {name}: no task {task!r}" for task in boss["tasks"] if task not in names]
+        if boss["lair"] not in BOSS_LAIRS:
+            problems.append(f"BOSSES / {name}: no lair {boss['lair']!r}")
     if problems:
         raise SystemExit("Invalid data:\n  " + "\n  ".join(problems))
 
@@ -732,6 +1156,28 @@ def main(src):
             # Only onto a list she has: an empty one makes the panel fall back to the normal places' Wilderness spawns
             if extra["wildernessPoints"] and (her_list or krystilia_only):
                 wild_entries.append(dict(extra, points=[]))
+        # Each boss that counts gets its lair, after the other places. A Wilderness lair goes on Krystilia's list too
+        # when the boss counts for her; a task only she gives gets only those.
+        guide_here = {key: locations[key] for key in t["locations"]}
+        lairs, lair_keys = lair_places(t["task"], guide_here, {pl["key"] for pl in entries + wild_entries})
+        for lair_id, lair in lairs:
+            her_lair = lair["wildernessPoints"] and BOSS_LAIRS[lair_id].get("krystilia")
+            if not krystilia_only:
+                entries.append(lair)
+            if her_lair and (her_list or krystilia_only):
+                wild_entries.append(dict(lair, points=[]))
+            elif krystilia_only:
+                lair_keys = {name: key for name, key in lair_keys.items() if key != lair["key"]}
+        variants = variants_for(t["task"], entries + wild_entries, wiki, all_points, krystilia_only, joined, lair_keys)
+        # A guide place that only stood for a boss's lair gives way to the lair
+        for lair_id in sorted({BOSSES[name]["lair"] for name in lair_keys}):
+            gone = BOSS_LAIRS[lair_id].get("replaces")
+            if gone and any(pl["key"] == gone for pl in entries + wild_entries):
+                users = [v["name"] for v in variants if gone in v["places"]]
+                if users or t.get("recommended") == gone:
+                    raise SystemExit(f'{t["task"]}: the {lair_id} lair can\'t replace {gone}; it\'s used by {users}')
+                entries = [pl for pl in entries if pl["key"] != gone]
+                wild_entries = [pl for pl in wild_entries if pl["key"] != gone]
         tasks.append({
             "taskId": tid,
             "name": t["task"],
@@ -739,7 +1185,7 @@ def main(src):
             "locations": entries,
             "wildernessLocations": wild_entries,
             "info": task_info(info, t["task"]),
-            "variants": variants_for(t["task"], entries + wild_entries, wiki, all_points, krystilia_only, joined),
+            "variants": variants,
         })
 
     tasks.sort(key=lambda x: x["name"].lower())
@@ -760,14 +1206,33 @@ def main(src):
     print(f"{len(tasks)} tasks ({with_info} with gear info), {total} locations ({routable} with map points) -> {OUT}")
     from_wiki = sum(1 for l in every if l.get("source") == WIKI_SOURCE)
     print(f"{from_wiki} of those places made from monsters' wiki spawns")
+    lairs = sum(1 for l in every if l.get("source") == BOSS_SOURCE)
+    print(f"{lairs} boss lairs for {sum(1 for t in tasks for v in t['variants'] if v['boss'])} bosses")
+    for problem in left_out_bosses(tasks, wiki):
+        print(f"Note: {problem} is in the wiki's Bosses category but not in BOSSES, so it isn't listed")
     for problem in unplaced(tasks):
         print(f"Warning: {problem} has no place")
 
 
 def unplaced(tasks):
-    """'Task / monster' for every regular monster no place was found for."""
+    """'Task / monster' for every regular monster or boss no place was found for."""
     return [f'{t["name"]} / {v["name"]}' for t in tasks for v in t["variants"]
-            if not v["superior"] and not v["boss"] and not v["places"]]
+            if not v["superior"] and not v["places"]]
+
+
+def left_out_bosses(tasks, wiki):
+    """'Task / monster' for each wiki boss in a task's category that BOSSES doesn't list for it (to review)."""
+    out = []
+    for t in tasks if wiki else []:
+        category = CATEGORY_ALIASES.get(t["name"].lower(), t["name"].lower())
+        for m in wiki["monsters"]:
+            cats = [c.lower() for c in m.get("slayer_category", [])]
+            if (category in cats and "bosses" in cats and m["name"] not in bosses_of(t["name"])
+                    and m.get("combat_level") and not NOT_A_TASK_KILL.search(m["name"])):
+                item = f'{t["name"]} / {m["name"]}'
+                if item not in out:
+                    out.append(item)
+    return out
 
 
 if __name__ == "__main__":

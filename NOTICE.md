@@ -16,6 +16,10 @@ superior and boss flags, notable drops, and spawn points used to match variants 
 OSRS Wiki's Bucket API, fetched by `tools/fetch_wiki_monsters.py` into `tools/data/wiki_monsters.json`
 and merged in by the build script. That wiki data is also CC BY-NC-SA 3.0.
 
+Boss lair entrance points and requirements (`BOSS_LAIRS` in the build script) were read from OSRS Wiki pages and
+maps, RuneLite's world map data, and the transport tiles of [Shortest Path](https://github.com/Skretzo/shortest-path)
+(BSD 2-Clause).
+
 The generated data file is shared under the same CC BY-NC-SA 3.0 licence. The plugin's code is not
 derived from it and is licensed separately (BSD 2-Clause, see LICENSE). A copy of these notices, with
 Slayer Sensei's full licence, ships inside the plugin jar as `META-INF/NOTICE.txt`.

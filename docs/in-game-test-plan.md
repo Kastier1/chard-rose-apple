@@ -73,8 +73,27 @@ Have a task, and open the **Slayer** tab.
   "Tormented Demon (Ancient Guthixian Temple)", and that place card says "Spawn points from the OSRS Wiki".
   **Go** on it paths into the temple. **Go to nearest** still picks a normal greater demon place. On an account
   without While Guthix Sleeps the temple card says it needs that quest.
-- [ ] **Metal dragons**: Mithril dragon's *Found at* is "Ancient Cavern". **Aviansies**: the three Armadyl
-  bodyguards are found at "God Wars Dungeon".
+- [ ] **Greater demons**: K'ril Tsutsaroth and Skotizo are rows at the bottom of the table, each with a crown; hover
+  says "Boss". There's no Tstanon Karlak (or any God Wars Dungeon bodyguard) and no "God Wars Dungeon (Zamorak boss
+  room)" place. **Go to nearest** never picks K'ril's or Skotizo's lair.
+- [ ] **Metal dragons**: Mithril dragon's *Found at* is "Ancient Cavern". **Aviansies**: only Aviansie and Kree'arra
+  are listed (no Wingman Skree, Flockleader Geerin or Flight Kilisa).
+- [ ] **Blue dragons**: Vorkath is the last row. Click it: Level "732 · 750 HP", Drops, Carry (dragonfire), *Best with
+  what you have*, *Found at* "Ungael (Vorkath)", and no *Pray* row or *Prayer* drawer. The card has no separate
+  "Boss" line. The "Ungael (Vorkath)" card is last in the place list; on an account without Dragon Slayer II it says
+  "Needs Dragon Slayer II". Its **Go** paths to Rellekka's boat to Ungael and on to the ice chunks, and selects
+  Vorkath. Go from a blue dragon place switches back to a dragon.
+- [ ] Boss lairs whose Go should end where you walk in (check each once): Cerberus (the crawl-through cave in
+  Taverley Dungeon's hellhound area), Abyssal Sire (fairy ring DIP), Grotesque Guardians (Slayer Tower roof
+  entrance), Thermonuclear smoke devil (the crevice in the Smoke Devil Dungeon), Kalphite Queen (the tunnel down in
+  the Kalphite Lair), Skotizo (the Catacombs altar), Obor and Bryophyta (their gates), Scurrius (the broken bars),
+  Royal Titans (the tunnel near the scoreboard in the Asgarnian Ice Dungeon), Calvar'ion (Skeletal Tomb) and Spindel
+  (Web Chasm), whose entrances come from RuneLite's world map rather than the wiki.
+- [ ] A closed lair: with under 91 Slayer, the Cerberus card on Hellhounds says "Needs 91 Slayer" and sits at the
+  bottom. Same for Kraken (87), Thermonuclear smoke devil (93), Alchemical Hydra (95), Araxxor (92).
+- [ ] Konar Hydras task in the Karuulm Slayer Dungeon: the dungeon and "Alchemical Hydra's lair" are listed, and Go to
+  nearest picks the dungeon. Krystilia Bears task: Callisto's Den and Hunter's End are on her list.
+- [ ] Compact mode: the lair cards still show in the place list.
 - [ ] With *Show Wilderness locations* off, pick a monster that only lives in the Wilderness (e.g. Kolodion on Black
   demons): *Found at* says "Not at any of the places below". There's no *Also counts* drawer any more.
 - [ ] **Drops** are item pictures. Hover one: rate, on-task rate, value.

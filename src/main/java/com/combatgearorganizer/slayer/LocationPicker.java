@@ -76,7 +76,9 @@ public final class LocationPicker
 
 		// Places the player can get into first, the recommended one at the top of those; otherwise keep the data's
 		// order (stable sort). A recommended place behind a quest the player hasn't done goes below the open ones.
-		options.sort(Comparator.comparing((LocationOption o) -> !o.isAccessible())
+		// Boss lairs go last of all: they're for going after that boss.
+		options.sort(Comparator.comparing(LocationOption::isBossLair)
+			.thenComparing(o -> !o.isAccessible())
 			.thenComparing(o -> !o.isRecommended()));
 		return options;
 	}
@@ -120,18 +122,20 @@ public final class LocationPicker
 			l.getNote(),
 			targets,
 			missing,
-			l.isFromWiki());
+			l.isFromWiki(),
+			l.isBossLair());
 	}
 
 	/**
 	 * The places "Go to nearest" chooses between: the routable ones the player can get into, from the slayer location
-	 * guide. Places made from one monster's wiki spawns (a boss room, a quest area) are for going after that
-	 * monster, so they only count when no guide place can be reached.
+	 * guide. Places made from one monster's wiki spawns (a quest area, a side room) are for going after that
+	 * monster, so they only count when no guide place can be reached. Boss lairs never count: fighting a boss is the
+	 * player's choice, made with the lair's own Go button.
 	 */
 	public static List<LocationOption> nearestTargets(List<LocationOption> shown)
 	{
 		List<LocationOption> open = shown.stream()
-			.filter(l -> l.isRoutable() && l.isAccessible())
+			.filter(l -> l.isRoutable() && l.isAccessible() && !l.isBossLair())
 			.collect(Collectors.toList());
 		List<LocationOption> guide = open.stream().filter(l -> !l.isFromWiki()).collect(Collectors.toList());
 		return guide.isEmpty() ? open : guide;

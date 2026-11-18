@@ -7,8 +7,10 @@ That data was written from the Old School RuneScape Wiki
 (https://creativecommons.org/licenses/by-nc-sa/3.0/), and from RuneLite world
 map data (BSD 2-Clause). Monster variant facts (levels, hitpoints, slayer XP,
 attack styles, weaknesses, drops, spawn points) come directly from the Old School
-RuneScape Wiki, also CC BY-NC-SA 3.0. The data file is shared under
-CC BY-NC-SA 3.0.
+RuneScape Wiki, also CC BY-NC-SA 3.0. Boss lair entrance points were read
+from the wiki, RuneLite world map data and Shortest Path's transport tiles
+(https://github.com/Skretzo/shortest-path, BSD 2-Clause). The data file is
+shared under CC BY-NC-SA 3.0.
 
 Slayer Sensei's licence:
 

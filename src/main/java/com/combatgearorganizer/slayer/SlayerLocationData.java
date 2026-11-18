@@ -27,7 +27,7 @@ public class SlayerLocationData
 		private List<LocationEntry> wildernessLocations = Collections.emptyList();
 		/** What to bring and expect. Null when the data has none. */
 		private TaskInfo info;
-		/** Each monster that counts for the task, lowest level first; superiors and bosses last. */
+		/** Each monster that counts for the task, lowest level first; then bosses, then superiors. */
 		private List<Variant> variants = Collections.emptyList();
 	}
 
@@ -48,8 +48,9 @@ public class SlayerLocationData
 		private VariantWeakness weakness;
 		/** Superiors only appear while on task, by chance. */
 		private boolean superior;
+		/** A boss that counts for the task. Its only place is its lair ({@link LocationEntry#isBossLair()}). */
 		private boolean boss;
-		/** Keys of the task's places where this monster spawns. */
+		/** Keys of the task's places where this monster spawns; for a boss, its lair. */
 		private List<String> places = Collections.emptyList();
 		/** For a superior: the name of the monster it replaces. */
 		private String superiorOf;
@@ -162,7 +163,8 @@ public class SlayerLocationData
 		private Requirements requirements;
 		/**
 		 * Where the place comes from: null for the slayer location guide, {@link #SOURCE_WIKI} for a place made from
-		 * one monster's OSRS Wiki spawn points because it lives away from every guide place.
+		 * one monster's OSRS Wiki spawn points because it lives away from every guide place, {@link #SOURCE_BOSS} for
+		 * a boss's lair (its points are where the player walks in).
 		 */
 		private String source;
 
@@ -170,10 +172,17 @@ public class SlayerLocationData
 		{
 			return SOURCE_WIKI.equals(source);
 		}
+
+		public boolean isBossLair()
+		{
+			return SOURCE_BOSS.equals(source);
+		}
 	}
 
 	/** {@link LocationEntry#getSource()} of a place made from a monster's wiki spawns. */
 	public static final String SOURCE_WIKI = "wiki";
+	/** {@link LocationEntry#getSource()} of a boss's lair. */
+	public static final String SOURCE_BOSS = "boss";
 
 	@Data
 	public static class Requirements

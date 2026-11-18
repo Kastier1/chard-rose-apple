@@ -11,6 +11,7 @@ import com.google.gson.Gson;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -146,9 +147,68 @@ public class LocationPickerTest
 
 	private static LocationOption option(String key, boolean routable, boolean accessible, boolean fromWiki)
 	{
+		return option(key, routable, accessible, fromWiki, false);
+	}
+
+	private static LocationOption option(String key, boolean routable, boolean accessible, boolean fromWiki, boolean lair)
+	{
 		return new LocationOption(key, key, false, false, false, null, null, null,
 			routable ? Collections.singletonList(P1) : Collections.emptyList(),
-			accessible ? Collections.emptyList() : Collections.singletonList("Priest in Peril"), fromWiki);
+			accessible ? Collections.emptyList() : Collections.singletonList("Priest in Peril"), fromWiki, lair);
+	}
+
+	@Test
+	public void nearestNeverPicksABossLair()
+	{
+		LocationOption guide = option("guide", true, true, false);
+		LocationOption wiki = option("wiki", true, true, true);
+		LocationOption locked = option("locked", true, false, false);
+		LocationOption lair = option("boss_vorkath", true, true, false, true);
+
+		assertEquals(Collections.singletonList(guide), LocationPicker.nearestTargets(Arrays.asList(lair, guide, wiki)));
+		// Not even when it's the only place that's open, routable or not from the wiki
+		assertEquals(Collections.singletonList(wiki), LocationPicker.nearestTargets(Arrays.asList(lair, wiki, locked)));
+		assertTrue(LocationPicker.nearestTargets(Arrays.asList(lair, locked)).isEmpty());
+		assertTrue(LocationPicker.nearestTargets(Collections.singletonList(lair)).isEmpty());
+	}
+
+	@Test
+	public void bossLairsGoLastAndFollowKonarAndKrystilia()
+	{
+		TaskEntry t = abyssalDemons();
+		LocationEntry lair = loc("boss_abyssal_nexus", 9, Collections.singletonList(P2), Collections.emptyList());
+		lair.setSource(SlayerLocationData.SOURCE_BOSS);
+		LocationEntry wildLair = loc("boss_wild", null, Collections.emptyList(), Collections.singletonList(W1));
+		wildLair.setSource(SlayerLocationData.SOURCE_BOSS);
+		List<LocationEntry> all = new ArrayList<>();
+		all.add(lair);
+		all.addAll(t.getLocations());
+		t.setLocations(all);
+		t.setWildernessLocations(Collections.singletonList(wildLair));
+
+		// Below every other place, even closed ones
+		RequirementChecker closedTower = r -> r.getQuestsFinished().contains("PRIEST_IN_PERIL")
+			? Collections.singletonList("Priest in Peril") : Collections.emptyList();
+		List<LocationOption> options = LocationPicker.pick(t, 5, 0, false, closedTower);
+		LocationOption last = options.get(options.size() - 1);
+		assertEquals("boss_abyssal_nexus", last.getKey());
+		assertTrue(last.isBossLair());
+		assertFalse(options.get(0).isBossLair());
+		assertTrue(lair.isBossLair());
+		assertFalse(lair.isFromWiki());
+
+		// Konar's area: the lair counts as it, so it's listed with the guide place of that area
+		List<LocationOption> konar = LocationPicker.pick(t, 8, 9, false);
+		assertEquals(2, konar.size());
+		assertTrue(konar.stream().anyMatch(o -> o.getKey().equals("boss_abyssal_nexus")));
+		assertTrue(konar.stream().anyMatch(o -> o.getKey().equals("slayer_tower")));
+		assertTrue(LocationPicker.nearestTargets(konar).stream().noneMatch(LocationOption::isBossLair));
+
+		// Krystilia: her list, with its Wilderness lair
+		List<LocationOption> krystilia = LocationPicker.pick(t, SlayerMasters.KRYSTILIA, 0, false);
+		assertEquals(1, krystilia.size());
+		assertTrue(krystilia.get(0).isBossLair());
+		assertTrue(LocationPicker.nearestTargets(krystilia).isEmpty());
 	}
 
 	@Test

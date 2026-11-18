@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -96,6 +97,9 @@ public class SlayerPanel extends JPanel
 		"\\b(crush|stab|slash|\\w*bane|weapons?)\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
 	private static final Color SUPERIOR_COLOR = new Color(255, 120, 60);
 	private static final ImageIcon SUPERIOR_STAR = starIcon();
+	private static final Color BOSS_COLOR = new Color(255, 200, 90);
+	/** Marks a boss's row in the monster table: a crown, so it reads without colour too. */
+	static final ImageIcon BOSS_CROWN = crownIcon();
 	/** Item pictures per row: five 36px slots fit the card. */
 	private static final int GRID_COLUMNS = 5;
 
@@ -544,8 +548,9 @@ public class SlayerPanel extends JPanel
 	}
 
 	/**
-	 * Everything about the task in one card: the monster table, how to fight it (task-wide), the selected monster's
-	 * facts, the longer notes as drawers, then superiors and bosses. Either half may be missing.
+	 * Everything about the task in one card: the monster table (bosses last), how to fight it (task-wide), the selected
+	 * monster's facts, the longer notes as drawers, then superiors not shown with their monster. Either half may be
+	 * missing.
 	 */
 	private JPanel taskCard(SlayerLocationData.TaskInfo info, boolean showTaskWeakness, List<Variant> variants,
 		Variant selected, List<LocationOption> locations, int left)
@@ -583,12 +588,13 @@ public class SlayerPanel extends JPanel
 	/** The task's monsters as a clickable table: level, XP each, XP for the kills left. */
 	private void addVariantTable(JPanel card, List<Variant> variants, Variant selected, List<LocationOption> locations, int left)
 	{
-		card.add(variantRow("Monster", null, "Lvl", "XP", "Task", ColorScheme.MEDIUM_GRAY_COLOR, false, null, null));
+		card.add(variantRow("Monster", null, false, "Lvl", "XP", "Task", ColorScheme.MEDIUM_GRAY_COLOR, false, null, null));
 		for (Variant v : Variants.listed(variants, locations))
 		{
 			boolean on = v == selected;
-			card.add(variantRow(v.getName(), superiorTip(variants, v), Variants.range(v.getLevel()), Variants.xpEach(v.getXp()),
-				Variants.xpTotalShort(v.getXp(), left), on ? Color.WHITE : ColorScheme.LIGHT_GRAY_COLOR, on,
+			card.add(variantRow(v.getName(), superiorTip(variants, v), v.isBoss(), Variants.range(v.getLevel()),
+				Variants.xpEach(v.getXp()), Variants.xpTotalShort(v.getXp(), left),
+				on ? Color.WHITE : ColorScheme.LIGHT_GRAY_COLOR, on,
 				on ? null : () -> pickVariant(v.getName()),
 				totalCell -> variantTotals.add(new VariantTotal(totalCell, v))));
 		}
@@ -690,7 +696,11 @@ public class SlayerPanel extends JPanel
 	 */
 	private void addCarry(JPanel card, Variant selected, List<LocationOption> locations)
 	{
-		boolean wildernessOnly = !locations.isEmpty() && locations.stream().allMatch(LocationOption::isWilderness);
+		// A boss is fought at its lair alone, so its lair says whether this trip is in the Wilderness
+		List<LocationOption> trip = selected.isBoss()
+			? locations.stream().filter(l -> selected.getPlaces().contains(l.getKey())).collect(Collectors.toList())
+			: locations;
+		boolean wildernessOnly = !trip.isEmpty() && trip.stream().allMatch(LocationOption::isWilderness);
 		List<CarryItem.Suggestion> suggestions = CarryItem.suggest(selected.getCarry(), wildernessOnly);
 		if (suggestions.isEmpty())
 		{
@@ -851,7 +861,7 @@ public class SlayerPanel extends JPanel
 		}
 	}
 
-	/** A superior's or boss's notable drops as a row of item pictures, when any of them match an item. */
+	/** A superior's notable drops as a row of item pictures, when any of them match an item. */
 	private void addNotableDrops(JPanel card, List<Variant> variants, Variant v)
 	{
 		List<JComponent> slots = new ArrayList<>();
@@ -901,8 +911,8 @@ public class SlayerPanel extends JPanel
 	}
 
 	/**
-	 * A drop's tooltip: its name, where it comes from (for a superior or boss), the drop rate, the better rate on
-	 * task, the stack size, the collection log status and the value.
+	 * A drop's tooltip: its name, where it comes from (for a superior), the drop rate, the better rate on task, the
+	 * stack size, the collection log status and the value.
 	 */
 	static String dropTooltip(SlayerLocationData.Drop d, String from, CollectionLog.Status status, DropItems.Item item,
 		ItemValueMode mode, boolean clogSynced)
@@ -937,6 +947,15 @@ public class SlayerPanel extends JPanel
 		return "<html><b>" + escape(name) + "</b><br>Always dropped<br>" + DropItems.valueText(mode, item, null) + "</html>";
 	}
 
+	/** What a boss's crown means; the start of its row's tooltip. */
+	static final String BOSS_TIP = "Boss: counts for this task, fought in its own lair";
+
+	/** "Boss: counts for this task, fought in its own lair. Show Vorkath" */
+	static String bossTooltip(String name)
+	{
+		return BOSS_TIP + ". Show " + name;
+	}
+
 	/** "Can spawn a superior: Shadow Wyrm (3,520 XP)", or null when it has none. */
 	private static String superiorTip(List<Variant> variants, Variant v)
 	{
@@ -949,14 +968,12 @@ public class SlayerPanel extends JPanel
 			: "Can spawn a superior: " + String.join(", ", names) + ". Needs the Bigger and Badder unlock.";
 	}
 
-	/** Superiors and bosses, which aren't in the table. */
+	/** Superiors, which aren't in the table, unless they're already shown with their monster. Bosses are in the table. */
 	private void addVariantExtras(JPanel card, List<Variant> variants, List<LocationOption> locations)
 	{
-		// Every regular monster is in the table now, so superiors already shown with their monster aren't repeated
 		List<Variant> listed = Variants.listed(variants, locations);
 		addSpecials(card, "Superior", variants, s -> s.isSuperior()
 			&& listed.stream().noneMatch(v -> Variants.superiorsOf(variants, v).contains(s)));
-		addSpecials(card, "Boss", variants, Variant::isBoss);
 	}
 
 	/** "Superior: Shadow Wyrm 3,520 XP", one row per monster, each with its notable drops as pictures. */
@@ -976,9 +993,12 @@ public class SlayerPanel extends JPanel
 		}
 	}
 
-	/** One line of the variant table. Clicking it runs onClick; null for the header and the selected row. */
-	private static JPanel variantRow(String name, String superiorTip, String level, String xp, String total, Color color,
-		boolean selected, Runnable onClick, Consumer<JLabel> totalCell)
+	/**
+	 * One line of the variant table. Clicking it runs onClick; null for the header and the selected row. A boss's row
+	 * has a crown after the name, and its tooltip and accessible description say it's a boss.
+	 */
+	private static JPanel variantRow(String name, String superiorTip, boolean boss, String level, String xp, String total,
+		Color color, boolean selected, Runnable onClick, Consumer<JLabel> totalCell)
 	{
 		JPanel row = new JPanel(new GridBagLayout());
 		row.setOpaque(selected);
@@ -991,12 +1011,21 @@ public class SlayerPanel extends JPanel
 
 		c.weightx = 1;
 		JLabel nameCell = cell(name, color, 0, SwingConstants.LEFT);
-		if (superiorTip != null)
+		if (boss || superiorTip != null)
 		{
-			// Star after the name; the tooltip says which superior
-			nameCell.setIcon(SUPERIOR_STAR);
+			// Crown or star after the name; the tooltip says it's a boss, or which superior
+			nameCell.setIcon(boss ? BOSS_CROWN : SUPERIOR_STAR);
 			nameCell.setHorizontalTextPosition(SwingConstants.LEFT);
 			nameCell.setIconTextGap(3);
+		}
+		if (boss)
+		{
+			nameCell.getAccessibleContext().setAccessibleDescription(BOSS_TIP);
+			if (onClick == null)
+			{
+				// The selected row has no row tooltip; the crown still says what it means
+				nameCell.setToolTipText(BOSS_TIP);
+			}
 		}
 		// Let the name give up space (and clip) rather than squeezing the number columns
 		nameCell.setPreferredSize(new Dimension(10, 16));
@@ -1015,7 +1044,7 @@ public class SlayerPanel extends JPanel
 		if (onClick != null)
 		{
 			row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-			row.setToolTipText(superiorTip != null ? superiorTip : "Show " + name);
+			row.setToolTipText(boss ? bossTooltip(name) : superiorTip != null ? superiorTip : "Show " + name);
 			row.addMouseListener(new MouseAdapter()
 			{
 				@Override
@@ -1327,6 +1356,19 @@ public class SlayerPanel extends JPanel
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		g.setColor(SUPERIOR_COLOR);
 		g.fillPolygon(xs, ys, 10);
+		g.dispose();
+		return new ImageIcon(image);
+	}
+
+	/** A small gold crown marking a boss in the monster table. */
+	private static ImageIcon crownIcon()
+	{
+		BufferedImage image = new BufferedImage(10, 9, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = image.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(BOSS_COLOR);
+		// Three points on a band
+		g.fillPolygon(new int[]{0, 0, 3, 5, 7, 10, 10}, new int[]{8, 1, 4, 0, 4, 1, 8}, 7);
 		g.dispose();
 		return new ImageIcon(image);
 	}

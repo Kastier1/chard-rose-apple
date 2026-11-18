@@ -31,7 +31,7 @@ honest status, and they test in their own RuneLite.
 | Part | State |
 | --- | --- |
 | Bank organizer (`::gearsort`, `::gearadd`, hotkey, Auto layout menu) | Built; High/Medium review findings fixed 2026-11-15 |
-| Slayer step 1: task panel, locations, Go / Go to nearest via Shortest Path | Built; High/Medium review findings fixed 2026-11-15 except boss data |
+| Slayer step 1: task panel, locations, Go / Go to nearest via Shortest Path | Built; High/Medium review findings fixed 2026-11-15; bosses on normal tasks done 2026-11-18 (boss task id 98 still has no data) |
 | Slayer step 2: monster variants and notable drops | Not started |
 | Slayer step 3: travel times via Shortest Path `query` | Not started |
 | Slayer step 4: gear from bank, "Gear up" tag tab | Not started; plan needs rework (see review) |
@@ -103,7 +103,7 @@ leaving the other keys as they were. The generator's `wiki_places` makes one pla
 monsters whose spawns match no listed place (close spots merged, a monster in more than 3 spots gets one "several
 places" place), with `source: "wiki"`, key `wiki_...` and a note. A spot named like one of the task's own places
 joins that place instead (Fever spiders at Braindeath Island, whose only point is the entrance), also when the wiki
-name adds a qualifier or drops a plural s ("Ancient Cavern (upper level)", "God Wars Dungeon (Armadyl boss room)",
+name adds a qualifier or drops a plural s ("Ancient Cavern (upper level)", "Underground Pass (Level 2)",
 "Revenant Cave"; `name_keys`); one named like another task's guide place borrows its requirements, combat and
 cannon. `WIKI_ACCESS` holds access checked on the wiki for spots no guide place covers (the Ancient Guthixian Temple
 needs While Guthix Sleeps finished). Wilderness spawns stay in `wildernessPoints`, and go
@@ -149,7 +149,30 @@ rows per monster. Monster defence stats come from `tools/fetch_wiki_monsters.py 
 `wiki_monsters.json`) and are bundled per variant as `combat` (most common version; zeros left out) with
 `attributes`. Not yet seen in a logged-in client.
 
-Still open from the review: boss/Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
+**Update 2026-11-18 (bosses as variants):** every boss that counts for a normal task is a row of the monster table,
+after the regular monsters, with a crown icon and a "Boss: ..." tooltip (`SlayerPanel.BOSS_CROWN`, `bossTooltip`), and
+its normal card; the separate "Boss" line under the card is gone (superiors keep theirs). The list is the documented
+`BOSSES` table in `tools/build_slayer_locations.py` (wiki citations at each `BOSS_LAIRS` entry): 32 bosses over 27
+tasks, including ones the wiki's "Bosses" category misses (Skotizo, Obor, Bryophyta, Scurrius, Brutus, the Royal
+Titans) and ones with no wiki spawns (Grotesque Guardians, from Dusk's page; Calvar'ion, Spindel, Shellbane gryphon).
+A wiki "Bosses" monster not in the table is left out (Zulrah, the DT2 bosses: boss tasks only), and
+`left_out_bosses` prints any that turn up in a task's category. Each boss's only place is its lair (`source: "boss"`,
+key `boss_...`, `LocationEntry.isBossLair`, `LocationOption.bossLair`): the walk-in point (never instance tiles), its
+Slayer level and quests as requirements, the rest (diaries, keys, kill count) in the note, `areaId` copied from the
+guide place where the wiki says the boss counts for Konar there, and a copy on Krystilia's list for Wilderness bosses
+that count for her (not the King Black Dragon). The guide's empty "Ungael" place gives way to Vorkath's lair
+(`replaces`). Lairs sort last in `LocationPicker.pick`, and `nearestTargets` never returns one. `Variants.listed`
+and `Variants.at` include bosses after the regulars, so the lair card names its boss and its Go selects it; a boss
+is never the default. The looting bag for a boss depends on its own lair. God Wars Dungeon bodyguards (`GWD_MINIONS`)
+are dropped from every task, which also removed the "God Wars Dungeon (Zamorak boss room)" wiki place; their loot is
+only counted for the task when the core Slayer plugin targets them. PvM Arena pages and quest-only versions (Vorkath's
+Dragon Slayer II fight, Amoxliatl's quest fight, Brutus's "Bull") no longer widen level, HP and XP ranges. Go targets
+for Calvar'ion (Skeletal Tomb) and Spindel (Web Chasm) are RuneLite world map icons, the others wiki or Shortest Path
+tiles; Kraken, Alchemical Hydra, the Dagannoth Kings and the GWD generals go to the dungeon entrance because Shortest
+Path can't path the last stretch. Not yet seen in a logged-in client.
+
+Still open from the review: Venator data, the Wilderness-diary needs of the Wilderness boss lairs (said in the note,
+not checked), the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping; By set covers armour only), and the scope doc's wrong required items.
 
 Branch: `claude/loving-faraday-7nz9t9` on `Kastier1/chard-rose-apple`. No pull request yet.
@@ -299,7 +322,8 @@ Full detail, evidence and suggested fixes are in `docs/review-findings.md`. In p
   - The generator discards the source's `questsFinished`, `questsStarted` and `skills` fields, so places the player
     can't enter look routable (Iorwerth Dungeon, Lithkren, the Lighthouse, Slayer Tower without Priest in Peril).
   - It also ignores `entranceRoutable=false` (Wyrmscraig, Waterfall Dungeon, Scabaras Dungeon).
-- **Boss tasks (id 98) and Venators have no data.**
+- **Boss tasks (id 98) and Venators have no data.** (Bosses that count for normal tasks are done: see the
+  2026-11-18 update above.)
 
 ### Low (selection)
 

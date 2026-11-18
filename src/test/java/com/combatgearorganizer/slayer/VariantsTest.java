@@ -1,6 +1,7 @@
 package com.combatgearorganizer.slayer;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -33,7 +34,7 @@ public class VariantsTest
 	private static LocationOption place(String key)
 	{
 		return new LocationOption(key, key, false, false, false, null, null, null,
-			Collections.emptyList(), Collections.emptyList(), false);
+			Collections.emptyList(), Collections.emptyList(), false, false);
 	}
 
 	@Test
@@ -69,15 +70,41 @@ public class VariantsTest
 	}
 
 	@Test
+	public void bossesAreListedAfterTheRegularMonstersButNeverPickedByDefault()
+	{
+		Variant whelp = variant("Baby blue dragon", 50, false, "taverley");
+		Variant dragon = variant("Blue dragon", 107, false, "taverley");
+		Variant vorkath = variant("Vorkath", 750, false, "boss_vorkath");
+		vorkath.setBoss(true);
+		Variant superior = variant("Superior blue", 900, true, "taverley");
+		List<Variant> blues = Arrays.asList(whelp, vorkath, dragon, superior);
+		List<LocationOption> shown = Arrays.asList(place("boss_vorkath"), place("taverley"));
+
+		// Regular monsters first, the boss after them; no superior
+		assertEquals(Arrays.asList(whelp, dragon, vorkath), Variants.listed(blues, shown));
+		assertEquals(Arrays.asList(whelp, dragon, vorkath), Variants.listed(blues, Collections.emptyList()));
+		assertEquals(Collections.singletonList(vorkath), Variants.bosses(blues));
+		assertFalse(vorkath.isRegular());
+		// Even with the lair at the top of the list, the default is a regular monster
+		assertEquals(whelp, Variants.pickDefault(blues, shown));
+		assertNull(Variants.pickDefault(Collections.singletonList(vorkath), shown));
+		// Its lair's card names it, so Go there switches to it; the guide place doesn't
+		assertEquals(Collections.singletonList("Vorkath"), Variants.at(blues, "boss_vorkath"));
+		assertEquals(Arrays.asList("Baby blue dragon", "Blue dragon"), Variants.at(blues, "taverley"));
+		assertEquals(Collections.singletonList("boss_vorkath"), Variants.foundAt(vorkath, shown));
+		assertEquals(Collections.singletonList(Variants.NOT_SHOWN), Variants.foundAt(vorkath, Collections.singletonList(place("taverley"))));
+	}
+
+	@Test
 	public void foundAtSaysWhereOrWhyNot()
 	{
 		Variant jackal = variant("Jackal", 27, false, "nardah", "pollnivneach");
 		Variant hound = variant("Shadow Hound", 62, false);
 		Variant hellhound = variant("Hellhound", 116, false, "taverley");
 		LocationOption nardah = new LocationOption("nardah", "West of Nardah", false, false, false, null, null, null,
-			Collections.emptyList(), Collections.emptyList(), false);
+			Collections.emptyList(), Collections.emptyList(), false, false);
 		LocationOption pollnivneach = new LocationOption("pollnivneach", "Pollnivneach", false, false, false, null, null, null,
-			Collections.emptyList(), Collections.emptyList(), false);
+			Collections.emptyList(), Collections.emptyList(), false, false);
 		List<LocationOption> shown = Arrays.asList(pollnivneach, place("brimhaven"), nardah);
 
 		// The shown places' labels, in list order

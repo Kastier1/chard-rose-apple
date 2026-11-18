@@ -25,6 +25,8 @@ public class LocationOption
 	List<String> missingRequirements;
 	/** True for a place made from one monster's wiki spawns rather than the slayer location guide. */
 	boolean fromWiki;
+	/** True for a boss's lair. "Go to nearest" never picks one. */
+	boolean bossLair;
 
 	public boolean isRoutable()
 	{

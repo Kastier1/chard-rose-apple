@@ -17,7 +17,7 @@ public final class Variants
 	{
 	}
 
-	/** The variants to list and pick between: everything except superiors and bosses. */
+	/** The regular monsters: everything except superiors and bosses. A boss is never picked by default. */
 	public static List<Variant> regular(List<Variant> variants)
 	{
 		return variants.stream().filter(Variant::isRegular).collect(Collectors.toList());
@@ -51,8 +51,9 @@ public final class Variants
 	public static final String NOT_SHOWN = "Not at any of the places below";
 
 	/**
-	 * Every regular variant, for the table: the ones at a listed place first, then the rest, each part in the data's
-	 * order (lowest level first). Every monster that counts is in the table; its "Found at" row says where it lives.
+	 * Every monster for the table: the regular ones at a listed place first, then the rest of them, each part in the
+	 * data's order (lowest level first); then the bosses, in the data's order. Every monster and boss that counts is in
+	 * the table; its "Found at" row says where it lives. Superiors aren't listed: they show with their monster.
 	 */
 	public static List<Variant> listed(List<Variant> variants, List<LocationOption> shownPlaces)
 	{
@@ -60,7 +61,14 @@ public final class Variants
 			.collect(Collectors.partitioningBy(v -> isAtAny(v, shownPlaces)));
 		List<Variant> out = new ArrayList<>(atShown.get(true));
 		out.addAll(atShown.get(false));
+		out.addAll(bosses(variants));
 		return out;
+	}
+
+	/** The bosses that count for the task, in the data's order. */
+	public static List<Variant> bosses(List<Variant> variants)
+	{
+		return variants.stream().filter(Variant::isBoss).collect(Collectors.toList());
 	}
 
 	/**
@@ -95,8 +103,8 @@ public final class Variants
 	}
 
 	/**
-	 * The drops worth showing next to a superior or boss: a superior's own extras (what its normal monster doesn't
-	 * drop), or a boss's drops. Falls back to all of a superior's drops when they're all shared.
+	 * The drops worth showing next to a superior: its own extras (what its normal monster doesn't drop). Falls back to
+	 * all of its drops when they're all shared, or when it isn't a superior.
 	 */
 	public static List<SlayerLocationData.Drop> notableDrops(List<Variant> variants, Variant v)
 	{
@@ -125,10 +133,12 @@ public final class Variants
 		return variants.stream().filter(v -> v.getName().equals(name)).findFirst().orElse(null);
 	}
 
-	/** Names of the variants that spawn at a place, for its card. */
+	/** Names of the monsters that spawn at a place, for its card: the regular ones, then bosses (at their lair). */
 	public static List<String> at(List<Variant> variants, String placeKey)
 	{
-		return regular(variants).stream()
+		List<Variant> here = new ArrayList<>(regular(variants));
+		here.addAll(bosses(variants));
+		return here.stream()
 			.filter(v -> v.getPlaces().contains(placeKey))
 			.map(Variant::getName)
 			.collect(Collectors.toList());

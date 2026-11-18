@@ -26,6 +26,7 @@ import net.runelite.api.Quest;
 import net.runelite.api.Skill;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -486,8 +487,13 @@ public class BundledDataTest
 			assertTrue(containsText(panel, "7 not logged yet"));
 			// The superior's own extras sit next to it
 			assertNotNull(slotFor(panel, "Imbued heart"));
-			// And the boss's
+			// The boss is a row of its own now, not a line under the demon's drops
+			assertNull(slotFor(panel, "Unsired"));
+			panel.selectVariant("Abyssal Sire");
 			assertNotNull(slotFor(panel, "Unsired"));
+			assertTrue(containsText(panel, "Abyssal Nexus"));
+			panel.selectVariant("Abyssal demon");
+			assertEquals("Abyssal demon", panel.getSelectedVariant());
 
 			// The Carry row suggests the ash sanctifier, and ticks it once it's in the inventory
 			CarrySlot ash = carrySlot(panel, CarryItem.ASH_SANCTIFIER);
@@ -832,11 +838,14 @@ public class BundledDataTest
 		assertNotNull(cavern.getRequirements());
 		assertEquals(Collections.singletonList("BARBARIAN_TRAINING"), cavern.getRequirements().getQuestsStarted());
 		assertEquals("Spawn points from the OSRS Wiki.", cavern.getNote());
-		// Borrowing by the name before a qualifier: "God Wars Dungeon (Zamorak boss room)"
-		SlayerLocationData.LocationEntry zamorak = wikiPlaces(data.findTask(-1, "Greater demons")).stream()
-			.filter(l -> l.getLabel().contains("Zamorak boss room")).findFirst().orElse(null);
-		assertNotNull(zamorak);
-		assertEquals("Spawn points from the OSRS Wiki.", zamorak.getNote());
+		// Borrowing by the name before a qualifier: "Underground Pass (Level 2)" is in the Underground Pass
+		SlayerLocationData.LocationEntry pass = wikiPlaces(data.findTask(-1, "Rats")).stream()
+			.filter(l -> l.getLabel().contains("Underground Pass (Level 2)")).findFirst().orElse(null);
+		assertNotNull(pass);
+		assertEquals(Collections.singletonList("PLAGUE_CITY"), pass.getRequirements().getQuestsStarted());
+		assertEquals("Spawn points from the OSRS Wiki.", pass.getNote());
+		// The God Wars Dungeon bodyguards are gone, and the wiki place made from their spawns with them
+		assertTrue(wikiPlaces(data.findTask(-1, "Greater demons")).stream().noneMatch(l -> l.getLabel().contains("Zamorak")));
 		// No guide place of that name, but the access is known from the wiki
 		SlayerLocationData.LocationEntry temple = wikiPlaces(data.findTask(-1, "Greater demons")).stream()
 			.filter(l -> l.getLabel().contains("Ancient Guthixian Temple")).findFirst().orElse(null);
@@ -853,11 +862,8 @@ public class BundledDataTest
 		// Named like the task's own place with a qualifier or plural: joins it, no extra place
 		SlayerLocationData.TaskEntry aviansies = data.findTask(-1, "Aviansies");
 		assertTrue(wikiPlaces(aviansies).isEmpty());
-		for (String bodyguard : Arrays.asList("Wingman Skree", "Flockleader Geerin", "Flight Kilisa"))
-		{
-			assertEquals(bodyguard, Collections.singletonList("god_wars_dungeon"),
-				Variants.byName(aviansies.getVariants(), bodyguard).getPlaces());
-		}
+		assertEquals(Arrays.asList("god_wars_dungeon", "wilderness_god_wars_dungeon"),
+			Variants.byName(aviansies.getVariants(), "Aviansie").getPlaces());
 		SlayerLocationData.TaskEntry metal = data.findTask(-1, "Metal dragons");
 		assertEquals(Collections.singletonList("ancient_cavern"), Variants.byName(metal.getVariants(), "Mithril dragon").getPlaces());
 		assertTrue(wikiPlaces(metal).isEmpty());
@@ -921,6 +927,366 @@ public class BundledDataTest
 			assertEquals("go " + temple.getLabel(), events.get(0));
 			buttons(panel, "Go to nearest").get(0).doClick(0);
 			assertEquals(LocationPicker.nearestTargets(locations), nearest.get(0));
+		});
+	}
+
+	/** Each task's bosses, from the OSRS Wiki's "Slayer task" page and each boss's page (tools/build_slayer_locations.py BOSSES). */
+	private static final Map<String, List<String>> BOSSES_BY_TASK = new HashMap<>();
+
+	static
+	{
+		BOSSES_BY_TASK.put("Abyssal demons", Collections.singletonList("Abyssal Sire"));
+		BOSSES_BY_TASK.put("Araxytes", Collections.singletonList("Araxxor"));
+		BOSSES_BY_TASK.put("Aviansies", Collections.singletonList("Kree'arra"));
+		BOSSES_BY_TASK.put("Bears", Arrays.asList("Artio", "Callisto"));
+		BOSSES_BY_TASK.put("Black demons", Collections.singletonList("Skotizo"));
+		BOSSES_BY_TASK.put("Black dragons", Collections.singletonList("King Black Dragon"));
+		BOSSES_BY_TASK.put("Blue dragons", Collections.singletonList("Vorkath"));
+		BOSSES_BY_TASK.put("Cave kraken", Collections.singletonList("Kraken"));
+		BOSSES_BY_TASK.put("Cows", Collections.singletonList("Brutus"));
+		BOSSES_BY_TASK.put("Dagannoth", Arrays.asList("Dagannoth Prime", "Dagannoth Rex", "Dagannoth Supreme"));
+		BOSSES_BY_TASK.put("Fire giants", Collections.singletonList("Branda the Fire Queen"));
+		BOSSES_BY_TASK.put("Gargoyles", Collections.singletonList("Grotesque Guardians"));
+		BOSSES_BY_TASK.put("Greater demons", Arrays.asList("K'ril Tsutsaroth", "Skotizo"));
+		BOSSES_BY_TASK.put("Gryphons", Collections.singletonList("Shellbane gryphon"));
+		BOSSES_BY_TASK.put("Hellhounds", Collections.singletonList("Cerberus"));
+		BOSSES_BY_TASK.put("Hill giants", Collections.singletonList("Obor"));
+		BOSSES_BY_TASK.put("Hydras", Collections.singletonList("Alchemical Hydra"));
+		BOSSES_BY_TASK.put("Ice giants", Collections.singletonList("Eldric the Ice King"));
+		BOSSES_BY_TASK.put("Kalphite", Collections.singletonList("Kalphite Queen"));
+		BOSSES_BY_TASK.put("Lesser Nagua", Collections.singletonList("Amoxliatl"));
+		BOSSES_BY_TASK.put("Moss giants", Collections.singletonList("Bryophyta"));
+		BOSSES_BY_TASK.put("Rats", Collections.singletonList("Scurrius"));
+		BOSSES_BY_TASK.put("Scorpions", Collections.singletonList("Scorpia"));
+		BOSSES_BY_TASK.put("Skeletons", Arrays.asList("Calvar'ion", "Vet'ion"));
+		BOSSES_BY_TASK.put("Smoke devils", Collections.singletonList("Thermonuclear smoke devil"));
+		BOSSES_BY_TASK.put("Spiders", Arrays.asList("Araxxor", "Sarachnis", "Spindel", "Venenatis"));
+		BOSSES_BY_TASK.put("Zombies", Collections.singletonList("Vorkath"));
+	}
+
+	private static final List<String> GWD_BODYGUARDS = Arrays.asList("Tstanon Karlak", "Zakl'n Gritch", "Balfrug Kreeyath",
+		"Wingman Skree", "Flockleader Geerin", "Flight Kilisa", "Sergeant Strongstack", "Sergeant Grimspike",
+		"Sergeant Steelwill", "Starlight", "Growler", "Bree");
+
+	private static SlayerLocationData.LocationEntry place(SlayerLocationData.TaskEntry t, String key)
+	{
+		return allLocations(t).stream().filter(l -> l.getKey().equals(key)).findFirst().orElse(null);
+	}
+
+	private static SlayerLocationData.LocationEntry lairOf(String task, String boss)
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, task);
+		SlayerLocationData.Variant v = Variants.byName(t.getVariants(), boss);
+		assertNotNull(task + " / " + boss, v);
+		return place(t, v.getPlaces().get(0));
+	}
+
+	@Test
+	public void eachTaskHasTheBossesThatCountAndNoBodyguards()
+	{
+		List<String> problems = new ArrayList<>();
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			List<String> bosses = new ArrayList<>();
+			for (SlayerLocationData.Variant v : t.getVariants())
+			{
+				if (GWD_BODYGUARDS.contains(v.getName()))
+				{
+					problems.add(t.getName() + " / " + v.getName() + ": a God Wars Dungeon bodyguard");
+				}
+				if (v.isBoss())
+				{
+					bosses.add(v.getName());
+				}
+				if (v.getName().contains("PvM Arena"))
+				{
+					problems.add(t.getName() + " / " + v.getName());
+				}
+			}
+			Collections.sort(bosses);
+			List<String> expected = BOSSES_BY_TASK.getOrDefault(t.getName(), Collections.emptyList());
+			if (!expected.equals(bosses))
+			{
+				problems.add(t.getName() + ": bosses " + bosses + ", expected " + expected);
+			}
+		}
+		assertTrue(String.join("\n", problems), problems.isEmpty());
+
+		// Flagged as bosses now, so they're in their lairs rather than at the guide places
+		for (String task : Arrays.asList("Black demons", "Greater demons"))
+		{
+			assertTrue(Variants.byName(data.findTask(-1, task).getVariants(), "Skotizo").isBoss());
+		}
+		assertTrue(Variants.byName(data.findTask(-1, "Rats").getVariants(), "Scurrius").isBoss());
+		// Kolodion counts (once, in the Mage Arena) but isn't a boss
+		assertTrue(Variants.byName(data.findTask(-1, "Black demons").getVariants(), "Kolodion").isRegular());
+		// Quest-only versions don't stretch a boss's level range
+		assertArrayEquals(new int[]{732, 732}, Variants.byName(data.findTask(-1, "Blue dragons").getVariants(), "Vorkath").getLevel());
+		assertArrayEquals(new int[]{263, 263}, Variants.byName(data.findTask(-1, "Lesser Nagua").getVariants(), "Amoxliatl").getLevel());
+		assertNull(Variants.byName(data.findTask(-1, "Cows").getVariants(), "Bull"));
+		// Bosses come after the regular monsters, before superiors
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			boolean seenBoss = false;
+			boolean seenSuperior = false;
+			for (SlayerLocationData.Variant v : t.getVariants())
+			{
+				assertTrue(t.getName() + " / " + v.getName(), !(v.isRegular() && (seenBoss || seenSuperior)));
+				assertTrue(t.getName() + " / " + v.getName(), !(v.isBoss() && seenSuperior));
+				seenBoss |= v.isBoss();
+				seenSuperior |= v.isSuperior();
+			}
+		}
+	}
+
+	@Test
+	public void everyBossHasItsLairWithAWorkingGo()
+	{
+		List<String> problems = new ArrayList<>();
+		int lairs = 0;
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			for (SlayerLocationData.Variant v : Variants.bosses(t.getVariants()))
+			{
+				if (v.getPlaces().size() != 1)
+				{
+					problems.add(t.getName() + " / " + v.getName() + ": places " + v.getPlaces());
+					continue;
+				}
+				SlayerLocationData.LocationEntry lair = place(t, v.getPlaces().get(0));
+				if (lair == null || !lair.isBossLair() || lair.isFromWiki())
+				{
+					problems.add(t.getName() + " / " + v.getName() + ": not a lair " + v.getPlaces());
+				}
+				else if (lair.getPoints().isEmpty() && lair.getWildernessPoints().isEmpty())
+				{
+					problems.add(t.getName() + " / " + v.getName() + ": no point to go to");
+				}
+			}
+			for (SlayerLocationData.LocationEntry l : allLocations(t))
+			{
+				if (!l.isBossLair())
+				{
+					continue;
+				}
+				lairs++;
+				if (!l.getKey().startsWith("boss_") || l.getNote() == null || l.getNote().toLowerCase().contains("pray"))
+				{
+					problems.add(t.getName() + " / " + l.getKey() + ": " + l.getNote());
+				}
+				// Only the boss lives there
+				List<String> here = Variants.at(t.getVariants(), l.getKey());
+				if (here.isEmpty() || here.stream().anyMatch(n -> Variants.byName(t.getVariants(), n).isRegular()))
+				{
+					problems.add(t.getName() + " / " + l.getKey() + ": " + here);
+				}
+			}
+			// Never "Go to nearest", whatever else is open, for any master or setting
+			for (int master : new int[]{5, SlayerMasters.KRYSTILIA})
+			{
+				for (boolean wilderness : new boolean[]{false, true})
+				{
+					if (LocationPicker.nearestTargets(LocationPicker.pick(t, master, 0, wilderness)).stream()
+						.anyMatch(LocationOption::isBossLair))
+					{
+						problems.add(t.getName() + ": a lair in Go to nearest");
+					}
+				}
+			}
+		}
+		assertTrue(String.join("\n", problems), problems.isEmpty());
+		assertTrue("lairs: " + lairs, lairs >= 33);
+
+		// The Go target is where you walk in, not a spot inside the instance
+		SlayerLocationData.LocationEntry vorkath = lairOf("Blue dragons", "Vorkath");
+		assertEquals("Ungael (Vorkath)", vorkath.getLabel());
+		assertArrayEquals(new int[]{2272, 4053, 0}, vorkath.getPoints().get(0));
+		assertEquals(Collections.singletonList("DRAGON_SLAYER_II"), vorkath.getRequirements().getQuestsFinished());
+		assertEquals(vorkath.getKey(), lairOf("Zombies", "Vorkath").getKey());
+		// The guide's empty Ungael place was only there for Vorkath
+		assertNull(place(data.findTask(-1, "Blue dragons"), "ungael"));
+		assertNull(place(data.findTask(-1, "Zombies"), "ungael"));
+		assertArrayEquals(new int[]{2873, 9848, 0}, lairOf("Hellhounds", "Cerberus").getPoints().get(0));
+		assertArrayEquals(new int[]{2917, 3747, 0}, lairOf("Greater demons", "K'ril Tsutsaroth").getPoints().get(0));
+		assertArrayEquals(new int[]{2917, 3747, 0}, lairOf("Aviansies", "Kree'arra").getPoints().get(0));
+
+		// Skill and quest needs, so a player without them sees the lair as closed
+		Object[][] slayer = {
+			{"Abyssal demons", "Abyssal Sire", 85}, {"Gargoyles", "Grotesque Guardians", 75}, {"Cave kraken", "Kraken", 87},
+			{"Hellhounds", "Cerberus", 91}, {"Araxytes", "Araxxor", 92}, {"Spiders", "Araxxor", 92},
+			{"Smoke devils", "Thermonuclear smoke devil", 93}, {"Hydras", "Alchemical Hydra", 95},
+			{"Gryphons", "Shellbane gryphon", 51},
+		};
+		for (Object[] row : slayer)
+		{
+			SlayerLocationData.LocationEntry lair = lairOf((String) row[0], (String) row[1]);
+			assertEquals(row[0] + " / " + row[1], row[2], lair.getRequirements().getSkills().get("SLAYER"));
+		}
+		assertEquals(Integer.valueOf(70), lairOf("Aviansies", "Kree'arra").getRequirements().getSkills().get("RANGED"));
+		assertEquals(Integer.valueOf(70), lairOf("Greater demons", "K'ril Tsutsaroth").getRequirements().getSkills().get("HITPOINTS"));
+		assertEquals(Collections.singletonList("THE_IDES_OF_MILK"), lairOf("Cows", "Brutus").getRequirements().getQuestsFinished());
+
+		// The lair counts as the guide place's Konar area where the wiki says the boss counts for her there
+		SlayerLocationData.TaskEntry hydras = data.findTask(-1, "Hydras");
+		assertEquals(place(hydras, "karuulm_slayer_dungeon").getAreaId(), lairOf("Hydras", "Alchemical Hydra").getAreaId());
+		List<LocationOption> konar = LocationPicker.pick(hydras, 8, place(hydras, "karuulm_slayer_dungeon").getAreaId(), false);
+		assertEquals(2, konar.size());
+		assertTrue(konar.stream().anyMatch(LocationOption::isBossLair));
+		assertNull(lairOf("Greater demons", "K'ril Tsutsaroth").getAreaId());
+
+		// Krystilia: the Wilderness bosses that count for her are on her list; the King Black Dragon isn't
+		SlayerLocationData.TaskEntry bears = data.findTask(-1, "Bears");
+		for (String boss : Arrays.asList("Callisto", "Artio"))
+		{
+			String key = lairOf("Bears", boss).getKey();
+			assertTrue(boss, bears.getWildernessLocations().stream().anyMatch(l -> l.getKey().equals(key)));
+		}
+		SlayerLocationData.TaskEntry black = data.findTask(-1, "Black dragons");
+		String kbd = lairOf("Black dragons", "King Black Dragon").getKey();
+		assertTrue(black.getWildernessLocations().stream().noneMatch(l -> l.getKey().equals(kbd)));
+		assertTrue(lairOf("Black dragons", "King Black Dragon").getPoints().isEmpty());
+		assertFalse(lairOf("Black dragons", "King Black Dragon").getWildernessPoints().isEmpty());
+	}
+
+	/** The first component (a monster table row) whose tooltip is exactly this, or null. */
+	private static javax.swing.JComponent withTooltip(Component c, String tooltip)
+	{
+		if (c instanceof javax.swing.JComponent && tooltip.equals(((javax.swing.JComponent) c).getToolTipText()))
+		{
+			return (javax.swing.JComponent) c;
+		}
+		if (c instanceof Container)
+		{
+			for (Component child : ((Container) c).getComponents())
+			{
+				javax.swing.JComponent found = withTooltip(child, tooltip);
+				if (found != null)
+				{
+					return found;
+				}
+			}
+		}
+		return null;
+	}
+
+	/** Whether some label's whole text is exactly this. */
+	private static boolean hasLabel(Component c, String text)
+	{
+		if (c instanceof JLabel && text.equals(((JLabel) c).getText()))
+		{
+			return true;
+		}
+		if (c instanceof Container)
+		{
+			for (Component child : ((Container) c).getComponents())
+			{
+				if (hasLabel(child, text))
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	@Test
+	public void bossesAreRowsInTheTableWithTheirOwnCardAndLair() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Blue dragons");
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		LocationOption lair = locations.get(locations.size() - 1);
+		assertTrue(lair.isBossLair());
+		assertEquals("Ungael (Vorkath)", lair.getLabel());
+		List<SlayerLocationData.Variant> listed = Variants.listed(t.getVariants(), locations);
+		assertEquals("Vorkath", listed.get(listed.size() - 1).getName());
+		List<String> events = new ArrayList<>();
+		List<List<LocationOption>> nearest = new ArrayList<>();
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> events.add(l.getKey()), nearest::add, () -> { });
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				stubItems(ItemValueMode.GRAND_EXCHANGE));
+			// Not the default; a regular monster is, with the task's prayer advice
+			assertTrue(!"Vorkath".equals(panel.getSelectedVariant()));
+			assertTrue(hasLabel(panel, "Pray"));
+			// Its row says it's a boss, by the crown and the tooltip; the card has no separate "Boss" line
+			javax.swing.JComponent row = withTooltip(panel, SlayerPanel.bossTooltip("Vorkath"));
+			assertNotNull("Vorkath's row", row);
+			assertTrue(SlayerPanel.bossTooltip("Vorkath").startsWith("Boss"));
+			JLabel name = (JLabel) ((Container) row).getComponent(0);
+			assertEquals("Vorkath", name.getText());
+			assertEquals(SlayerPanel.BOSS_CROWN, name.getIcon());
+			assertEquals(SlayerPanel.BOSS_TIP, name.getAccessibleContext().getAccessibleDescription());
+			assertFalse(hasLabel(panel, "Boss"));
+
+			// Selecting it shows its own card: level, drops, carry, where to fight it; no prayer advice
+			panel.selectVariant("Vorkath");
+			assertEquals("Vorkath", panel.getSelectedVariant());
+			assertTrue(containsText(panel, "732 · 750 HP"));
+			assertTrue(hasLabel(panel, "Drops"));
+			assertTrue(hasLabel(panel, "Carry"));
+			assertTrue(hasLabel(panel, "Found at"));
+			assertTrue(containsText(panel, "Ungael (Vorkath)"));
+			assertFalse(hasLabel(panel, "Pray"));
+			assertFalse(containsText(panel, "<b>Prayer</b>"));
+			assertFalse(hasLabel(panel, "Boss"));
+			assertNull(withTooltip(panel, SlayerPanel.bossTooltip("Vorkath")));
+
+			// The lair's Go goes to the walk-in point and keeps the boss selected; from a regular monster it switches
+			panel.selectVariant("Blue dragon");
+			buttons(panel, "Go").get(locations.indexOf(lair)).doClick(0);
+			assertEquals(Collections.singletonList(lair.getKey()), events);
+			assertEquals("Vorkath", panel.getSelectedVariant());
+			// "Go to nearest" never sends the player to it
+			buttons(panel, "Go to nearest").get(0).doClick(0);
+			assertTrue(nearest.get(0).stream().noneMatch(LocationOption::isBossLair));
+			assertTrue(!nearest.get(0).isEmpty());
+
+			// Compact mode still lists the lair's card
+			panel.setCompact(true);
+			assertTrue(containsText(panel, "Ungael (Vorkath)"));
+		});
+
+		// A lair the player can't get into yet says why
+		SlayerLocationData.TaskEntry hounds = data.findTask(-1, "Hellhounds");
+		RequirementChecker lowSlayer = r -> r.getSkills().containsKey("SLAYER")
+			? Collections.singletonList(r.getSkills().get("SLAYER") + " Slayer") : Collections.emptyList();
+		List<LocationOption> houndPlaces = LocationPicker.pick(hounds, 5, 0, false, lowSlayer);
+		LocationOption cerberus = houndPlaces.stream().filter(LocationOption::isBossLair).findFirst().orElse(null);
+		assertNotNull(cerberus);
+		assertFalse(cerberus.isAccessible());
+		assertEquals(houndPlaces.size() - 1, houndPlaces.indexOf(cerberus));
+		SlayerTaskState houndState = new SlayerTaskState(hounds.getTaskId(), hounds.getName(), 50, 120, 5, 0, null);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.showTask(houndState, hounds.getInfo(), hounds.getVariants(), houndPlaces, true, true,
+				CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+			assertTrue(containsText(panel, "Needs 91 Slayer"));
+			panel.selectVariant("Cerberus");
+			assertEquals("Cerberus", panel.getSelectedVariant());
+			assertFalse(hasLabel(panel, "Pray"));
+		});
+	}
+
+	@Test
+	public void aWildernessBossGetsALootingBagOnlyForItsOwnLair() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Bears");
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, true);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				DropItems.EMPTY);
+			panel.selectVariant("Callisto");
+			assertEquals("Callisto", panel.getSelectedVariant());
+			assertTrue(containsText(panel, "Callisto's Den"));
+			assertNotNull(carrySlot(panel, CarryItem.LOOTING_BAG));
+			panel.selectVariant("Grizzly bear");
+			assertNull(carrySlot(panel, CarryItem.LOOTING_BAG));
 		});
 	}
 
@@ -1068,7 +1434,7 @@ public class BundledDataTest
 			assertTrue(containsText(panel, body));
 			// Pick a monster other than the default
 			String picked = null;
-			for (SlayerLocationData.Variant v : Variants.listed(t.getVariants(), locations))
+			for (SlayerLocationData.Variant v : Variants.regular(Variants.listed(t.getVariants(), locations)))
 			{
 				if (!v.getName().equals(panel.getSelectedVariant()))
 				{
