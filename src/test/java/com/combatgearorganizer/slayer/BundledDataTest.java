@@ -670,19 +670,40 @@ public class BundledDataTest
 		assertNotNull(cavern.getRequirements());
 		assertEquals(Collections.singletonList("BARBARIAN_TRAINING"), cavern.getRequirements().getQuestsStarted());
 		assertEquals("Spawn points from the OSRS Wiki.", cavern.getNote());
-		// No guide place of that name: it says the access isn't known
+		// Borrowing by the name before a qualifier: "God Wars Dungeon (Zamorak boss room)"
+		SlayerLocationData.LocationEntry zamorak = wikiPlaces(data.findTask(-1, "Greater demons")).stream()
+			.filter(l -> l.getLabel().contains("Zamorak boss room")).findFirst().orElse(null);
+		assertNotNull(zamorak);
+		assertEquals("Spawn points from the OSRS Wiki.", zamorak.getNote());
+		// No guide place of that name, but the access is known from the wiki
 		SlayerLocationData.LocationEntry temple = wikiPlaces(data.findTask(-1, "Greater demons")).stream()
 			.filter(l -> l.getLabel().contains("Ancient Guthixian Temple")).findFirst().orElse(null);
 		assertNotNull(temple);
-		assertNull(temple.getRequirements());
-		assertTrue(temple.getNote().contains("no access details"));
+		assertEquals(Collections.singletonList("WHILE_GUTHIX_SLEEPS"), temple.getRequirements().getQuestsFinished());
+		assertEquals("Spawn points from the OSRS Wiki.", temple.getNote());
+		// Neither: it says the access isn't known
+		SlayerLocationData.LocationEntry unknown = wikiPlaces(data.findTask(-1, "Hellhounds")).stream()
+			.filter(l -> l.getLabel().startsWith("Bouncer")).findFirst().orElse(null);
+		assertNotNull(unknown);
+		assertNull(unknown.getRequirements());
+		assertTrue(unknown.getNote().contains("no access details"));
 
-		// One boss room the wiki names two ways is one place, for all three bodyguards
+		// Named like the task's own place with a qualifier or plural: joins it, no extra place
 		SlayerLocationData.TaskEntry aviansies = data.findTask(-1, "Aviansies");
-		List<SlayerLocationData.LocationEntry> rooms = wikiPlaces(aviansies);
-		assertEquals(1, rooms.size());
-		assertTrue(Variants.at(aviansies.getVariants(), rooms.get(0).getKey())
-			.containsAll(Arrays.asList("Wingman Skree", "Flockleader Geerin", "Flight Kilisa")));
+		assertTrue(wikiPlaces(aviansies).isEmpty());
+		for (String bodyguard : Arrays.asList("Wingman Skree", "Flockleader Geerin", "Flight Kilisa"))
+		{
+			assertEquals(bodyguard, Collections.singletonList("god_wars_dungeon"),
+				Variants.byName(aviansies.getVariants(), bodyguard).getPlaces());
+		}
+		SlayerLocationData.TaskEntry metal = data.findTask(-1, "Metal dragons");
+		assertEquals(Collections.singletonList("ancient_cavern"), Variants.byName(metal.getVariants(), "Mithril dragon").getPlaces());
+		assertTrue(wikiPlaces(metal).isEmpty());
+		SlayerLocationData.TaskEntry revs = data.findTask(-1, "Revenants");
+		assertEquals(Collections.singletonList("revenant_caves"), Variants.byName(revs.getVariants(), "Revenant hobgoblin").getPlaces());
+		assertTrue(revs.getWildernessLocations().stream().noneMatch(SlayerLocationData.LocationEntry::isFromWiki));
+		assertEquals(Collections.singletonList("stronghold_of_security"),
+			Variants.byName(data.findTask(-1, "Catablepon").getVariants(), "Catablepon").getPlaces());
 
 		// A monster in many spots gets one place that lists them
 		SlayerLocationData.LocationEntry birds = wikiPlaces(data.findTask(-1, "Birds")).stream()
@@ -714,6 +735,14 @@ public class BundledDataTest
 		// Go to nearest sticks to the guide's places
 		assertTrue(LocationPicker.nearestTargets(locations).stream().noneMatch(LocationOption::isFromWiki));
 		assertTrue(!LocationPicker.nearestTargets(locations).isEmpty());
+		// Without While Guthix Sleeps the temple is shown as closed
+		RequirementChecker noWgs = r -> r.getQuestsFinished().contains("WHILE_GUTHIX_SLEEPS")
+			? Collections.singletonList("While Guthix Sleeps") : Collections.emptyList();
+		LocationOption closed = LocationPicker.pick(t, 5, 0, false, noWgs).stream()
+			.filter(l -> l.getKey().equals(temple.getKey())).findFirst().orElse(null);
+		assertNotNull(closed);
+		assertTrue(!closed.isAccessible());
+		assertEquals(Collections.singletonList("While Guthix Sleeps"), closed.getMissingRequirements());
 
 		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
 		List<String> events = new ArrayList<>();

@@ -62,7 +62,10 @@ Have a task, and open the **Slayer** tab.
 - [ ] **Monsters** table: click a monster; its details change, and it stays selected after the next kill.
 - [ ] **Greater demons** task (or `::slayertask greater demons`): Tormented Demon is in the table. Its *Found at* is
   "Tormented Demon (Ancient Guthixian Temple)", and that place card says "Spawn points from the OSRS Wiki".
-  **Go** on it paths into the temple. **Go to nearest** still picks a normal greater demon place.
+  **Go** on it paths into the temple. **Go to nearest** still picks a normal greater demon place. On an account
+  without While Guthix Sleeps the temple card says it needs that quest.
+- [ ] **Metal dragons**: Mithril dragon's *Found at* is "Ancient Cavern". **Aviansies**: the three Armadyl
+  bodyguards are found at "God Wars Dungeon".
 - [ ] With *Show Wilderness locations* off, pick a monster that only lives in the Wilderness (e.g. Kolodion on Black
   demons): *Found at* says "Not at any of the places below". There's no *Also counts* drawer any more.
 - [ ] **Drops** are item pictures. Hover one: rate, on-task rate, value.

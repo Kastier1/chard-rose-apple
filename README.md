@@ -114,9 +114,11 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
   *Found at* row names its places, or says "Not at any of the places below" (for example a Wilderness place while
   *Show Wilderness locations* is off) or "No place in the data yet".
 - Monsters that live away from every place in the slayer location guide (tormented demons for Greater demons,
-  God Wars bodyguards, ice spiders...) get a place of their own made from their OSRS Wiki spawn points, such as
-  "Tormented Demon (Ancient Guthixian Temple)". Its card says so. One named like a guide place elsewhere (Ancient
-  Cavern) takes that place's quest and skill needs; otherwise the card says the data has no access details.
+  ice spiders, penguins...) get a place of their own made from their OSRS Wiki spawn points, such as
+  "Tormented Demon (Ancient Guthixian Temple)". Its card says so. If the wiki names the spot like one of the task's
+  places (God Wars bodyguards, mithril dragons), the monster joins that place instead. A place named like a guide
+  place elsewhere (Ancient Cavern) takes that place's quest and skill needs, and the temple needs While Guthix
+  Sleeps; otherwise the card says the data has no access details.
   **Go to nearest** only uses these places when no guide place can be reached.
 - **Drops** show as item pictures, with the stack size when a drop comes in a pile. Hover one for its drop rate,
   the better rate on task, whether it's in your collection log, and its value. Drops you haven't logged are faded

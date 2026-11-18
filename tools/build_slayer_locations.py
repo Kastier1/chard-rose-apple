@@ -303,6 +303,11 @@ WIKI_SOURCE = "wiki"
 WIKI_MAX_SPOTS = 3
 WIKI_NOTE = "Spawn points from the OSRS Wiki."
 NO_ACCESS_NOTE = "The data has no access details for this place."
+# Access for wiki locations no guide place is named like, checked on the wiki (keyed by name_keys' first form)
+WIKI_ACCESS = {
+    # "They can be found throughout the Ancient Guthixian Temple after completion of the quest."
+    "ancientguthixiantemple": {"questsFinished": ["WHILE_GUTHIX_SLEEPS"]},
+}
 
 
 def slug(text):
@@ -312,6 +317,34 @@ def slug(text):
 def same_name(text):
     """"Alice's farm, west of the Ectofuntus" and "Alice's farm west of the Ectofuntus" are one place."""
     return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def name_keys(text):
+    """The forms a wiki location name can match a place's label by: the whole name, then the part before a
+    qualifier ("Ancient Cavern (upper level)", "Stronghold of Security: Pit of Pestilence", "Uzer Mastaba - lower
+    level" are in "Ancient Cavern", "Stronghold of Security", "Uzer Mastaba"), each also without a plural s
+    ("Revenant Cave" is "Revenant Caves")."""
+    out = []
+    for part in (text, re.split(r"\s*(?:\(|,|:|\s-\s)", text, maxsplit=1)[0]):
+        whole = same_name(part)
+        for k in (whole, re.sub(r"s$", "", whole)):
+            if k and k not in out:
+                out.append(k)
+    return out
+
+
+def by_name(labelled):
+    """{label form: value} for [(label, value)], so name_keys of a wiki location finds them; the first wins."""
+    out = {}
+    for label, value in labelled:
+        whole = same_name(label)
+        for k in (whole, re.sub(r"s$", "", whole)):
+            out.setdefault(k, value)
+    return out
+
+
+def find_by_name(index, text):
+    return next((index[k] for k in name_keys(text) if k in index), None)
 
 
 def spawn_groups(pages, wiki):
@@ -378,7 +411,7 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
     """
     if not wiki:
         return [], {}
-    listed = {same_name(pl["label"]): pl["key"] for pl in places}
+    listed = by_name((pl["label"], pl["key"]) for pl in places)
     joined = {}
     spots = {}
     taken = {pl["key"] for pl in places}
@@ -392,8 +425,9 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
         groups = []
         for loc, pts in spawn_groups(pages, wiki):
             pts = [pt for pt in pts if in_wilderness(pt) or not wilderness_only]
-            if pts and loc and same_name(loc) in listed:
-                joined.setdefault(name, set()).add(listed[same_name(loc)])
+            own = find_by_name(listed, loc) if pts and loc else None
+            if own:
+                joined.setdefault(name, set()).add(own)
             elif pts:
                 groups.append((loc, pts))
         several = []
@@ -419,12 +453,13 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
             label = f"{monsters[0]} (several places)"
         else:
             label = ", ".join(monsters)
-        known = guide.get(same_name(loc)) if loc else None
+        known = find_by_name(guide, loc) if loc else None
+        access = WIKI_ACCESS.get(name_keys(loc)[0]) if loc else None
         if spot["spots"]:
             note = (f"Spawn points from the OSRS Wiki: {', '.join(spot['spots'])}. Go takes you to the nearest. "
                     "The data has no access details for these places.")
         else:
-            note = WIKI_NOTE if known else WIKI_NOTE + " " + NO_ACCESS_NOTE
+            note = WIKI_NOTE if known or access else WIKI_NOTE + " " + NO_ACCESS_NOTE
         unique, n = key, 2
         while unique in taken:
             unique, n = f"{key}_{n}", n + 1
@@ -433,7 +468,7 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
             "combat": known.get("combat") if known else None,
             "cannon": known.get("cannon") if known else None,
             "note": note,
-            "requirements": requirements(known.get("access")) if known else None,
+            "requirements": requirements(known.get("access") if known else None, access),
             "source": WIKI_SOURCE,
         }))
     out.sort(key=lambda pl: (pl["label"].lower(), pl["key"]))
@@ -599,9 +634,7 @@ def main(src):
     wild = {t["taskId"]: t for t in data["wildernessTaskLocations"]}
     all_points = place_points(data, locations)
     # Guide places by name, so a wiki-spawn place with the same name can borrow their access facts
-    guide = {}
-    for key in sorted(locations):
-        guide.setdefault(same_name(locations[key]["label"]), locations[key])
+    guide = by_name((locations[key]["label"], locations[key]) for key in sorted(locations))
 
     normal = {t["taskId"]: t for t in data["taskLocations"]}
 

@@ -649,7 +649,7 @@ public class SlayerPanel extends JPanel
 		addCarry(card, selected, locations);
 
 		List<String> found = Variants.foundAt(selected, locations);
-		boolean placed = !found.contains(Variants.NO_PLACE) && !found.contains(Variants.NOT_SHOWN);
+		boolean placed = Variants.isAtAny(selected, locations);
 		List<String> where = new ArrayList<>();
 		for (String label : found)
 		{

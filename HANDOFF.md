@@ -102,8 +102,11 @@ and points, read from the wikitext because the locline bucket has no location fi
 leaving the other keys as they were. The generator's `wiki_places` makes one place per wiki location name for regular
 monsters whose spawns match no listed place (close spots merged, a monster in more than 3 spots gets one "several
 places" place), with `source: "wiki"`, key `wiki_...` and a note. A spot named like one of the task's own places
-joins that place instead (Fever spiders at Braindeath Island, whose only point is the entrance); one named like
-another task's guide place borrows its requirements, combat and cannon. Wilderness spawns stay in `wildernessPoints`, and go
+joins that place instead (Fever spiders at Braindeath Island, whose only point is the entrance), also when the wiki
+name adds a qualifier or drops a plural s ("Ancient Cavern (upper level)", "God Wars Dungeon (Armadyl boss room)",
+"Revenant Cave"; `name_keys`); one named like another task's guide place borrows its requirements, combat and
+cannon. `WIKI_ACCESS` holds access checked on the wiki for spots no guide place covers (the Ancient Guthixian Temple
+needs While Guthix Sleeps finished). Wilderness spawns stay in `wildernessPoints`, and go
 on Krystilia's list too when she gives the task; a task only she gives gets only those, and drops monsters that never
 spawn in the Wilderness (Chaos druid warrior, Elvarg). The build prints a warning for any regular monster still
 without a place (none now). The panel's monster table lists every regular monster (those at a shown place first);
