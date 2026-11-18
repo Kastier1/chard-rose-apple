@@ -150,8 +150,8 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
   any ice giant task but Vannaka's, a lair outside Konar's area), and its loot isn't counted as task loot. With *Show
   Wilderness locations* off, a Wilderness boss stays in the table and its *Found at* says to turn the setting on. A
   boss's card leaves out the task's advice for the regular monsters (the *Attack* row and the *Weakness*, *They attack
-  with* and *Bring* notes). Levels the wiki says can be boosted say so ("91 Slayer (boostable)" for Cerberus; 70
-  Hitpoints for K'ril's river) and a boosted level opens the lair: the card updates as soon as you drink or eat the
+  with* and *Bring* notes). Levels the wiki says can be boosted say so ("91 Slayer (boostable)" for Cerberus; the
+  same for the other Slayer bosses but the Kraken, which can't be boosted; 70 Hitpoints for K'ril's river) and a boosted level opens the lair: the card updates as soon as you drink or eat the
   boost, and again when it wears off. The Wilderness boss lairs need their Wilderness Diary on a normal task (medium for
   Callisto's Den, Vet'ion's Rest and the Silk Chasm; hard for Hunter's End, the Skeletal Tomb and the Web Chasm), and
   show as closed without it; their note says the 50,000 coin fee is paid once for all of them. A boss's *Found at*

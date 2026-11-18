@@ -2015,9 +2015,12 @@ public class BundledDataTest
 			assertEquals("Venenatis", panel.getSelectedVariant());
 			assertTrue(containsText(panel, "Show Wilderness locations"));
 			assertFalse(containsText(panel, Variants.NOT_SHOWN));
-			// A boss outside the Wilderness still names its lair
+			// No lair card is listed, so no "use Go on the lair's card below"
+			assertFalse(containsText(panel, SlayerPanel.BOSS_GO_HINT));
+			// A boss outside the Wilderness still names its lair, and its lair card is there to press
 			panel.selectVariant("Sarachnis");
 			assertTrue(containsText(panel, "Sarachnis' crypt"));
+			assertTrue(containsText(panel, SlayerPanel.BOSS_GO_HINT));
 		});
 	}
 
@@ -2068,6 +2071,28 @@ public class BundledDataTest
 		assertEquals(Collections.singletonList("HITPOINTS"), lairOf("Greater demons", "K'ril Tsutsaroth").getRequirements().getBoostable());
 		assertTrue(lairOf("Cave kraken", "Kraken").getRequirements().getBoostable().isEmpty());
 		assertTrue(lairOf("Aviansies", "Kree'arra").getRequirements().getBoostable().isEmpty());
+		// Every other Slayer boss's level can be boosted on task (wiki Temporary skill boost/Slayer; Slayer task/Araxytes:
+		// "boost from level 87 Slayer to kill Araxxor")
+		String[][] boostedSlayer = {{"Spiders", "Araxxor"}, {"Abyssal demons", "Abyssal Sire"},
+			{"Smoke devils", "Thermonuclear smoke devil"}, {"Hydras", "Alchemical Hydra"},
+			{"Gargoyles", "Grotesque Guardians"}};
+		for (String[] b : boostedSlayer)
+		{
+			SlayerLocationData.Requirements r = lairOf(b[0], b[1]).getRequirements();
+			assertEquals(b[1], Collections.singletonList("SLAYER"), r.getBoostable());
+			assertTrue(b[1], r.getSkills().containsKey("SLAYER"));
+		}
+		// 88 Slayer plus a mature Slayer's respite (+4) opens Araxxor's 92
+		assertTrue(RequirementChecker.meets(88, 92, 92, true));
+		// Obor and Bryophyta respawn without a key: the key opens the gate once and the chest
+		for (String[] b : new String[][]{{"Hill giants", "Obor"}, {"Moss giants", "Bryophyta"}})
+		{
+			String note = lairOf(b[0], b[1]).getNote();
+			assertFalse(b[1] + ": " + note, note.contains("per kill"));
+			assertTrue(b[1] + ": " + note, note.contains("first time"));
+		}
+		// Bryophyta's gate is just east of the moss giants
+		assertTrue(lairOf("Moss giants", "Bryophyta").getNote().contains("east of"));
 		// The Abyssal Nexus needs a first visit to the Abyss, by either route
 		assertTrue(lairOf("Abyssal demons", "Abyssal Sire").getNote().contains("first visit to the Abyss"));
 		// Scorpia's offspring live only in her lair

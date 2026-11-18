@@ -769,9 +769,10 @@ public class SlayerPanel extends JPanel
 			where.add(escape(label));
 		}
 		String foundAt = String.join(", ", where);
-		if (selected.isBoss())
+		if (selected.isBoss() && placed)
 		{
-			// The task's Go to nearest sits right under this card but never picks a lair
+			// The task's Go to nearest sits right under this card but never picks a lair. Only when the lair's card is
+			// listed (a hidden Wilderness lair has none to press)
 			foundAt += "<br><i>" + BOSS_GO_HINT + "</i>";
 		}
 		card.add(factRow("Found at", textChip(foundAt,

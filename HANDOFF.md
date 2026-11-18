@@ -201,6 +201,13 @@ measures labels with a fixed preferred size (the table's wrapped names) by their
 Porazdir comment now gives the real reason he's left out (he only appears for the Mage Arena II errand), not "once".
 Not yet seen in a logged-in client.
 
+**Update 2026-11-18 (bosses as variants, review round 3):** every boss lair's Slayer level is `boostable` (wiki
+"Temporary skill boost/Slayer"; Araxxor's task page: "boost from level 87 Slayer") except the Kraken's ("cannot be
+boosted"): the generator checks this against `UNBOOSTABLE_SLAYER_LAIRS`. Obor's and Bryophyta's notes say the key is
+needed only for the first entry and the loot chest (they respawn without one; the generator rejects "key per kill"),
+and Bryophyta's gate is east of the moss giants. `BOSS_GO_HINT` shows only when the boss's lair card is listed (not for a
+Wilderness boss with *Show Wilderness locations* off). Not yet seen in a logged-in client.
+
 Still open from the review: Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping; By set covers armour only), and the scope doc's wrong required items.
 

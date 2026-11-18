@@ -408,6 +408,12 @@ AT_LAIR = {"Scorpia's offspring": "scorpias_cave"}
 # key on her tasks). "krystilia": the lair is in the Wilderness and the boss counts on her task.
 # Achievement Diary tiers a place can need; SlayerHelper.DIARIES reads each from its *_DIARY_<TIER>_COMPLETE varbit
 DIARIES = {"WILDERNESS_EASY", "WILDERNESS_MEDIUM", "WILDERNESS_HARD", "WILDERNESS_ELITE"}
+# Slayer levels on boss lairs are "boostable" on task: https://oldschool.runescape.wiki/w/Temporary_skill_boost/Slayer
+# "Players can boost the Slayer skill in order to be able to kill higher-level Slayer monsters" (Slayer_task/Araxytes:
+# "Players can also boost from level 87 Slayer to kill Araxxor"). The one exception is the Kraken: "It requires level 87
+# Slayer to kill and cannot be boosted". (The thermonuclear smoke devil's "Stat-boosts are not accepted" applies only to
+# its off-task Western Provinces Diary kill.)
+UNBOOSTABLE_SLAYER_LAIRS = {"kraken"}
 BOSS_LAIRS = {
     # https://oldschool.runescape.wiki/w/Abyssal_Sire: "requires level 85 Slayer". https://oldschool.runescape.wiki/w/
     # Abyssal_Nexus: "a one-way entrance in the southern part of the outer ring of the Abyss ... the code DIP in the fairy
@@ -417,7 +423,7 @@ BOSS_LAIRS = {
     "abyssal_nexus": {
         "label": "Abyssal Nexus",
         "points": [[3037, 4763, 0]],
-        "requirements": {"skills": {"SLAYER": 85}},
+        "requirements": {"skills": {"SLAYER": 85}, "boostable": ["SLAYER"]},
         "note": "Needs a first visit to the Abyss (through the Mage of Zamorak or a fairy ring). Then fairy ring DIP, "
                 "or the one-way entrance in the south of the Abyss's outer ring. The Sire is fought in one of four "
                 "chambers.",
@@ -428,7 +434,7 @@ BOSS_LAIRS = {
     "araxxor": {
         "label": "Araxxor's lair (Morytania Spider Cave)",
         "points": [[3658, 9815, 0]],
-        "requirements": {"questsFinished": ["PRIEST_IN_PERIL"], "skills": {"SLAYER": 92}},
+        "requirements": {"questsFinished": ["PRIEST_IN_PERIL"], "skills": {"SLAYER": 92}, "boostable": ["SLAYER"]},
         "note": "Squeeze through the web tunnel on the west side of the Morytania Spider Cave.",
     },
     # https://oldschool.runescape.wiki/w/God_Wars_Dungeon: entrance and access (as the guide's place).
@@ -569,7 +575,7 @@ BOSS_LAIRS = {
     "thermonuclear_smoke_devil": {
         "label": "Thermonuclear smoke devil's room (Smoke Devil Dungeon)",
         "points": [[2379, 9452, 0]],
-        "requirements": {"skills": {"SLAYER": 93}},
+        "requirements": {"skills": {"SLAYER": 93}, "boostable": ["SLAYER"]},
         "note": "The crevice in the north-west of the Smoke Devil Dungeon.",
         "konar": "smoke_devil_dungeon",
     },
@@ -591,7 +597,7 @@ BOSS_LAIRS = {
     "alchemical_hydra": {
         "label": "Alchemical Hydra's lair (Karuulm Slayer Dungeon)",
         "points": [[1308, 3807, 0]],
-        "requirements": {"skills": {"SLAYER": 95}},
+        "requirements": {"skills": {"SLAYER": 95}, "boostable": ["SLAYER"]},
         "note": "Go takes you to the dungeon's entrance; the lair is at the north side of the bottom level. Wear boots "
                 "of stone, boots of brimstone or granite boots for the hot floor (not needed with the elite Kourend & "
                 "Kebos Diary).",
@@ -630,7 +636,7 @@ BOSS_LAIRS = {
     "grotesque_guardians": {
         "label": "Slayer Tower roof (Grotesque Guardians)",
         "points": [[3426, 3542, 2]],
-        "requirements": {"questsFinished": ["PRIEST_IN_PERIL"], "skills": {"SLAYER": 75}},
+        "requirements": {"questsFinished": ["PRIEST_IN_PERIL"], "skills": {"SLAYER": 75}, "boostable": ["SLAYER"]},
         "note": "The roof entrance at the top of the Slayer Tower. The first visit needs a brittle key.",
         "konar": "slayer_tower",
     },
@@ -644,18 +650,27 @@ BOSS_LAIRS = {
         "konar": "catacombs_of_kourend",
     },
     # https://oldschool.runescape.wiki/w/Obor (counts for hill giants: wiki Slayer task page, "Superiors and
-    # alternatives"). Point: Gate (Obor) in the Edgeville Dungeon, from the wiki's map.
+    # alternatives"). Keys: "A giant key is needed to unlock the gate ... for the first time ... Subsequent access to the
+    # lair does not require a key"; he respawns on trying the chest "regardless of whether the player has a giant key".
+    # Point: Gate (Obor) in the Edgeville Dungeon, from the wiki's map.
     "obor": {
         "label": "Obor's lair (Edgeville Dungeon)",
         "points": [[3095, 9832, 0]],
-        "note": "The gate at the west of the Edgeville Dungeon's hill giant room. One giant key per kill.",
+        "note": "The gate at the west of the Edgeville Dungeon's hill giant room. The giant key is only needed to open "
+                "the gate the first time and to open his loot chest; he respawns when you try the chest, so you can "
+                "keep killing him for the task without keys.",
     },
-    # https://oldschool.runescape.wiki/w/Slayer_task/Moss_giants: "Bryophyta, the moss giant boss". Point: Gate
+    # https://oldschool.runescape.wiki/w/Slayer_task/Moss_giants: "Bryophyta, the moss giant boss".
+    # https://oldschool.runescape.wiki/w/Bryophyta: "The entrance to the lair is located just east of the moss giants";
+    # the key is needed only for the first entry and the chest; she "respawns ... regardless of whether the player has a
+    # mossy key". Point: Gate
     # (Bryophyta) in the Varrock Sewers, from the wiki's map.
     "bryophyta": {
         "label": "Bryophyta's lair (Varrock Sewers)",
         "points": [[3174, 9901, 0]],
-        "note": "The gate in the west of the Varrock Sewers' moss giant area. One mossy key per kill.",
+        "note": "The gate just east of the Varrock Sewers' moss giants. The mossy key is only needed to open the gate the "
+                "first time and to open her loot chest; she respawns when you try the chest, so you can keep killing her "
+                "for the task without keys.",
     },
     # https://oldschool.runescape.wiki/w/Scurrius: "Scurrius now counts towards rat Slayer tasks". Point: Broken bars in
     # the Varrock Sewers, from the wiki's map.
@@ -684,7 +699,7 @@ BOSS_LAIRS = {
     "shellbane_gryphon": {
         "label": "Shellbane gryphon's nest (Great Conch)",
         "points": [[3176, 2477, 0]],
-        "requirements": {"questsFinished": ["TROUBLED_TORTUGANS"], "skills": {"SLAYER": 51}},
+        "requirements": {"questsFinished": ["TROUBLED_TORTUGANS"], "skills": {"SLAYER": 51}, "boostable": ["SLAYER"]},
         "note": "The cave north of fairy ring CJQ, in the middle of the Great Conch. Bring a tortugan shield.",
     },
     # https://oldschool.runescape.wiki/w/Slayer_task/Lesser_Nagua: "those assigned Nagua at the Ruins of Tapoyauik may
@@ -1193,6 +1208,12 @@ def validate(tasks):
         problems += [f"BOSS_LAIRS / {lair_id}: boostable {s!r} isn't a needed skill" for s in req.get("boostable", [])
                      if s not in req.get("skills", {})]
         problems += [f"BOSS_LAIRS / {lair_id}: unknown diary {d!r}" for d in req.get("diaries", []) if d not in DIARIES]
+        if "SLAYER" in req.get("skills", {}) and ("SLAYER" in req.get("boostable", [])) == (lair_id in
+                                                                                           UNBOOSTABLE_SLAYER_LAIRS):
+            problems.append(f"BOSS_LAIRS / {lair_id}: Slayer must be boostable unless the wiki says it can't be "
+                            f"(UNBOOSTABLE_SLAYER_LAIRS)")
+        if re.search(r"\bkey per kill\b", lair.get("note") or "", re.IGNORECASE):
+            problems.append(f"BOSS_LAIRS / {lair_id}: 'key per kill' (Obor/Bryophyta respawn without a key)")
     for name, lair_id in AT_LAIR.items():
         if lair_id not in BOSS_LAIRS:
             problems.append(f"AT_LAIR / {name}: no lair {lair_id!r}")

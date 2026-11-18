@@ -117,6 +117,11 @@ Have a task, and open the **Slayer** tab.
   says the 50,000 coin fee is paid once for all the Wilderness boss lairs.
 - [ ] Select Vorkath: under *Found at* it says "Go to nearest skips boss lairs: use Go on the lair's card below."
   Hover **Go to nearest**: the tooltip says it leaves out boss lairs. Select a blue dragon: the line is gone.
+- [ ] Spiders with *Show Wilderness locations* off: select Venenatis; *Found at* says to turn the setting on and does
+  not say "use Go on the lair's card below". With 88 Slayer and a mature Slayer's respite (to 92), Araxxor's lair stops
+  saying "Needs 92 Slayer (boostable)". Cave kraken: the Kraken's 87 Slayer has no "(boostable)".
+- [ ] Hill giants / Moss giants: Obor's and Bryophyta's lair notes say the key is only for the first entry and the
+  chest; Bryophyta's gate is just east of the moss giants.
 - [ ] Gargoyles, select Grotesque Guardians: a Drops row with the granite gloves, ring, hammer and maul, Black
   tourmaline core, Noon and Jar of stone. Abyssal demons, select the Abyssal Sire: the bludgeon pieces (about 1/206
   each), abyssal dagger, whip, head, Jar of miasma and orphan, as well as the Unsired.
