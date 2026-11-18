@@ -126,6 +126,10 @@ public class SlayerHelper
 	private volatile SlayerPanel panel;
 	private BufferedImage markerImage;
 	private SlayerTaskState lastState = SlayerTaskState.NONE;
+	/** A task the player asked to look at instead of their real one; null normally. */
+	private volatile SlayerTaskState preview;
+	/** The kill count a preview shows. */
+	private static final int PREVIEW_AMOUNT = 100;
 	/** Carry items last sent to the panel; null to send the next ones whatever they are. */
 	private Set<CarryItem> lastCarried;
 	private SlayerLocationData.TaskEntry lastTask;
@@ -235,6 +239,7 @@ public class SlayerHelper
 			saveProgress();
 		});
 		panel = null;
+		preview = null;
 	}
 
 	/** The Slayer section for the side panel; null while stopped. The plugin puts it in its one panel. */
@@ -398,8 +403,11 @@ public class SlayerHelper
 			return;
 		}
 
-		SlayerTaskState state = readTask();
-		updateProgress(state);
+		SlayerTaskState real = readTask();
+		// Progress always follows the real task, even while the panel shows a preview
+		updateProgress(real);
+		final SlayerTaskState shownPreview = preview;
+		SlayerTaskState state = shownPreview != null ? shownPreview : real;
 		ItemValueMode valueMode = itemValues.mode();
 		boolean spAvailable = shortestPath.isAvailable();
 		if (!spAvailable && route.getKind() == Route.Kind.SHORTEST_PATH)
@@ -428,7 +436,7 @@ public class SlayerHelper
 		}
 		lastProgressVersion = progressVersion;
 		lastValueMode = valueMode;
-		TaskProgress tp = progress.getProgress();
+		TaskProgress tp = shownPreview == null ? progress.getProgress() : null;
 		if (countOnly)
 		{
 			lastState = state;
@@ -472,8 +480,94 @@ public class SlayerHelper
 		SwingUtilities.invokeLater(() ->
 		{
 			p.setCompact(compact);
+			p.setPreview(shownPreview != null, this::stopPreview);
 			p.showTask(state, info, variants, locations, task != null, spAvailable, clog, items, view);
 		});
+	}
+
+	/**
+	 * Shows a task in the panel as if the player had it, to look it up or try the panel out. Changes nothing in the
+	 * game: the real task, its progress and the route memory are left alone. Client thread.
+	 *
+	 * @param query  the task's name, or the start of it ("abyssal" finds Abyssal demons)
+	 * @param master a slayer master's name, or null for Duradel
+	 * @return what to tell the player
+	 */
+	public String previewTask(String query, String master)
+	{
+		if (data == null)
+		{
+			return "The slayer panel isn't running.";
+		}
+		SlayerLocationData.TaskEntry task = findByName(data, query);
+		if (task == null)
+		{
+			return "No slayer task called \"" + query + "\". Try the task's name as a master gives it, e.g. \"abyssal demons\".";
+		}
+		int masterId = master != null ? SlayerMasters.idForName(master) : 0;
+		if (master != null && masterId == 0)
+		{
+			return "\"" + master + "\" isn't a slayer master.";
+		}
+		if (masterId == 0)
+		{
+			// Krystilia-only tasks only make sense from her
+			masterId = task.getLocations().isEmpty() && !task.getWildernessLocations().isEmpty()
+				? SlayerMasters.KRYSTILIA : 5;
+		}
+		preview = new SlayerTaskState(task.getTaskId(), task.getName(), PREVIEW_AMOUNT, PREVIEW_AMOUNT, masterId, 0, null);
+		needsRedraw = true;
+		refresh(true);
+		return "Previewing " + task.getName() + " from " + SlayerMasters.name(masterId)
+			+ " in the slayer panel. Type ::slayertask off, or click Stop, to go back to your task.";
+	}
+
+	/** Back to the real task. Safe from any thread. */
+	public void stopPreview()
+	{
+		clientThread.invokeLater(() ->
+		{
+			if (preview != null)
+			{
+				preview = null;
+				needsRedraw = true;
+				refresh(true);
+			}
+		});
+	}
+
+	public boolean isPreviewing()
+	{
+		return preview != null;
+	}
+
+	/** Exact name first, then a name starting with the query, then one containing it. Case doesn't matter. */
+	static SlayerLocationData.TaskEntry findByName(SlayerLocationData data, String query)
+	{
+		String q = query.trim().toLowerCase(java.util.Locale.ROOT);
+		if (q.isEmpty())
+		{
+			return null;
+		}
+		SlayerLocationData.TaskEntry starts = null;
+		SlayerLocationData.TaskEntry contains = null;
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			String n = t.getName().toLowerCase(java.util.Locale.ROOT);
+			if (n.equals(q))
+			{
+				return t;
+			}
+			if (starts == null && n.startsWith(q))
+			{
+				starts = t;
+			}
+			if (contains == null && n.contains(q))
+			{
+				contains = t;
+			}
+		}
+		return starts != null ? starts : contains;
 	}
 
 	/** The task's places for this master, with what the player still needs for each. Client thread. */

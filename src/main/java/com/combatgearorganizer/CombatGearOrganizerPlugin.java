@@ -1,6 +1,7 @@
 package com.combatgearorganizer;
 
 import com.combatgearorganizer.slayer.SlayerHelper;
+import com.combatgearorganizer.slayer.SlayerMasters;
 import com.combatgearorganizer.slayer.SlayerPanel;
 import com.google.inject.Provides;
 import java.awt.image.BufferedImage;
@@ -78,6 +79,7 @@ public class CombatGearOrganizerPlugin extends Plugin
 {
 	static final String ORGANIZE_COMMAND = "gearsort";
 	static final String ADD_WORN_COMMAND = "gearadd";
+	static final String SLAYER_TASK_COMMAND = "slayertask";
 	static final String UNDO_ARGUMENT = "undo";
 	/** Shows as "Auto layout: Combat gear" on a laid-out tag tab's menu, with a preview and Keep / Undo. */
 	static final String AUTO_LAYOUT_NAME = "Combat gear";
@@ -373,6 +375,12 @@ public class CombatGearOrganizerPlugin extends Plugin
 			return;
 		}
 
+		if (SLAYER_TASK_COMMAND.equals(command))
+		{
+			clientThread.invokeLater(() -> previewSlayerTask(args));
+			return;
+		}
+
 		final String tag = args.length > 0 ? joinFrom(args, 0) : config.tagName();
 		if (ORGANIZE_COMMAND.equals(command))
 		{
@@ -382,6 +390,41 @@ public class CombatGearOrganizerPlugin extends Plugin
 		{
 			clientThread.invokeLater(() -> addWornGear(tag));
 		}
+	}
+
+	/**
+	 * ::slayertask &lt;task&gt; [master] shows that task in the slayer panel as if you had it (to look it up, or try the panel
+	 * out); ::slayertask off goes back to your real task. Nothing in the game changes. Client thread.
+	 */
+	private void previewSlayerTask(String[] args)
+	{
+		if (!slayerStarted)
+		{
+			sendMessage("Turn on the slayer task panel in the plugin settings first.");
+			return;
+		}
+		if (args.length == 0)
+		{
+			sendMessage("Type ::" + SLAYER_TASK_COMMAND + " followed by a task, e.g. ::" + SLAYER_TASK_COMMAND
+				+ " abyssal demons, or add a master: ::" + SLAYER_TASK_COMMAND + " lava dragons krystilia."
+				+ " ::" + SLAYER_TASK_COMMAND + " off goes back to your task.");
+			return;
+		}
+		if (args.length == 1 && (args[0].equalsIgnoreCase("off") || args[0].equalsIgnoreCase("stop")))
+		{
+			slayerHelper.stopPreview();
+			sendMessage(slayerHelper.isPreviewing() ? "Back to your current task." : "No preview was showing.");
+			return;
+		}
+		// A master's name at the end picks who "gave" the task (Konar, Krystilia...)
+		String master = null;
+		int end = args.length;
+		if (args.length > 1 && SlayerMasters.idForName(args[args.length - 1]) != 0)
+		{
+			master = args[args.length - 1];
+			end--;
+		}
+		sendMessage(slayerHelper.previewTask(String.join(" ", java.util.Arrays.copyOf(args, end)), master));
 	}
 
 	/**

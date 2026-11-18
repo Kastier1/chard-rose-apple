@@ -86,6 +86,9 @@ Have a task, and open the **Slayer** tab.
 
 ## 5. Collection log
 
+No task, or the wrong one? Type `::slayertask abyssal demons` (any task name works) to preview a task in the panel,
+and `::slayertask off` to stop.
+
 - [ ] Before searching, drops show no "missing" marks, only plain or ticked.
 - [ ] Open the collection log, click **Search** (magnifying glass) and leave it open a second. Back in the panel,
   drops you haven't logged are faded with a dashed outline, and logged ones have a tick.

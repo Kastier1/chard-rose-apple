@@ -776,4 +776,61 @@ public class BundledDataTest
 			assertEquals(s, 1, s.split("\\. ").length);
 		}
 	}
+
+	@Test
+	public void previewFindsTasksByName()
+	{
+		assertEquals("Abyssal demons", SlayerHelper.findByName(data, "Abyssal Demons").getName());
+		assertEquals("Abyssal demons", SlayerHelper.findByName(data, "abyssal").getName());
+		assertEquals("Lava dragons", SlayerHelper.findByName(data, "lava dragons").getName());
+		assertNull(SlayerHelper.findByName(data, "not a task at all"));
+		assertNull(SlayerHelper.findByName(data, "  "));
+		assertEquals(SlayerMasters.KONAR, SlayerMasters.idForName("Konar"));
+		assertEquals(0, SlayerMasters.idForName("demons"));
+	}
+
+	@Test
+	public void previewShowsABannerWithStop() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Abyssal demons");
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 100, 100, 5, 0, null);
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		boolean[] stopped = {false};
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.setPreview(true, () -> stopped[0] = true);
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				stubItems(ItemValueMode.GRAND_EXCHANGE));
+			assertTrue(containsText(panel, "Preview, not your current task"));
+			javax.swing.JButton stop = findButton(panel, "Stop");
+			assertNotNull(stop);
+			stop.doClick();
+			panel.setPreview(false, null);
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				stubItems(ItemValueMode.GRAND_EXCHANGE));
+			assertTrue(!containsText(panel, "Preview, not your current task"));
+		});
+		assertTrue(stopped[0]);
+	}
+
+	private static javax.swing.JButton findButton(Component c, String text)
+	{
+		if (c instanceof javax.swing.JButton && text.equals(((javax.swing.JButton) c).getText()))
+		{
+			return (javax.swing.JButton) c;
+		}
+		if (c instanceof Container)
+		{
+			for (Component k : ((Container) c).getComponents())
+			{
+				javax.swing.JButton b = findButton(k, text);
+				if (b != null)
+				{
+					return b;
+				}
+			}
+		}
+		return null;
+	}
 }

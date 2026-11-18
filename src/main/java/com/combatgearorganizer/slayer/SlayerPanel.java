@@ -97,6 +97,8 @@ public class SlayerPanel extends JPanel
 	private PanelMemory memory = new PanelMemory();
 	/** Only the header, progress, route line and places. */
 	private boolean compact;
+	private boolean previewing;
+	private Runnable onStopPreview;
 	/** Carry items the player has with them, for the ticks in the Carry row. */
 	private Set<CarryItem> carried = EnumSet.noneOf(CarryItem.class);
 	private Route route = Route.NONE;
@@ -186,6 +188,43 @@ public class SlayerPanel extends JPanel
 	public void setCompact(boolean compact)
 	{
 		this.compact = compact;
+	}
+
+	/**
+	 * Whether the task shown is a preview the player asked for rather than their real task. A preview gets a banner
+	 * with a Stop button, and doesn't change what the panel remembers about real tasks.
+	 */
+	public void setPreview(boolean previewing, Runnable onStop)
+	{
+		this.previewing = previewing;
+		this.onStopPreview = onStop;
+	}
+
+	boolean isPreviewing()
+	{
+		return previewing;
+	}
+
+	private JPanel previewBanner()
+	{
+		JPanel row = new JPanel(new BorderLayout(6, 0));
+		row.setAlignmentX(LEFT_ALIGNMENT);
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.setBorder(new EmptyBorder(4, 6, 4, 4));
+		row.add(wrapped("Preview, not your current task. Kills and progress aren't counted.", ColorScheme.BRAND_ORANGE,
+			FontManager.getRunescapeSmallFont(), ROUTE_TEXT_WIDTH), BorderLayout.CENTER);
+		JButton stop = new JButton("Stop");
+		stop.setToolTipText("Go back to your current task");
+		stop.addActionListener(e ->
+		{
+			if (onStopPreview != null)
+			{
+				onStopPreview.run();
+			}
+		});
+		row.add(stop, BorderLayout.EAST);
+		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
+		return row;
 	}
 
 	/** Shows, changes or hides the route line, without redrawing the rest of the panel. */
@@ -328,6 +367,10 @@ public class SlayerPanel extends JPanel
 		xpChip = null;
 		xpChipVariant = null;
 		content.add(title(task.getName()));
+		if (previewing)
+		{
+			content.add(previewBanner());
+		}
 
 		countLabel = line(countText(task), ColorScheme.LIGHT_GRAY_COLOR);
 		content.add(countLabel);
@@ -1391,8 +1434,11 @@ public class SlayerPanel extends JPanel
 				selectedVariant = here.get(0);
 				memory.setMonster(variantTaskKey, selectedVariant);
 			}
-			// Marked "Last time" when this task comes up again
-			memory.setLastPlace(variantTaskKey, location.getKey());
+			// Marked "Last time" when this task comes up again (not for a preview: it isn't a real trip)
+			if (!previewing)
+			{
+				memory.setLastPlace(variantTaskKey, location.getKey());
+			}
 			onMemoryChanged.accept(memory);
 			redraw();
 			onGo.accept(location);

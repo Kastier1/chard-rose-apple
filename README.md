@@ -133,6 +133,11 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
   account, so it survives a relog, and starts again with each new task. When you finish, the panel shows a summary
   such as "Task done: 140 Abyssal demons in 24 min, 2 superiors, 1.2M loot" until your next task.
 
+**Preview any task:** type `::slayertask abyssal demons` to see a task in the panel as if you had it, for example
+to plan ahead or to try the panel out. Add a master to see it the way they give it: `::slayertask lava dragons
+krystilia`. A banner says it's a preview; click **Stop** or type `::slayertask off` to go back to your task. A
+preview changes nothing in the game, and your real task's progress keeps counting underneath.
+
 The task is read from the game and RuneLite's built-in Slayer plugin. Location data is bundled (see NOTICE.md),
 so the panel makes no network requests.
 
