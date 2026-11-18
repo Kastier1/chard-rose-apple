@@ -224,8 +224,7 @@ Wilderness boss with *Show Wilderness locations* off). Not yet seen in a logged-
   to the task's only regular monster when it has one (`link_unmatched`); otherwise it is marked `noMonster` (38
   places, e.g. Blue dragons' Dragon Nest: the wiki's blue dragon pages have no spawn there, its red dragon pages do)
   and the card says `NO_MONSTER_HERE`. `validate()` and `everyPlaceListsAMonsterThatLivesThere` fail on any other
-  unlinked place. Three tasks have no regular monster at all (Custodian stalkers, Sourhogs, Warped creatures: no wiki
-  spawns).
+  unlinked place. (Round 1 below corrects the Dragon Nest example and the three tasks said to have no monster.)
 - *Greyed-out Go:* Go is greyed out only when the place has no map point (`SlayerPanel.goEnabled`; Heroes' Guild
   basement and Crash Site Cavern have none), never for a requirement. The card now says `NO_MAP_POINT` (also in
   compact mode); before, only the tooltip did. Requirements show as "Needs ..."; `SlayerHelper` re-checks them on the
@@ -233,6 +232,27 @@ Wilderness boss with *Show Wilderness locations* off). Not yet seen in a logged-
 - *Monster line on cards:* the rule was already "the selected monster in orange" (the Greater demons render had
   K'ril selected); it is now also underlined, with a tooltip (`SELECTED_MONSTER_TIP`), so it reads without colour.
   `theSelectedMonsterIsMarkedOnEveryCardThatListsIt` checks every task and every listed monster.
+
+**Update 2026-11-18 (table gaps and place links, review round 1):**
+- *Bare LocLine points.* Some `{{LocLine}}`s write points as `|1230,9491|...` (Blue dragon at the Dragon Nest); the
+  locline bucket returns them as `"1230,9491"`. `fetch_wiki_monsters.py` dropped those (`COORD` wanted `x:..,y:..`);
+  it now also takes `BARE_COORD`, and the new `--spawns` flag refreshes only `spawns` and `spawn_locations` (done
+  2026-11-18: 41 pages gained points, none lost any). Blue and Baby blue dragons now live at the Dragon Nest (no longer
+  `noMonster`; 35 such places now, e.g. Elves at the Prifddinas gates), and Custodian stalkers, Sourhogs and Warped
+  creatures have regular monsters with places.
+- *Spawn points for empty places.* `fill_from_spawns` gives a non-lair place with no map point the points of its
+  linked monsters' wiki spots named the same (`find_by_name`): Heroes' Guild basement, Crash Site Cavern, Warriors'
+  Guild basement, Goblin Village, Kurask Lair and 49 more. Word-subset matches stay link-only; instance and
+  quest-only spots (`NOT_A_GO_SPOT`) and `entranceRoutable=false` places (Waterfall Dungeon) stay without points.
+- *Go to nearest* (`LocationPicker.nearestTargets`) falls back to gated places when no open one has a point, so a
+  missing or not-yet-loaded requirement never greys it out; a line under it (`SlayerPanel.NEAREST_REASON`) says
+  `NEAREST_GATED` (orange) or, when it's greyed out because no non-lair place has a point, `NEAREST_NO_POINT`.
+  `aGreyedOutGoAlwaysSaysWhyOnTheCard` checks it for every task, and finds the "Needs ..." line by name
+  (`CARD_NEEDS`), not by a text prefix that place notes share.
+- `NO_MAP_POINT` and `NO_MONSTER_HERE` are light grey (about 6.8:1 on the card, was about 2:1);
+  `onCardReasonsAreLegible` checks 4.5:1.
+- Left as is: prose notes that start with "Needs" (Brimhaven's "Needs 10 Woodcutting to cut the vines") are Slayer
+  Sensei's notes, not structured requirements; making them requirements needs the wiki checked per place.
 
 Still open from the review: Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping; By set covers armour only), and the scope doc's wrong required items.

@@ -131,13 +131,24 @@ public final class LocationPicker
 	 * guide. Places made from one monster's wiki spawns (a quest area, a side room) are for going after that
 	 * monster, so they only count when no guide place can be reached. Boss lairs never count: fighting a boss is the
 	 * player's choice, made with the lair's own Go button.
+	 *
+	 * When every routable place needs something the player lacks (or the client hasn't told us yet), it picks from
+	 * those instead, like each card's Go: a missing requirement never greys Go out ({@link #nearestIsGated} says so).
 	 */
 	public static List<LocationOption> nearestTargets(List<LocationOption> shown)
 	{
-		List<LocationOption> open = shown.stream()
-			.filter(l -> l.isRoutable() && l.isAccessible() && !l.isBossLair())
+		List<LocationOption> routable = shown.stream()
+			.filter(l -> l.isRoutable() && !l.isBossLair())
 			.collect(Collectors.toList());
-		List<LocationOption> guide = open.stream().filter(l -> !l.isFromWiki()).collect(Collectors.toList());
-		return guide.isEmpty() ? open : guide;
+		List<LocationOption> open = routable.stream().filter(LocationOption::isAccessible).collect(Collectors.toList());
+		List<LocationOption> pool = open.isEmpty() ? routable : open;
+		List<LocationOption> guide = pool.stream().filter(l -> !l.isFromWiki()).collect(Collectors.toList());
+		return guide.isEmpty() ? pool : guide;
+	}
+
+	/** Whether Go to nearest only has places the player may not be able to get into yet (see {@link #nearestTargets}). */
+	public static boolean nearestIsGated(List<LocationOption> targets)
+	{
+		return !targets.isEmpty() && targets.stream().noneMatch(LocationOption::isAccessible);
 	}
 }

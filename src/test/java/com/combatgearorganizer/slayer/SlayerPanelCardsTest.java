@@ -382,11 +382,50 @@ public class SlayerPanelCardsTest
 		assertLivesAt("Bats", "Giant bat", "the_underground_pass_part_1");
 		// The only regular monster of a task lives at every guide place of it
 		assertLivesAt("Werewolves", "Werewolf", "canifis");
-		// The wiki's Blue, Baby blue and Brutal blue dragon pages have no Dragon Nest spawns (its Red dragon page does)
+		// Review: the wiki's Blue and Baby blue dragon pages do list Dragon Nest spawns, with bare "1230,9491" points
+		// the fetcher used to drop; the place was wrongly marked noMonster
+		assertLivesAt("Blue dragons", "Blue dragon", "dragon_nest");
+		assertLivesAt("Blue dragons", "Baby blue dragon", "dragon_nest");
 		TaskEntry blue = data.findTask(-1, "Blue dragons");
-		LocationEntry nest = blue.getLocations().stream().filter(l -> l.getKey().equals("dragon_nest")).findFirst()
+		assertFalse(entry(blue, "dragon_nest").isNoMonster());
+		// Still unknown: no elf page's spawn spot is at or named like Prifddinas' gates
+		assertTrue(entry(data.findTask(-1, "Elves"), "prifddinas_north_gate").isNoMonster());
+	}
+
+	private static LocationEntry entry(TaskEntry t, String key)
+	{
+		return t.getLocations().stream().filter(l -> l.getKey().equals(key)).findFirst()
 			.orElseThrow(AssertionError::new);
-		assertTrue(nest.isNoMonster());
+	}
+
+	/**
+	 * Review: a guide place linked to a monster by its wiki spawn spot's name kept no point when the guide had none, so
+	 * Go stayed greyed out and the card said "No map point yet" though the wiki has the spot's points. A place named
+	 * the same as the spot now takes them; one only matched by some of its words doesn't (one spot can match several).
+	 */
+	@Test
+	public void placesNamedLikeASpawnSpotTakeItsPoints()
+	{
+		assertPointsFrom("Blue dragons", "heroes_guild_basement", 2908, 9905);
+		assertPointsFrom("Black demons", "crash_site_cavern", 2072, 5651);
+		assertPointsFrom("Hill giants", "warriors_guild_basement", 2842, 9992);
+		assertPointsFrom("Monkeys", "temple_of_marimbo_dungeon", 2761, 9193);
+		assertPointsFrom("Goblins", "goblin_village", 2951, 3481);
+		assertPointsFrom("Killerwatts", "killerwatt_plane", 2642, 5202);
+		assertPointsFrom("Kurask", "kurask_lair", 1185, 9193);
+		// Not from an instance Shortest Path can't path into
+		assertTrue(entry(data.findTask(-1, "Monkeys"), "north_east_karamja_instanced").getPoints().isEmpty());
+		// Nor where the guide says the entrance can't be pathed to (Waterfall Dungeon)
+		assertTrue(entry(data.findTask(-1, "Fire giants"), "waterfall_dungeon").getPoints().isEmpty());
+		// Only a word match ("Kingstown - Councillor Hughes' house"): linked, but no points borrowed
+		assertTrue(entry(data.findTask(-1, "Lesser demons"), "councillor_hughes_house_in_kingstown").getPoints().isEmpty());
+	}
+
+	private static void assertPointsFrom(String task, String key, int x, int y)
+	{
+		List<int[]> points = entry(data.findTask(-1, task), key).getPoints();
+		assertTrue(task + " / " + key + " has no point at " + x + "," + y,
+			points.stream().anyMatch(p -> p[0] == x && p[1] == y));
 	}
 
 	private static void assertLivesAt(String task, String monster, String place)
@@ -462,11 +501,14 @@ public class SlayerPanelCardsTest
 										problems.add(t.getName() + " / " + label + ": Go greyed out with no reason: " + said);
 									}
 								}
-								if (!place.isAccessible() && said.stream().noneMatch(s -> s.startsWith("Needs ")))
+								// The requirement line itself, by name: a place note can also start with "Needs"
+								if (!place.isAccessible() != !all(card, JLabel.class, SlayerPanel.CARD_NEEDS).isEmpty())
 								{
-									problems.add(t.getName() + " / " + label + ": missing requirements not shown");
+									problems.add(t.getName() + " / " + label + ": accessible=" + place.isAccessible()
+										+ " but requirement line " + all(card, JLabel.class, SlayerPanel.CARD_NEEDS).size());
 								}
 							}
+							checkNearest(host, t, master, locations, problems);
 						}
 					}
 				}
@@ -475,6 +517,135 @@ public class SlayerPanelCardsTest
 		});
 		assertTrue(disabled[0] > 0);
 		assertTrue(problems.size() + " problems:\n" + String.join("\n", problems), problems.isEmpty());
+	}
+
+	/**
+	 * Review: Go to nearest was greyed out with no reason on the panel when every place was gated (Gargoyles with
+	 * nothing met, or before the client has sent quest states). It is greyed out only when no place it may pick has a
+	 * map point, and then says so; when it can only pick gated places it works and says that.
+	 */
+	private static void checkNearest(Host host, TaskEntry t, int master, List<LocationOption> locations, Set<String> problems)
+	{
+		List<JButton> nearest = all(host.root, JButton.class, null).stream()
+			.filter(b -> "Go to nearest".equals(b.getText())).collect(Collectors.toList());
+		if (nearest.size() != 1)
+		{
+			problems.add(t.getName() + ": " + nearest.size() + " Go to nearest buttons");
+			return;
+		}
+		boolean anyPoint = locations.stream().anyMatch(l -> l.isRoutable() && !l.isBossLair());
+		boolean anyOpen = locations.stream().anyMatch(l -> l.isRoutable() && !l.isBossLair() && l.isAccessible());
+		List<String> reason = all(host.root, JLabel.class, SlayerPanel.NEAREST_REASON).stream()
+			.map(l -> l.getText().replaceAll("<[^>]*>", "").trim()).collect(Collectors.toList());
+		String where = t.getName() + " (master " + master + ")";
+		if (nearest.get(0).isEnabled() != anyPoint)
+		{
+			problems.add(where + ": Go to nearest enabled=" + nearest.get(0).isEnabled() + " but a place with a point=" + anyPoint);
+		}
+		String expected = !anyPoint ? (locations.stream().anyMatch(l -> !l.isBossLair()) ? SlayerPanel.NEAREST_NO_POINT : null)
+			: !anyOpen ? SlayerPanel.NEAREST_GATED : null;
+		if (!reason.equals(expected == null ? Collections.emptyList() : Collections.singletonList(expected)))
+		{
+			problems.add(where + ": Go to nearest reason " + reason + ", expected " + expected);
+		}
+		if (!nearest.get(0).isEnabled() && reason.isEmpty() && locations.stream().anyMatch(l -> !l.isBossLair()))
+		{
+			problems.add(where + ": Go to nearest greyed out with no reason");
+		}
+	}
+
+	@Test
+	public void goToNearestWorksAndSaysSoWhenEveryPlaceIsGated() throws Exception
+	{
+		TaskEntry gargoyles = data.findTask(-1, "Gargoyles");
+		List<LocationOption> shut = LocationPicker.pick(gargoyles, 5, 0, false, NOTHING_MET);
+		assertTrue(shut.stream().filter(l -> !l.isBossLair()).noneMatch(LocationOption::isAccessible));
+		List<LocationOption> targets = LocationPicker.nearestTargets(shut);
+		assertFalse(targets.isEmpty());
+		assertTrue(targets.stream().noneMatch(LocationOption::isBossLair));
+		assertEquals(SlayerPanel.NEAREST_GATED, SlayerPanel.nearestReason(shut, targets));
+		// Nothing to say once the player can get in
+		List<LocationOption> open = LocationPicker.pick(gargoyles, 5, 0, false);
+		assertEquals(null, SlayerPanel.nearestReason(open, LocationPicker.nearestTargets(open)));
+		inClient(() ->
+		{
+			Host host = new Host();
+			host.show(gargoyles, 5, 50, shut);
+			JButton nearest = all(host.root, JButton.class, null).stream()
+				.filter(b -> "Go to nearest".equals(b.getText())).findFirst().orElseThrow(AssertionError::new);
+			assertTrue(nearest.isEnabled());
+			assertEquals(1, all(host.root, JLabel.class, SlayerPanel.NEAREST_REASON).size());
+		});
+	}
+
+	/**
+	 * Review: the reasons on a card (no map point, no known monster) were drawn in the greyed-out button's dark grey,
+	 * about 2:1 on the card. Every on-card reason and the Go to nearest reason reads at WCAG AA (4.5:1) or better.
+	 */
+	@Test
+	public void onCardReasonsAreLegible() throws Exception
+	{
+		Set<String> problems = new TreeSet<>();
+		inClient(() ->
+		{
+			Host host = new Host();
+			// Waterfall Dungeon: no map point; Elves at the Prifddinas gates: no known monster; Gargoyles: gated nearest
+			Object[][] cases = {
+				{"Fire giants", SlayerPanel.NO_MAP_POINT},
+				{"Elves", SlayerPanel.NO_MONSTER_HERE},
+				{"Gargoyles", SlayerPanel.NEAREST_GATED},
+			};
+			for (Object[] c : cases)
+			{
+				TaskEntry t = data.findTask(-1, (String) c[0]);
+				host.show(t, 5, 50, LocationPicker.pick(t, 5, 0, true, NOTHING_MET));
+				List<JLabel> labels = all(host.root, JLabel.class, null).stream()
+					.filter(l -> l.getText() != null && l.getText().replaceAll("<[^>]*>", "").trim().equals(c[1]))
+					.collect(Collectors.toList());
+				if (labels.isEmpty())
+				{
+					problems.add(c[0] + ": no \"" + c[1] + "\"");
+				}
+				for (JLabel l : labels)
+				{
+					double ratio = contrast(l.getForeground(), background(l));
+					if (ratio < 4.5)
+					{
+						problems.add(c[0] + ": \"" + c[1] + "\" at " + String.format("%.2f", ratio) + ":1");
+					}
+				}
+			}
+		});
+		assertTrue(String.join("\n", problems), problems.isEmpty());
+	}
+
+	private static java.awt.Color background(Component c)
+	{
+		for (Component k = c; k != null; k = k.getParent())
+		{
+			if (k.isOpaque() && k.getBackground() != null)
+			{
+				return k.getBackground();
+			}
+		}
+		throw new AssertionError("no opaque parent");
+	}
+
+	/** WCAG 2 contrast ratio. */
+	private static double contrast(java.awt.Color a, java.awt.Color b)
+	{
+		double la = luminance(a), lb = luminance(b);
+		return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+	}
+
+	private static double luminance(java.awt.Color c)
+	{
+		double[] v = {c.getRed() / 255.0, c.getGreen() / 255.0, c.getBlue() / 255.0};
+		for (int i = 0; i < 3; i++)
+		{
+			v[i] = v[i] <= 0.03928 ? v[i] / 12.92 : Math.pow((v[i] + 0.055) / 1.055, 2.4);
+		}
+		return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
 	}
 
 	@Test
@@ -486,13 +657,16 @@ public class SlayerPanelCardsTest
 		LocationOption nest = byKey(places, "dragon_nest");
 		assertFalse(heroes.isAccessible());
 		assertFalse(nest.isAccessible());
-		assertFalse(SlayerPanel.goEnabled(heroes));
+		// The Heroes' Guild basement has the wiki's spawn point now: gated, but Go works
+		assertTrue(SlayerPanel.goEnabled(heroes));
 		assertTrue(SlayerPanel.goEnabled(nest));
-		LocationOption crash = byKey(LocationPicker.pick(data.findTask(-1, "Black demons"), 5, 0, false, NOTHING_MET),
-			"crash_site_cavern");
-		assertFalse(SlayerPanel.goEnabled(crash));
+		TaskEntry fire = data.findTask(-1, "Fire giants");
+		LocationOption waterfall = byKey(LocationPicker.pick(fire, 5, 0, false, NOTHING_MET), "waterfall_dungeon");
+		assertFalse(waterfall.isAccessible());
+		assertFalse(SlayerPanel.goEnabled(waterfall));
 		// The same with every requirement met: only the map point matters
-		assertFalse(SlayerPanel.goEnabled(byKey(LocationPicker.pick(blue, 5, 0, false), "heroes_guild_basement")));
+		assertFalse(SlayerPanel.goEnabled(byKey(LocationPicker.pick(fire, 5, 0, false), "waterfall_dungeon")));
+		assertTrue(SlayerPanel.goEnabled(byKey(LocationPicker.pick(blue, 5, 0, false), "heroes_guild_basement")));
 		assertTrue(SlayerPanel.goEnabled(byKey(LocationPicker.pick(blue, 5, 0, false), "dragon_nest")));
 	}
 

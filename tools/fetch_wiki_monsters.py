@@ -10,6 +10,7 @@ category). OSRS Wiki content is licensed CC BY-NC-SA 3.0, see NOTICE.md.
 
 Usage: python3 tools/fetch_wiki_monsters.py
        python3 tools/fetch_wiki_monsters.py --attributes   (only refresh monster attributes, e.g. spectral)
+       python3 tools/fetch_wiki_monsters.py --spawns       (only refresh spawn points and their place names)
        python3 tools/fetch_wiki_monsters.py --locations    (only refresh the place names of each page's spawns)
        python3 tools/fetch_wiki_monsters.py --combat       (only refresh defence levels, defence bonuses and size)
        python3 tools/fetch_wiki_monsters.py --extra-drops  (only refresh the drop tables in EXTRA_DROP_PAGES)
@@ -28,6 +29,9 @@ API = "https://oldschool.runescape.wiki/api.php"
 HEADERS = {"User-Agent": "combat-gear-organizer-datagen/1.0 (RuneLite plugin data build; "
                          "https://github.com/Kastier1/chard-rose-apple)"}
 COORD = re.compile(r"x:\s*(\d+)\D+y:\s*(\d+)")
+# Some {{LocLine}}s give their points bare, "|1230,9491|1233,9497" (Blue dragon at the Dragon Nest), and the locline
+# bucket hands them back as "1230,9491"
+BARE_COORD = re.compile(r"\s*(\d+)\s*,\s*(\d+)\s*")
 # "The shadow wyrm is a [[superior]] variant of the [[wyrm]]."
 SUPERIOR_OF = re.compile(r"superior[^.]{0,80}?\b(?:variant|version|form|counterpart)s? of (?:the |an? )?\[\[([^\]|#]+)",
                          re.IGNORECASE)
@@ -167,15 +171,19 @@ def loclines(text):
     """[[location name, [[x, y, plane], ...]], ...] from the {{LocLine}} templates in one page's wikitext."""
     out = []
     for body in templates(text, "LocLine"):
-        location, plane = "", 0
+        location, plane, bare = "", 0, []
         for part in re.split(r"\|(?![^{]*\}\})(?![^\[]*\]\])", body):
+            m = BARE_COORD.fullmatch(part)
+            if m:
+                bare.append((m.group(1), m.group(2)))
+                continue
             key, _, value = part.partition("=")
             key = key.strip().lower()
             if key == "location":
                 location = plain(value)
             elif key == "plane" and value.strip().isdigit():
                 plane = int(value.strip())
-        points = [[int(x), int(y), plane] for x, y in COORD.findall(body)]
+        points = [[int(x), int(y), plane] for x, y in COORD.findall(body) + bare]
         if points:
             out.append([location, points])
     return out
@@ -220,6 +228,15 @@ def update_locations():
     data["spawn_locations"] = fetch_spawn_locations(sorted(data["spawns"]))
     OUT.write_text(json.dumps(data, separators=(",", ":")))
     print(f"{len(data['spawn_locations'])} monsters with named spawn places -> {OUT}")
+
+
+def update_spawns():
+    """Refresh only the spawn points and their place names, leaving everything else as it was fetched."""
+    data = json.loads(OUT.read_text())
+    data["spawns"] = fetch_spawns(sorted({m["page_name"] for m in data["monsters"]}))
+    data["spawn_locations"] = fetch_spawn_locations(sorted(data["spawns"]))
+    OUT.write_text(json.dumps(data, separators=(",", ":")))
+    print(f"{len(data['spawns'])} monsters with spawn points, {len(data['spawn_locations'])} with named places -> {OUT}")
 
 
 def fetch_superiors():
@@ -297,8 +314,8 @@ def fetch_spawns(pages):
             for row in page:
                 pts = spawns.setdefault(row["page_name"], [])
                 for c in row.get("coordinates", []):
-                    # Usually "x:3238,y:2845"; skip anything else
-                    m = COORD.search(c)
+                    # Usually "x:3238,y:2845", sometimes bare "1230,9491"; skip anything else
+                    m = COORD.search(c) or BARE_COORD.fullmatch(c)
                     if m:
                         pts.append([int(m.group(1)), int(m.group(2)), int(row.get("plane") or 0)])
             if len(page) < 500:
@@ -369,6 +386,8 @@ def main():
 if __name__ == "__main__":
     if "--attributes" in sys.argv[1:]:
         update_attributes()
+    elif "--spawns" in sys.argv[1:]:
+        update_spawns()
     elif "--locations" in sys.argv[1:]:
         update_locations()
     elif "--combat" in sys.argv[1:]:

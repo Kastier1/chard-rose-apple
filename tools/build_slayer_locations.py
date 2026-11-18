@@ -1230,8 +1230,8 @@ def link_unmatched(places, variants):
 
     The guide's table says the task's monsters are there, so a task with one regular monster gets it (Werewolves at
     Canifis, Rockslugs in the Crypt of Tonali). With several, which one is a guess: the place is marked NO_MONSTER and
-    the panel says the data doesn't know (Blue dragons at the Dragon Nest: the wiki's Blue, Baby blue and Brutal blue
-    dragon pages have no spawn there, while its Red and Baby red dragon pages do). Changes both lists in place.
+    the panel says the data doesn't know (Elves at the Prifddinas gates, Bears west of Lletya: no elf or bear page's
+    spawn spot is named or placed there). Changes both lists in place.
     """
     regular = [v for v in variants if not v["superior"] and not v["boss"]]
     for pl in places:
@@ -1241,6 +1241,47 @@ def link_unmatched(places, variants):
             regular[0]["places"] = sorted(set(regular[0]["places"]) | {pl["key"]})
         elif regular:
             pl[NO_MONSTER] = True
+
+
+# Spawn spots fill_from_spawns doesn't take points from: an instance Shortest Path can't path into ("North-east Karamja
+# (Instanced)") or spawns only there during a quest ("Digsite Dungeon (During The Dig Site)")
+NOT_A_GO_SPOT = re.compile(r"\binstanced?\b|\(during\b", re.IGNORECASE)
+
+
+def fill_from_spawns(task_name, places, variants, wiki, wilderness_list, unroutable):
+    """Gives a place with no map point the spawn points of its monsters' wiki spots named like it (find_by_name, the
+    same name only), so Go can path there: Blue dragons in the "Heroes' Guild (basement)" (the wiki's "Heroes' Guild
+    Basement"), the demonic gorillas' "Crash Site Cavern". Only a monster linked to the place gives points, and not
+    from an instance or a quest-only spot (NOT_A_GO_SPOT). A looser
+    word match ("Dark Altar", "Mount Karuulm") can name several places, so it stays a link without points. Places
+    whose entrance Shortest Path can't path to (unroutable: keys) and boss lairs are left as they are. With
+    wilderness_list (Krystilia's list, or a task only she gives), only Wilderness points count. Changes places in
+    place; returns the keys of the places that got points.
+    """
+    if not wiki:
+        return []
+    empty = [pl for pl in places if not pl["points"] and not pl["wildernessPoints"]
+             and pl.get("source") != BOSS_SOURCE and pl["key"] not in unroutable]
+    index = by_name((pl["label"], pl["key"]) for pl in empty)
+    found, monsters = {}, task_monsters(task_name, wiki)
+    for v in variants:
+        if v["superior"] or v["boss"]:
+            continue
+        versions = monsters.get(v["name"], [])
+        for loc, pts in spawn_groups({x["page_name"] for x in versions}, wiki):
+            key = find_by_name(index, loc) if loc and not NOT_A_GO_SPOT.search(loc) else None
+            if key and key in v["places"] and (v["name"], key) not in NOT_AT:
+                pts = [pt for pt in pts if in_wilderness(pt) or not wilderness_list]
+                spot = found.setdefault(key, [])
+                spot += [pt for pt in pts if pt not in spot]
+    filled = []
+    for pl in empty:
+        pts = sorted(found.get(pl["key"], []))
+        if pts:
+            pl["points"] = [pt for pt in pts if not in_wilderness(pt)]
+            pl["wildernessPoints"] = [pt for pt in pts if in_wilderness(pt)]
+            filled.append(pl["key"])
+    return filled
 
 
 def validate(tasks):
@@ -1391,6 +1432,9 @@ def main(src):
                 entries = [pl for pl in entries if pl["key"] != gone]
                 wild_entries = [pl for pl in wild_entries if pl["key"] != gone]
         link_unmatched(entries + wild_entries, variants)
+        unroutable = {key for key, loc in locations.items() if loc.get("entranceRoutable") is False}
+        fill_from_spawns(t["task"], entries, variants, wiki, krystilia_only, unroutable)
+        fill_from_spawns(t["task"], wild_entries, variants, wiki, True, unroutable)
         tasks.append({
             "taskId": tid,
             "name": t["task"],

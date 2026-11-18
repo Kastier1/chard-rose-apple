@@ -95,7 +95,15 @@ public class SlayerPanel extends JPanel
 	private static final int NAME_ICON_ROOM = 13;
 	/** The task's Go to nearest button's tooltip: it never picks a boss lair or a place the player can't get into. */
 	static final String NEAREST_TIP = "Path to whichever of the places below is quickest to reach. Leaves out boss "
-		+ "lairs and places you can't get into yet.";
+		+ "lairs, and places you can't get into yet while another will do.";
+	/** Under Go to nearest when every place it can pick needs something the player lacks or the client hasn't sent. */
+	static final String NEAREST_GATED = "Every place it can pick needs something you may not have yet.";
+	/** Under a greyed-out Go to nearest when no place it may pick has a map point. */
+	static final String NEAREST_NO_POINT = "None of the places below has a map point it can use.";
+	/** {@link java.awt.Component#getName()} of the line under Go to nearest that says why it's greyed or gated. */
+	static final String NEAREST_REASON = "nearestReason";
+	/** {@link java.awt.Component#getName()} of a place card's "Needs ..." line (missing requirements). */
+	static final String CARD_NEEDS = "cardNeeds";
 	/** Under a boss's Found at, since Go to nearest (right under the card) never goes to its lair. */
 	static final String BOSS_GO_HINT = "Go to nearest skips boss lairs: use Go on the lair's card below.";
 	/** Long tooltips wrap at this width instead of running across the screen. */
@@ -481,7 +489,8 @@ public class SlayerPanel extends JPanel
 			content.add(sp);
 		}
 
-		// "Nearest" leaves out places the player can't get into yet, and the wiki-spawn places while a guide place will do
+		// "Nearest" leaves out boss lairs, places the player can't get into while another will do, and the wiki-spawn
+		// places while a guide place will do
 		List<LocationOption> routable = LocationPicker.nearestTargets(locations);
 
 		JPanel actions = new JPanel(new BorderLayout());
@@ -494,6 +503,16 @@ public class SlayerPanel extends JPanel
 		actions.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
 		actions.setAlignmentX(LEFT_ALIGNMENT);
 		content.add(actions);
+		String why = nearestReason(locations, routable);
+		if (why != null)
+		{
+			// Said on the panel, not only in the tooltip: why it's greyed out, or that its places may be shut to you
+			JLabel reason = wrapped(why, routable.isEmpty() ? ColorScheme.LIGHT_GRAY_COLOR : ColorScheme.BRAND_ORANGE,
+				FontManager.getRunescapeSmallFont(), FULL_TEXT_WIDTH);
+			reason.setName(NEAREST_REASON);
+			reason.setBorder(new EmptyBorder(2, 0, 0, 0));
+			content.add(reason);
+		}
 		content.add(Box.createVerticalStrut(8));
 
 		if (locations.isEmpty())
@@ -1612,7 +1631,7 @@ public class SlayerPanel extends JPanel
 		else if (!compact && !location.isBossLair())
 		{
 			// The guide lists the place for the task, but no monster's spawns match it (and the task has several)
-			JLabel unknown = wrapped(NO_MONSTER_HERE, ColorScheme.MEDIUM_GRAY_COLOR, FontManager.getRunescapeSmallFont(),
+			JLabel unknown = wrapped(NO_MONSTER_HERE, ColorScheme.LIGHT_GRAY_COLOR, FontManager.getRunescapeSmallFont(),
 				CARD_TEXT_WIDTH);
 			unknown.setName(CARD_MONSTERS);
 			text.add(unknown);
@@ -1637,13 +1656,16 @@ public class SlayerPanel extends JPanel
 		}
 		if (!location.isAccessible())
 		{
-			text.add(wrapped("Needs " + String.join(", ", location.getMissingRequirements()), WILDERNESS_COLOR,
-				FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH));
+			JLabel needs = wrapped("Needs " + String.join(", ", location.getMissingRequirements()), WILDERNESS_COLOR,
+				FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH);
+			needs.setName(CARD_NEEDS);
+			text.add(needs);
 		}
 		if (!location.isRoutable())
 		{
 			// Go is greyed out: say why on the card, not only in the button's tooltip (shown in compact too)
-			text.add(wrapped(NO_MAP_POINT, ColorScheme.MEDIUM_GRAY_COLOR, FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH));
+			// Light grey like other information: the darker grey is the greyed-out button's and read as decoration
+			text.add(wrapped(NO_MAP_POINT, ColorScheme.LIGHT_GRAY_COLOR, FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH));
 		}
 		if (!compact && location.getNote() != null)
 		{
@@ -1682,6 +1704,19 @@ public class SlayerPanel extends JPanel
 		goWrap.add(go, BorderLayout.NORTH);
 		card.add(goWrap, BorderLayout.EAST);
 		return card;
+	}
+
+	/**
+	 * The line under Go to nearest, or null: why it's greyed out (no non-lair place with a map point; a list of only
+	 * boss lairs already says so with {@link #BOSS_GO_HINT}-style cards), or that every place it picks from is gated.
+	 */
+	static String nearestReason(List<LocationOption> shown, List<LocationOption> targets)
+	{
+		if (targets.isEmpty())
+		{
+			return shown.stream().anyMatch(l -> !l.isBossLair()) ? NEAREST_NO_POINT : null;
+		}
+		return LocationPicker.nearestIsGated(targets) ? NEAREST_GATED : null;
 	}
 
 	/** Whether a place's Go button works: only when there's a point to path to, whatever the player still needs. */

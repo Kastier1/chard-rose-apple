@@ -168,7 +168,8 @@ public class LocationPickerTest
 		assertEquals(Collections.singletonList(guide), LocationPicker.nearestTargets(Arrays.asList(lair, guide, wiki)));
 		// Not even when it's the only place that's open, routable or not from the wiki
 		assertEquals(Collections.singletonList(wiki), LocationPicker.nearestTargets(Arrays.asList(lair, wiki, locked)));
-		assertTrue(LocationPicker.nearestTargets(Arrays.asList(lair, locked)).isEmpty());
+		// A place the player may not get into yet beats an open lair: the lair is never Go to nearest's choice
+		assertEquals(Collections.singletonList(locked), LocationPicker.nearestTargets(Arrays.asList(lair, locked)));
 		assertTrue(LocationPicker.nearestTargets(Collections.singletonList(lair)).isEmpty());
 	}
 
@@ -237,8 +238,32 @@ public class LocationPickerTest
 		assertEquals(Collections.singletonList(guide), LocationPicker.nearestTargets(Arrays.asList(wiki, locked, guide, noPoint)));
 		// No guide place to go to: the wiki ones will do, still only open and routable ones
 		assertEquals(Collections.singletonList(wiki), LocationPicker.nearestTargets(Arrays.asList(locked, noPoint, wiki, lockedWiki)));
-		assertTrue(LocationPicker.nearestTargets(Arrays.asList(locked, noPoint, lockedWiki)).isEmpty());
+		assertTrue(LocationPicker.nearestTargets(Collections.singletonList(noPoint)).isEmpty());
 		assertTrue(LocationPicker.nearestTargets(Collections.emptyList()).isEmpty());
+	}
+
+	/**
+	 * Review: Go to nearest was greyed out, with nothing on the panel saying why, when every place needed something
+	 * the player lacked or the client hadn't sent yet (Gargoyles with nothing met). It now picks from those places,
+	 * guide ones first, like each card's Go, and says they're gated.
+	 */
+	@Test
+	public void nearestFallsBackToGatedPlacesInsteadOfGreyingOut()
+	{
+		LocationOption locked = option("locked", true, false, false);
+		LocationOption noPoint = option("no_point", false, true, false);
+		LocationOption lockedWiki = option("locked_wiki", true, false, true);
+		LocationOption open = option("open", true, true, false);
+
+		List<LocationOption> gated = LocationPicker.nearestTargets(Arrays.asList(locked, noPoint, lockedWiki));
+		assertEquals(Collections.singletonList(locked), gated);
+		assertTrue(LocationPicker.nearestIsGated(gated));
+		assertEquals(Collections.singletonList(lockedWiki), LocationPicker.nearestTargets(Arrays.asList(noPoint, lockedWiki)));
+		// An open place still wins, and then it isn't gated
+		List<LocationOption> withOpen = LocationPicker.nearestTargets(Arrays.asList(locked, open));
+		assertEquals(Collections.singletonList(open), withOpen);
+		assertFalse(LocationPicker.nearestIsGated(withOpen));
+		assertFalse(LocationPicker.nearestIsGated(Collections.emptyList()));
 	}
 
 	@Test
