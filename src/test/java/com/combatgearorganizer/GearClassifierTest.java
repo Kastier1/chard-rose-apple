@@ -228,4 +228,28 @@ public class GearClassifierTest
 		Bonuses tanky = Bonuses.builder().slash(10).strength(10).defSlash(40).build();
 		assertTrue(power("", GearSlot.HEAD, tanky) > power("", GearSlot.HEAD, plain));
 	}
+
+	// Found testing in game: atlatl darts sat with the slayer helmet in Utility
+
+	@Test
+	public void ammoWithNoBonusesIsRanged()
+	{
+		Bonuses atlatlDart = Bonuses.builder().build();
+		assertEquals(GearStyle.RANGED, style("Atlatl dart", GearSlot.AMMO, atlatlDart));
+		// Blessings have a prayer bonus and stay with the prayer gear
+		Bonuses unholy = Bonuses.builder().prayer(1).build();
+		assertEquals(GearStyle.PRAYER, style("Unholy blessing", GearSlot.AMMO, unholy));
+		// A no-stat item in another slot is still utility
+		assertEquals(GearStyle.UTILITY, style("Ring of dueling(8)", GearSlot.RING, Bonuses.builder().build()));
+	}
+
+	@Test
+	public void eclipseAtlatlCountsMeleeStrength()
+	{
+		// Wiki stats: +87 ranged, +40 melee strength, which its hits use
+		Bonuses atlatl = Bonuses.builder().range(87).strength(40).attackSpeed(4).build();
+		Bonuses msb = Bonuses.builder().range(75).attackSpeed(4).build();
+		assertEquals(GearStyle.RANGED, style("Eclipse atlatl", GearSlot.WEAPON, atlatl));
+		assertTrue(power("Eclipse atlatl", GearSlot.WEAPON, atlatl) > power("Magic shortbow (i)", GearSlot.WEAPON, msb));
+	}
 }

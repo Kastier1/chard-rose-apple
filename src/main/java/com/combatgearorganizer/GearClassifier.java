@@ -18,6 +18,8 @@ public final class GearClassifier
 	private static final int ARROW_STRENGTH = 60;
 	private static final int BOLT_STRENGTH = 100;
 	private static final int JAVELIN_STRENGTH = 150;
+	/** Melee strength from typical worn gear (Eclipse moon set and the like), for the Eclipse atlatl. */
+	private static final int ATLATL_GEAR_STRENGTH = 60;
 	/** Dragon darts, for the blowpipe, which carries its darts' strength on top of its own. */
 	private static final int DART_STRENGTH = 35;
 
@@ -109,6 +111,11 @@ public final class GearClassifier
 		}
 
 		// No offensive bonuses at all: fall back to what the item gives up
+		if (slot == GearSlot.AMMO && b.getPrayer() <= 0 && defenceScore(b) == 0)
+		{
+			// Ammo with no bonuses of its own, such as atlatl darts, whose damage comes from the weapon
+			return GearStyle.RANGED;
+		}
 		if (b.getMagic() < 0 && b.getRange() < 0)
 		{
 			// Tank armour (rune platebody, Bandos, Justiciar, Verac's): penalises both magic and ranged.
@@ -149,7 +156,7 @@ public final class GearClassifier
 				}
 				break;
 			case RANGED:
-				offence = (b.getRangedStrength() + ammoStrength(name, slot, b)) * 2 + b.getRange();
+				offence = (b.getRangedStrength() + ammoStrength(name, slot, b) + meleeStrengthUsed(name, b)) * 2 + b.getRange();
 				if (weapon)
 				{
 					// Ranged weapons are used on Rapid, one tick faster
@@ -227,6 +234,15 @@ public final class GearClassifier
 		return n.startsWith("void ") || n.startsWith("elite void")
 			|| n.contains("slayer helmet") || n.startsWith("black mask")
 			|| n.startsWith("salve amulet");
+	}
+
+	/**
+	 * The Eclipse atlatl hits with the player's melee strength bonus instead of ranged strength: its own, plus what
+	 * their other gear adds, the way an ammo-fired weapon gets its arrows' strength.
+	 */
+	private static int meleeStrengthUsed(String name, Bonuses b)
+	{
+		return lower(name).startsWith("eclipse atlatl") ? Math.max(0, b.getStrength()) + ATLATL_GEAR_STRENGTH : 0;
 	}
 
 	/** Damage per {@link #BASE_SPEED} ticks, so fast and slow weapons compare fairly. */
