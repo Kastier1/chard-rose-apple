@@ -174,7 +174,14 @@ CARRY_BY_DROP = [
     ("gemBag", re.compile(r"^uncut (sapphire|emerald|ruby|diamond|dragonstone)$", re.IGNORECASE), 50),
     ("soulBearer", re.compile(r"^ensouled .* head$", re.IGNORECASE), 50),
 ]
-CARRY_KEYS = {"bonecrusher", "ashSanctifier", "ectoplasmator"} | {k for k, _, _ in CARRY_BY_DROP}
+# Breath attacks that a shield or potion protects against (wiki Dragonfire page). Dragonfire: an anti-dragon shield
+# (or dragonfire shield, ward, ancient wyvern shield) and/or an antifire potion. Wyverns' icy breath: only an elemental,
+# mind, dragonfire or ancient wyvern shield; an anti-dragon shield and antifire potions do nothing.
+BREATH_CARRY = [("Dragonfire", "dragonfire"), ("Icy breath", "wyvernShield")]
+# Drakes' volcanic breath counts as dragonfire, but they don't need protection: a step aside dodges it (wiki Drake page)
+NO_BREATH_PROTECTION = {"Drake"}
+CARRY_KEYS = ({"bonecrusher", "ashSanctifier", "ectoplasmator"} | {k for _, k in BREATH_CARRY}
+              | {k for k, _, _ in CARRY_BY_DROP})
 
 
 def drop_rate(rows, pattern):
@@ -197,8 +204,10 @@ def drop_rate(rows, pattern):
 
 
 def carry_for(pages, wiki):
-    """Prayer and storage items worth an inventory slot for this monster.
+    """Protection, prayer and storage items worth an inventory slot for this monster.
 
+    Dragonfire protection: a wiki attack style of any version is "Dragonfire" (or "Icy breath" for wyverns), except
+    for drakes.
     Bonecrusher: always drops bones (the data counts no tertiary bones: long and curved bones aren't "...bones").
     Ash sanctifier: always drops demonic ashes, except Skotizo. Ectoplasmator: the monster is spectral. Sacks and bags:
     the drop turns up often enough, counted per kill from the drop table. A monster with several pages or versions
@@ -207,6 +216,9 @@ def carry_for(pages, wiki):
     drops = [r for p in sorted(pages) for r in wiki.get("drops", {}).get(p, [])]
     always = {r[0].lower() for r in drops if r[1] == "Always"}
     carry = []
+    styles = {s for m in wiki.get("monsters", []) if m["page_name"] in pages for s in m.get("attack_style", [])}
+    if not set(pages) & NO_BREATH_PROTECTION:
+        carry += [{"item": key} for style, key in BREATH_CARRY if style in styles]
     if any(i.endswith("bones") for i in always):
         carry.append({"item": "bonecrusher"})
     if always & DEMONIC_ASHES and not set(pages) & NO_ASH_SANCTIFIER:

@@ -124,8 +124,13 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
   the better rate on task, whether it's in your collection log, and its value. Drops you haven't logged are faded
   with a dashed outline; logged ones have a small tick. Superiors and bosses show their notable drops the same way.
   Drop names are matched to items in the first few seconds after you log in; until then they show as text.
-- **Carry** suggests the prayer and storage items worth an inventory slot for the selected monster, and ticks the
-  ones you already have in your inventory or worn:
+- **Carry** suggests the protection, prayer and storage items worth an inventory slot for the selected monster, and
+  ticks the ones you already have in your inventory or worn:
+  - **Dragonfire** for dragons that breathe fire (not baby dragons or drakes, whose breath you can step away from):
+    an anti-dragon shield (or dragonfire shield, dragonfire ward or ancient wyvern shield) or any antifire potion or
+    mix ticks it. A shield with antifire, or super antifire on its own, blocks normal dragonfire fully.
+  - **Icy breath** for wyverns: only an elemental, mind, dragonfire or ancient wyvern shield ticks it. An
+    anti-dragon shield and antifire potions don't help against it.
   - **Bonecrusher** (or bonecrusher necklace) when it always drops bones
   - **Ash sanctifier** when it always drops demonic ashes (not Skotizo, whose ashes it doesn't take)
   - **Ectoplasmator** when it's spectral

@@ -660,7 +660,8 @@ public class SlayerPanel extends JPanel
 	}
 
 	/**
-	 * Prayer and storage items worth an inventory slot for the selected monster (bonecrusher, herb sack...), ticked
+	 * Protection, prayer and storage items worth an inventory slot for the selected monster (dragonfire protection,
+	 * bonecrusher, herb sack...), ticked
 	 * when the player is already carrying them. Hover one for why.
 	 */
 	private void addCarry(JPanel card, Variant selected, List<LocationOption> locations)
@@ -677,7 +678,7 @@ public class SlayerPanel extends JPanel
 		{
 			boolean have = carried.contains(s.getItem());
 			missing += have ? 0 : 1;
-			String tip = "<html>" + escape(s.getTooltip()) + "<br>" + (have ? "You have one with you" : "Not in your inventory or worn") + "</html>";
+			String tip = "<html>" + escape(s.getTooltip()).replace("\n", "<br>") + "<br>" + (have ? "You have one with you" : "Not in your inventory or worn") + "</html>";
 			CarrySlot slot = new CarrySlot(s.getItem(), have, tip);
 			icons.setItem(slot, s.getItem().getIconId(), 1);
 			slots.add(slot);

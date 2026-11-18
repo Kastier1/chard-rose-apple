@@ -9,12 +9,14 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import net.runelite.api.gameval.ItemID;
+import net.runelite.client.game.ItemVariationMapping;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -153,5 +155,142 @@ public class CarryItemTest
 		// A gem sack holds the gem bag's gems
 		assertEquals(EnumSet.of(CarryItem.GEM_BAG), CarryItem.carried(Collections.singletonList(ItemID.GEM_SACK_OPEN)));
 		assertTrue(CarryItem.carried(Collections.emptyList()).isEmpty());
+	}
+
+	@Test
+	public void dragonsGetDragonfireProtection()
+	{
+		String[][] dragons = {
+			{"Blue dragons", "Blue dragon"}, {"Blue dragons", "Brutal blue dragon"}, {"Blue dragons", "Vorkath"},
+			{"Black dragons", "Black dragon"}, {"Black dragons", "Brutal black dragon"},
+			{"Black dragons", "King Black Dragon"}, {"Red dragons", "Red dragon"}, {"Green dragons", "Green dragon"},
+			{"Lava dragons", "Lava dragon"}, {"Frost dragons", "Frost dragon"},
+			{"Metal dragons", "Bronze dragon"}, {"Metal dragons", "Iron dragon"}, {"Metal dragons", "Steel dragon"},
+			{"Metal dragons", "Mithril dragon"}, {"Metal dragons", "Adamant dragon"}, {"Metal dragons", "Rune dragon"},
+		};
+		for (String[] d : dragons)
+		{
+			Set<CarryItem> s = suggested(variant(d[0], d[1]), false);
+			assertTrue(d[1], s.contains(CarryItem.DRAGONFIRE));
+			assertFalse(d[1], s.contains(CarryItem.WYVERN_SHIELD));
+		}
+	}
+
+	@Test
+	public void wyvernsGetTheShieldOnlyNote()
+	{
+		String[][] wyverns = {
+			{"Skeletal wyverns", "Skeletal Wyvern"}, {"Fossil Island wyverns", "Spitting Wyvern"},
+			{"Fossil Island wyverns", "Taloned Wyvern"}, {"Fossil Island wyverns", "Long-tailed Wyvern"},
+			{"Fossil Island wyverns", "Ancient Wyvern"},
+		};
+		for (String[] w : wyverns)
+		{
+			Set<CarryItem> s = suggested(variant(w[0], w[1]), false);
+			assertTrue(w[1], s.contains(CarryItem.WYVERN_SHIELD));
+			assertFalse(w[1], s.contains(CarryItem.DRAGONFIRE));
+		}
+	}
+
+	@Test
+	public void noProtectionForDrakesBabyDragonsOrOtherMonsters()
+	{
+		String[][] others = {
+			// Drakes' breath counts as dragonfire on the wiki, but a step aside dodges it
+			{"Drakes", "Drake"}, {"Drakes", "Guardian Drake"},
+			// Baby dragons can't breathe fire
+			{"Blue dragons", "Baby blue dragon"}, {"Black dragons", "Baby black dragon"},
+			{"Wyrms", "Wyrm"}, {"Hydras", "Hydra"}, {"Abyssal demons", "Abyssal demon"},
+			{"Revenants", "Revenant dragon"},
+		};
+		for (String[] o : others)
+		{
+			Set<CarryItem> s = suggested(variant(o[0], o[1]), false);
+			assertFalse(o[1], s.contains(CarryItem.DRAGONFIRE));
+			assertFalse(o[1], s.contains(CarryItem.WYVERN_SHIELD));
+		}
+	}
+
+	@Test
+	public void protectionComesFirstWithItsRule()
+	{
+		List<CarryItem.Suggestion> blue = CarryItem.suggest(variant("Blue dragons", "Blue dragon").getCarry(), false);
+		assertEquals(CarryItem.DRAGONFIRE, blue.get(0).getItem());
+		assertEquals("Dragonfire: Bring an anti-dragon shield and/or an antifire potion.\nSuper antifire on its own, or"
+			+ " a shield with any antifire, blocks normal dragonfire fully", blue.get(0).getTooltip());
+		List<CarryItem.Suggestion> wyvern = CarryItem.suggest(variant("Skeletal wyverns", "Skeletal Wyvern").getCarry(), false);
+		assertEquals(CarryItem.WYVERN_SHIELD, wyvern.get(0).getItem());
+		assertTrue(wyvern.get(0).getTooltip(), wyvern.get(0).getTooltip().startsWith("Icy breath: Wear an elemental"));
+		assertTrue(wyvern.get(0).getTooltip().contains("An anti-dragon shield or antifire potion doesn't help"));
+	}
+
+	@Test
+	public void shieldOrPotionCountsForDragonfire()
+	{
+		// Either one ticks it
+		assertEquals(EnumSet.of(CarryItem.DRAGONFIRE),
+			CarryItem.carried(Collections.singletonList(ItemID.ANTIDRAGONBREATHSHIELD)));
+		assertEquals(EnumSet.of(CarryItem.DRAGONFIRE),
+			CarryItem.carried(Collections.singletonList(ItemID._1DOSE3ANTIDRAGON)));
+		assertEquals(EnumSet.of(CarryItem.DRAGONFIRE),
+			CarryItem.carried(Collections.singletonList(ItemID.BRUTAL_1DOSE4ANTIDRAGON)));
+		assertEquals(EnumSet.of(CarryItem.DRAGONFIRE),
+			CarryItem.carried(Arrays.asList(ItemID.ANTIDRAGONBREATHSHIELD, ItemID._4DOSE1ANTIDRAGON)));
+		// The mounted shield in a player-owned house isn't worn
+		assertTrue(CarryItem.carried(Collections.singletonList(ItemID.POH_TROPHY_ANTIDRAGONBREATH)).isEmpty());
+	}
+
+	@Test
+	public void onlyTheRightShieldsCountForIcyBreath()
+	{
+		assertEquals(EnumSet.of(CarryItem.WYVERN_SHIELD), CarryItem.carried(Collections.singletonList(ItemID.ELEMENTAL_SHIELD)));
+		assertEquals(EnumSet.of(CarryItem.WYVERN_SHIELD), CarryItem.carried(Collections.singletonList(ItemID.ELEMENTAL_MIND_SHIELD)));
+		// Dragonfire shields and wards, and the ancient wyvern shield, cover both
+		for (int id : new int[]{ItemID.DRAGONFIRE_SHIELD, ItemID.DRAGONFIRE_SHIELD_UNCHARGED, ItemID.DRAGONFIRE_WARD,
+			ItemID.DRAGONFIRE_WARD_UNCHARGED, ItemID.WYVERN_SHIELD, ItemID.WYVERN_SHIELD_UNCHARGED})
+		{
+			assertEquals(String.valueOf(id), EnumSet.of(CarryItem.DRAGONFIRE, CarryItem.WYVERN_SHIELD),
+				CarryItem.carried(Collections.singletonList(id)));
+		}
+		// An anti-dragon shield or a super antifire potion does nothing against icy breath
+		assertFalse(CarryItem.carried(Arrays.asList(ItemID.ANTIDRAGONBREATHSHIELD, ItemID._4DOSE3ANTIDRAGON))
+			.contains(CarryItem.WYVERN_SHIELD));
+	}
+
+	@Test
+	public void everyVersionOfTheShieldsAndPotionsCounts()
+	{
+		// RuneLite's item variation groups (item_variations.json in the client jar) list every version of an item
+		Set<Integer> dragonfire = ids(CarryItem.DRAGONFIRE);
+		for (int base : new int[]{ItemID.ANTIDRAGONBREATHSHIELD, ItemID.DRAGONFIRE_SHIELD, ItemID.DRAGONFIRE_WARD,
+			ItemID.WYVERN_SHIELD, ItemID._4DOSE1ANTIDRAGON, ItemID.BRUTAL_2DOSE1ANTIDRAGON, ItemID._4DOSE2ANTIDRAGON,
+			ItemID.BRUTAL_2DOSE2ANTIDRAGON, ItemID._4DOSE3ANTIDRAGON, ItemID.BRUTAL_2DOSE3ANTIDRAGON,
+			ItemID._4DOSE4ANTIDRAGON, ItemID.BRUTAL_2DOSE4ANTIDRAGON})
+		{
+			Collection<Integer> versions = ItemVariationMapping.getVariations(base);
+			assertTrue(base + " has versions", versions.size() > 1);
+			for (int id : versions)
+			{
+				if (id != ItemID.POH_TROPHY_ANTIDRAGONBREATH)
+				{
+					assertTrue(base + ": " + id, dragonfire.contains(id));
+				}
+			}
+		}
+		Set<Integer> wyvern = ids(CarryItem.WYVERN_SHIELD);
+		for (int base : new int[]{ItemID.DRAGONFIRE_SHIELD, ItemID.DRAGONFIRE_WARD, ItemID.WYVERN_SHIELD,
+			ItemID.ELEMENTAL_SHIELD, ItemID.ELEMENTAL_MIND_SHIELD})
+		{
+			assertTrue(String.valueOf(base), wyvern.containsAll(ItemVariationMapping.getVariations(base)));
+		}
+		assertFalse(wyvern.contains(ItemID.ANTIDRAGONBREATHSHIELD));
+		// Elemental and mind shields protect against icy breath only
+		assertFalse(dragonfire.contains(ItemID.ELEMENTAL_SHIELD));
+		assertFalse(dragonfire.contains(ItemID.ELEMENTAL_MIND_SHIELD));
+	}
+
+	private static Set<Integer> ids(CarryItem item)
+	{
+		return Arrays.stream(item.getItemIds()).boxed().collect(Collectors.toSet());
 	}
 }

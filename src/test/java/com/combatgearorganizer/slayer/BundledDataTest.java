@@ -25,6 +25,7 @@ import net.runelite.api.Skill;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -411,6 +412,47 @@ public class BundledDataTest
 		assertTrue(tips.get(2), tips.get(2).contains("You have one with you"));
 		assertTrue(tips.get(0), tips.get(0).contains("GE value: 1.2M"));
 		assertTrue(tips.get(0), tips.get(0).contains("In your collection log"));
+	}
+
+	@Test
+	public void dragonAndWyvernTasksSuggestBreathProtection() throws Exception
+	{
+		List<String> tips = new ArrayList<>();
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			SlayerLocationData.TaskEntry blue = data.findTask(-1, "Blue dragons");
+			panel.showTask(new SlayerTaskState(blue.getTaskId(), blue.getName(), 50, 120, 5, 0, null), blue.getInfo(),
+				blue.getVariants(), LocationPicker.pick(blue, 5, 0, false), true, true, CollectionLog.Snapshot.EMPTY,
+				stubItems(ItemValueMode.GRAND_EXCHANGE));
+			panel.selectVariant("Blue dragon");
+			CarrySlot fire = carrySlot(panel, CarryItem.DRAGONFIRE);
+			assertNotNull("dragonfire protection suggested", fire);
+			assertNull(carrySlot(panel, CarryItem.WYVERN_SHIELD));
+			assertFalse(fire.isCarried());
+			tips.add(fire.getToolTipText());
+			// An antifire potion alone ticks it
+			panel.updateCarried(java.util.EnumSet.of(CarryItem.DRAGONFIRE));
+			assertTrue(carrySlot(panel, CarryItem.DRAGONFIRE).isCarried());
+			// Baby dragons can't breathe fire
+			panel.selectVariant("Baby blue dragon");
+			assertNull(carrySlot(panel, CarryItem.DRAGONFIRE));
+
+			SlayerLocationData.TaskEntry wyverns = data.findTask(-1, "Skeletal wyverns");
+			panel.showTask(new SlayerTaskState(wyverns.getTaskId(), wyverns.getName(), 50, 120, 5, 0, null),
+				wyverns.getInfo(), wyverns.getVariants(), LocationPicker.pick(wyverns, 5, 0, false), true, true, CollectionLog.Snapshot.EMPTY,
+				stubItems(ItemValueMode.GRAND_EXCHANGE));
+			// Still carrying dragonfire protection (an anti-dragon shield or antifire): it doesn't tick the wyvern shield
+			CarrySlot shield = carrySlot(panel, CarryItem.WYVERN_SHIELD);
+			assertNotNull("wyvern shield suggested", shield);
+			assertNull(carrySlot(panel, CarryItem.DRAGONFIRE));
+			assertFalse("antifire doesn't tick the wyvern shield", shield.isCarried());
+			tips.add(shield.getToolTipText());
+		});
+		assertTrue(tips.get(0), tips.get(0).startsWith("<html>Dragonfire: Bring an anti-dragon shield and/or an antifire potion.<br>Super antifire"));
+		assertTrue(tips.get(0), tips.get(0).contains("Not in your inventory or worn"));
+		assertTrue(tips.get(1), tips.get(1).contains("Icy breath: Wear an elemental, mind, dragonfire or ancient wyvern shield.<br>"));
+		assertTrue(tips.get(1), tips.get(1).contains("Only the ancient wyvern shield stops the freeze"));
 	}
 
 	private static CarrySlot carrySlot(SlayerPanel panel, CarryItem item)

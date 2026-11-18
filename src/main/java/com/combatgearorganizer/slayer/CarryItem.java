@@ -3,18 +3,40 @@ package com.combatgearorganizer.slayer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.IntStream;
 import lombok.Getter;
 import net.runelite.api.gameval.ItemID;
 
 /**
- * Prayer and storage items worth an inventory slot on a task. Which ones apply to a monster comes from the bundled data
- * (see tools/build_slayer_locations.py, carry_for); the looting bag is added for Wilderness places.
+ * Protection, prayer and storage items worth an inventory slot on a task. Which ones apply to a monster comes from the
+ * bundled data (see tools/build_slayer_locations.py, carry_for); the looting bag is added for Wilderness places.
  */
 @Getter
 public enum CarryItem
 {
+	// Dragonfire rules from the wiki's Dragonfire page. Either a shield or a potion ticks it: they stack, and super
+	// antifire alone blocks normal dragonfire. The Nightmare Zone shield and the Last Man Standing dragonfire shield are
+	// their item's variations; the mounted shield isn't worn, so it's left out.
+	DRAGONFIRE("dragonfire", "Dragonfire", "Bring an anti-dragon shield and/or an antifire potion.\nSuper antifire on its"
+		+ " own, or a shield with any antifire, blocks normal dragonfire fully",
+		ItemID.ANTIDRAGONBREATHSHIELD, with(Shields.BOTH_BREATHS,
+		ItemID.ANTIDRAGONBREATHSHIELD, ItemID.NZONE_ANTIDRAGONSHIELD,
+		// Antifire, antifire mix, extended antifire (and mix), super antifire (and mix), extended super (and mix)
+		ItemID._4DOSE1ANTIDRAGON, ItemID._3DOSE1ANTIDRAGON, ItemID._2DOSE1ANTIDRAGON, ItemID._1DOSE1ANTIDRAGON,
+		ItemID.BRUTAL_2DOSE1ANTIDRAGON, ItemID.BRUTAL_1DOSE1ANTIDRAGON,
+		ItemID._4DOSE2ANTIDRAGON, ItemID._3DOSE2ANTIDRAGON, ItemID._2DOSE2ANTIDRAGON, ItemID._1DOSE2ANTIDRAGON,
+		ItemID.BRUTAL_2DOSE2ANTIDRAGON, ItemID.BRUTAL_1DOSE2ANTIDRAGON,
+		ItemID._4DOSE3ANTIDRAGON, ItemID._3DOSE3ANTIDRAGON, ItemID._2DOSE3ANTIDRAGON, ItemID._1DOSE3ANTIDRAGON,
+		ItemID.BRUTAL_2DOSE3ANTIDRAGON, ItemID.BRUTAL_1DOSE3ANTIDRAGON,
+		ItemID._4DOSE4ANTIDRAGON, ItemID._3DOSE4ANTIDRAGON, ItemID._2DOSE4ANTIDRAGON, ItemID._1DOSE4ANTIDRAGON,
+		ItemID.BRUTAL_2DOSE4ANTIDRAGON, ItemID.BRUTAL_1DOSE4ANTIDRAGON)),
+	// Wyverns' icy breath: only these shields cut it to 10; an anti-dragon shield and antifire potions do nothing
+	WYVERN_SHIELD("wyvernShield", "Icy breath", "Wear an elemental, mind, dragonfire or ancient wyvern shield.\nAn"
+		+ " anti-dragon shield or antifire potion doesn't help.\nOnly the ancient wyvern shield stops the freeze",
+		ItemID.WYVERN_SHIELD, with(Shields.BOTH_BREATHS, ItemID.ELEMENTAL_SHIELD, ItemID.ELEMENTAL_MIND_SHIELD)),
 	BONECRUSHER("bonecrusher", "Bonecrusher", "Crushes the bones they always drop, for Prayer XP",
 		ItemID.BONECRUSHER, ItemID.BONECRUSHER, ItemID.BONECRUSHER_NECKLACE),
 	ASH_SANCTIFIER("ashSanctifier", "Ash sanctifier", "Scatters the demonic ashes they always drop, for Prayer XP",
@@ -37,12 +59,30 @@ public enum CarryItem
 	/** The key in the bundled data; null for items the plugin adds itself. */
 	private final String key;
 	private final String displayName;
-	/** Why it's worth bringing. For drop-based items, what drops. */
+	/**
+	 * Why it's worth bringing. For drop-based items, what drops; for protection, what blocks the attack, one sentence
+	 * per line ("\n").
+	 */
 	private final String reason;
 	/** The picture to show. */
 	private final int iconId;
-	/** Every version that counts as carrying it (open, silklined, necklace, gem sack). */
+	/** Every version that counts as carrying it (open, silklined, necklace, gem sack, each shield and potion dose). */
 	private final int[] itemIds;
+
+	/** Shields that protect against both dragonfire and wyverns' icy breath, in a holder so the constants can use it. */
+	private static final class Shields
+	{
+		static final int[] BOTH_BREATHS = {
+			ItemID.DRAGONFIRE_SHIELD, ItemID.DRAGONFIRE_SHIELD_UNCHARGED, ItemID.BR_DRAGONFIRE_SHIELD,
+			ItemID.DRAGONFIRE_WARD, ItemID.DRAGONFIRE_WARD_UNCHARGED,
+			ItemID.WYVERN_SHIELD, ItemID.WYVERN_SHIELD_UNCHARGED,
+		};
+	}
+
+	private static int[] with(int[] shared, int... more)
+	{
+		return IntStream.concat(IntStream.of(shared), IntStream.of(more)).toArray();
+	}
 
 	CarryItem(String key, String displayName, String reason, int iconId, int... itemIds)
 	{
@@ -66,8 +106,9 @@ public enum CarryItem
 	}
 
 	/** Which of these items are among the given item ids (inventory and worn). */
-	public static Set<CarryItem> carried(Collection<Integer> itemIds)
+	public static Set<CarryItem> carried(Collection<Integer> ids)
 	{
+		Set<Integer> itemIds = new HashSet<>(ids);
 		Set<CarryItem> carried = EnumSet.noneOf(CarryItem.class);
 		for (CarryItem item : values())
 		{
