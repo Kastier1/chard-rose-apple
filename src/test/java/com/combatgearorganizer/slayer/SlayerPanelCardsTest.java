@@ -343,6 +343,7 @@ public class SlayerPanelCardsTest
 	{
 		List<String> unlinked = new ArrayList<>();
 		List<String> wronglyMarked = new ArrayList<>();
+		List<String> unreviewed = new ArrayList<>();
 		int marked = 0;
 		for (TaskEntry t : data.getTasks())
 		{
@@ -355,6 +356,12 @@ public class SlayerPanelCardsTest
 				if (l.isNoMonster())
 				{
 					marked++;
+					// Review: the mark came from the generator alone, so a matching regression could hide behind it;
+					// now each one is a reviewed entry (NO_MONSTER_PLACES) with its evidence
+					if (l.getNoMonsterWhy() == null || l.getNoMonsterWhy().isEmpty())
+					{
+						unreviewed.add(t.getName() + " / " + l.getLabel());
+					}
 					if (linked || regular.size() < 2)
 					{
 						wronglyMarked.add(t.getName() + " / " + l.getLabel());
@@ -368,8 +375,71 @@ public class SlayerPanelCardsTest
 		}
 		assertTrue("places no monster lives at: " + unlinked, unlinked.isEmpty());
 		assertTrue("marked noMonster but a monster is known: " + wronglyMarked, wronglyMarked.isEmpty());
+		assertTrue("marked noMonster with no reviewed reason: " + unreviewed, unreviewed.isEmpty());
 		// The exceptions stay few: they are guide rows the monster pages' spawns don't cover
-		assertTrue(marked + " places with no known monster", marked <= 40);
+		assertTrue(marked + " places with no known monster", marked <= 34);
+	}
+
+	/**
+	 * Review: a spot was linked to every place whose name held its words, also one only named relative to it: Dad and
+	 * the Troll spectators ("Troll Arena", on the surface) were listed in the "Tunnel between Troll arena and
+	 * Trollheim" (underground), whose only monster is the mountain troll.
+	 */
+	@Test
+	public void aSpotIsNotLinkedToAPlaceOnlyNamedBesideIt()
+	{
+		assertNotAt("Trolls", "Dad", "tunnel_between_troll_arena_and_trollheim");
+		assertNotAt("Trolls", "Troll spectator", "tunnel_between_troll_arena_and_trollheim");
+		assertLivesAt("Trolls", "Mountain troll", "tunnel_between_troll_arena_and_trollheim");
+		// A place named beside a spot still matches when another monster's spot of that name is right there (the
+		// grizzly bear's "Land's End" is three tiles from the bear cub's "North of Land's End")
+		assertLivesAt("Bears", "Grizzly bear", "great_kourend_north_of_lands_end");
+		// A direction that says which part ("north entrance") is still the place
+		assertLivesAt("Bats", "Giant bat", "yanille_agility_dungeon_north_entrance");
+		// The Dark Altar paths are linked by hand (SPOT_PLACES), each with the bat spawns on its side of the altar
+		assertLivesAt("Bats", "Giant bat", "west_of_dark_altar_path_towards_fairy_ring");
+		assertPointsFrom("Bats", "west_of_dark_altar_path_towards_fairy_ring", 1633, 3879);
+		assertPointsFrom("Bats", "south_of_dark_altar_path_towards_blood_altar", 1709, 3860);
+		assertPointsFrom("Bats", "east_of_dark_altar_path_towards_soul_altar", 1743, 3892);
+		assertTrue(entry(data.findTask(-1, "Bats"), "west_of_dark_altar_path_towards_fairy_ring").getPoints()
+			.stream().allMatch(p -> p[0] < 1700));
+	}
+
+	/**
+	 * Review: Krystilia's Hellhounds place "North-east of the Deserted Keep" said no monster was known and its Go was
+	 * greyed out, though the Hellhound page's only surface Wilderness spawns ("Outside of the Wilderness Resource
+	 * Area") are there.
+	 */
+	@Test
+	public void krystiliasHellhoundsCanBeFoundNorthEastOfTheDesertedKeep()
+	{
+		TaskEntry t = data.findTask(-1, "Hellhounds");
+		LocationEntry keep = t.getWildernessLocations().stream()
+			.filter(l -> l.getKey().equals("north_east_of_the_deserted_keep")).findFirst()
+			.orElseThrow(AssertionError::new);
+		assertFalse(keep.isNoMonster());
+		assertLivesAt("Hellhounds", "Hellhound", "north_east_of_the_deserted_keep");
+		assertTrue(keep.getWildernessPoints().stream().anyMatch(p -> p[0] == 3180 && p[1] == 3917));
+	}
+
+	/**
+	 * Review: Krystilia's "Ice spider (several places)" card named non-Wilderness caves as spawn spots, where kills don't
+	 * count for her, though its only points are on the Frozen Waste Plateau. Her copy now names only that spot.
+	 */
+	@Test
+	public void krystiliasCopyOfASeveralPlacesCardNamesOnlyWildernessSpots()
+	{
+		TaskEntry t = data.findTask(-1, "Spiders");
+		LocationEntry ice = t.getWildernessLocations().stream().filter(l -> l.getKey().equals("wiki_ice_spider"))
+			.findFirst().orElseThrow(AssertionError::new);
+		assertEquals("Ice spider (Frozen Waste Plateau)", ice.getLabel());
+		assertTrue(ice.getNote(), ice.getNote().contains("Frozen Waste Plateau"));
+		for (String elsewhere : new String[]{"Ice Queen's Lair", "Ruins of Tapoyauik", "Temple of Ikov", "several"})
+		{
+			assertFalse(ice.getNote(), ice.getNote().contains(elsewhere));
+		}
+		// The normal list's card keeps every spot
+		assertTrue(entry(t, "wiki_ice_spider").getNote().contains("Ice Queen's Lair"));
 	}
 
 	@Test
@@ -426,6 +496,14 @@ public class SlayerPanelCardsTest
 		List<int[]> points = entry(data.findTask(-1, task), key).getPoints();
 		assertTrue(task + " / " + key + " has no point at " + x + "," + y,
 			points.stream().anyMatch(p -> p[0] == x && p[1] == y));
+	}
+
+	private static void assertNotAt(String task, String monster, String place)
+	{
+		TaskEntry t = data.findTask(-1, task);
+		Variant v = t.getVariants().stream().filter(x -> x.getName().equals(monster)).findFirst()
+			.orElseThrow(AssertionError::new);
+		assertFalse(task + " / " + monster + " at " + v.getPlaces(), v.getPlaces().contains(place));
 	}
 
 	private static void assertLivesAt(String task, String monster, String place)

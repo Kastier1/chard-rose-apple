@@ -254,6 +254,28 @@ Wilderness boss with *Show Wilderness locations* off). Not yet seen in a logged-
 - Left as is: prose notes that start with "Needs" (Brimhaven's "Needs 10 Woodcutting to cut the vines") are Slayer
   Sensei's notes, not structured requirements; making them requirements needs the wiki checked per place.
 
+**Update 2026-11-18 (table gaps and place links, review round 2):**
+- *Places only named beside a spot.* `own_places` no longer takes a word-subset match whose extra words place one
+  name relative to the other (`RELATION_WORDS`: north/south/east/west, between, outside, path, towards...; `same_spot`),
+  unless they say which part (`PART_WORDS`: "north entrance", "north side") or the shorter name is the longer one's head
+  ("Mount Karuulm (north side)"). Such a match is kept only when the spot is within `NEAR` of the place's points or of
+  another monster's spot named like the place (`beside_places`: the grizzly bear's "Land's End" is 3 tiles from the bear
+  cub's "North of Land's End"). Dad and the Troll spectators ("Troll Arena", surface) are no longer in the
+  "Tunnel between Troll arena and Trollheim" (Mountain troll only).
+- *Hand links with evidence* (`SPOT_PLACES`: task and place -> monster, wiki spot, its points, why; checked against
+  `wiki_monsters.json`, and the place takes the points when it has none): the three Dark Altar paths (Bats) get the
+  Giant bat's "Dark Altar" spawns on their side of the altar, so Go works there; Krystilia's Hellhounds place
+  "North-east of the Deserted Keep" gets the Hellhound and the 6 "Outside of the Wilderness Resource Area" points (was
+  `noMonster` with a dead Go). Skeletons' "Southern Wilderness mine" stays `noMonster`: the Skeleton page's mine spot is
+  her list's own "South-west Wilderness mine".
+- *`noMonster` is a reviewed list now* (`NO_MONSTER_PLACES`: task and place -> evidence, 34 places). `link_unmatched`
+  marks only those, bundled with `noMonsterWhy`; `validate()` fails on any other unmatched place, on an entry that is
+  matched or gone, and on a stale `SPOT_PLACES` entry. `everyPlaceListsAMonsterThatLivesThere` checks every mark has
+  its reason (cap 34).
+- *Krystilia's copy of a "several places" wiki card* names only its Wilderness spots (Ice spider: "Ice spider (Frozen
+  Waste Plateau)"; the note no longer lists the Ice Queen's Lair, Temple of Ikov and other caves where kills don't count
+  for her). Tests: 298.
+
 Still open from the review: Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping; By set covers armour only), and the scope doc's wrong required items.
 

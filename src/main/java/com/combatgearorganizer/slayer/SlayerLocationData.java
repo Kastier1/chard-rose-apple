@@ -176,6 +176,11 @@ public class SlayerLocationData
 		 * spots is near it or named like it, and the task has more than one). The card says so.
 		 */
 		private boolean noMonster;
+		/**
+		 * Why no monster is known here: the evidence from the generator's reviewed list (NO_MONSTER_PLACES), which
+		 * every {@link #noMonster} place has.
+		 */
+		private String noMonsterWhy;
 
 		public boolean isFromWiki()
 		{
