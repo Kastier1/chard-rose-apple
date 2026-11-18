@@ -128,7 +128,8 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
   ticks the ones you already have in your inventory or worn:
   - **Dragonfire** for dragons that breathe fire (not baby dragons or drakes, whose breath you can step away from):
     an anti-dragon shield (or dragonfire shield, dragonfire ward or ancient wyvern shield) or any antifire potion or
-    mix ticks it. A shield with antifire, or super antifire on its own, blocks normal dragonfire fully.
+    mix ticks it. A shield with antifire, or super antifire on its own, blocks a normal dragon's fire fully;
+    Vorkath needs a shield and super antifire together.
   - **Icy breath** for wyverns: only an elemental, mind, dragonfire or ancient wyvern shield ticks it. An
     anti-dragon shield and antifire potions don't help against it.
   - **Bonecrusher** (or bonecrusher necklace) when it always drops bones

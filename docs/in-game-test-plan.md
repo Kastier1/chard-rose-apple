@@ -75,7 +75,7 @@ Have a task, and open the **Slayer** tab.
   bone droppers, ectoplasmator for spectral monsters, herb sack/seed box where they drop a lot).
   - [ ] Take a suggested item out of the bank: its icon gets a tick. Put it back: the tick goes.
   - [ ] Blue or metal dragon task: *Dragonfire* shows first, with an anti-dragon shield picture. Hover: bring a
-    shield and/or antifire. Either an anti-dragon shield or one dose of any antifire ticks it. Baby blue dragon and
+    shield and/or antifire; Vorkath needs a shield and super antifire together. Either an anti-dragon shield or one dose of any antifire ticks it. Baby blue dragon and
     drakes have no *Dragonfire*.
   - [ ] Skeletal or Fossil Island wyvern task: *Icy breath* shows instead, with the ancient wyvern shield picture.
     An anti-dragon shield or antifire doesn't tick it; an elemental, mind, dragonfire or ancient wyvern shield does.

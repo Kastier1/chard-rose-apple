@@ -119,8 +119,9 @@ Not yet seen in a logged-in client.
 from) and `wyvernShield` for "Icy breath" (wyverns). `CarryItem.DRAGONFIRE` ticks for any anti-dragon shield,
 dragonfire shield or ward, ancient wyvern shield, or any dose of an antifire potion or mix; `WYVERN_SHIELD` only for an
 elemental, mind, dragonfire or ancient wyvern shield (wiki Dragonfire page). Ids are checked against RuneLite's item
-variation groups in `CarryItemTest`. Tooltip reasons can hold `\n`, shown as line breaks. Not yet seen in a logged-in
-client.
+variation groups in `CarryItemTest`. Tooltip reasons can hold `\n`, shown as line breaks. The Dragonfire tooltip says
+Vorkath needs a shield and super antifire together (the wiki table: super antifire alone still lets 60 through, a
+shield with regular antifire 10). Not yet seen in a logged-in client.
 
 Still open from the review: boss/Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping), and the scope doc's wrong required items.

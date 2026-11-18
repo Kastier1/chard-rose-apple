@@ -18,10 +18,13 @@ import net.runelite.api.gameval.ItemID;
 public enum CarryItem
 {
 	// Dragonfire rules from the wiki's Dragonfire page. Either a shield or a potion ticks it: they stack, and super
-	// antifire alone blocks normal dragonfire. The Nightmare Zone shield and the Last Man Standing dragonfire shield are
-	// their item's variations; the mounted shield isn't worn, so it's left out.
+	// antifire alone blocks a normal dragon's fire. Vorkath's fire still hits up to 60 through super antifire alone and
+	// 10 through a shield with a regular antifire; only a shield with super antifire blocks it. The Nightmare Zone
+	// shield and the Last Man Standing dragonfire shield are their item's variations; the mounted shield isn't worn, so
+	// it's left out.
 	DRAGONFIRE("dragonfire", "Dragonfire", "Bring an anti-dragon shield and/or an antifire potion.\nSuper antifire on its"
-		+ " own, or a shield with any antifire, blocks normal dragonfire fully",
+		+ " own, or a shield with any antifire, blocks a normal dragon's fire fully.\nVorkath needs a shield and super"
+		+ " antifire together",
 		ItemID.ANTIDRAGONBREATHSHIELD, with(Shields.BOTH_BREATHS,
 		ItemID.ANTIDRAGONBREATHSHIELD, ItemID.NZONE_ANTIDRAGONSHIELD,
 		// Antifire, antifire mix, extended antifire (and mix), super antifire (and mix), extended super (and mix)

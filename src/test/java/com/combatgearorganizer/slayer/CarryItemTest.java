@@ -3,6 +3,7 @@ package com.combatgearorganizer.slayer;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import com.google.gson.Gson;
 import java.io.InputStreamReader;
@@ -217,7 +218,15 @@ public class CarryItemTest
 		List<CarryItem.Suggestion> blue = CarryItem.suggest(variant("Blue dragons", "Blue dragon").getCarry(), false);
 		assertEquals(CarryItem.DRAGONFIRE, blue.get(0).getItem());
 		assertEquals("Dragonfire: Bring an anti-dragon shield and/or an antifire potion.\nSuper antifire on its own, or"
-			+ " a shield with any antifire, blocks normal dragonfire fully", blue.get(0).getTooltip());
+			+ " a shield with any antifire, blocks a normal dragon's fire fully.\nVorkath needs a shield and super antifire"
+			+ " together", blue.get(0).getTooltip());
+		// Vorkath (on blue dragon and zombie tasks) gets the same entry, whose tooltip names what blocks its fire
+		for (String task : new String[]{"Blue dragons", "Zombies"})
+		{
+			List<CarryItem.Suggestion> vorkath = CarryItem.suggest(variant(task, "Vorkath").getCarry(), false);
+			assertEquals(task, CarryItem.DRAGONFIRE, vorkath.get(0).getItem());
+			assertTrue(vorkath.get(0).getTooltip().endsWith("Vorkath needs a shield and super antifire together"));
+		}
 		List<CarryItem.Suggestion> wyvern = CarryItem.suggest(variant("Skeletal wyverns", "Skeletal Wyvern").getCarry(), false);
 		assertEquals(CarryItem.WYVERN_SHIELD, wyvern.get(0).getItem());
 		assertTrue(wyvern.get(0).getTooltip(), wyvern.get(0).getTooltip().startsWith("Icy breath: Wear an elemental"));
@@ -238,6 +247,18 @@ public class CarryItemTest
 			CarryItem.carried(Arrays.asList(ItemID.ANTIDRAGONBREATHSHIELD, ItemID._4DOSE1ANTIDRAGON)));
 		// The mounted shield in a player-owned house isn't worn
 		assertTrue(CarryItem.carried(Collections.singletonList(ItemID.POH_TROPHY_ANTIDRAGONBREATH)).isEmpty());
+		// Empty slots (-1), repeats and unrelated items don't matter
+		assertEquals(EnumSet.of(CarryItem.DRAGONFIRE), CarryItem.carried(Arrays.asList(-1, ItemID._2DOSE2ANTIDRAGON,
+			-1, ItemID._2DOSE2ANTIDRAGON, ItemID.ABYSSAL_WHIP)));
+		assertTrue(CarryItem.carried(Arrays.asList(-1, -1, ItemID.ABYSSAL_WHIP)).isEmpty());
+	}
+
+	@Test
+	public void breathProtectionKeysRoundTrip()
+	{
+		assertEquals(CarryItem.DRAGONFIRE, CarryItem.byKey("dragonfire"));
+		assertEquals(CarryItem.WYVERN_SHIELD, CarryItem.byKey("wyvernShield"));
+		assertNull(CarryItem.byKey("antifire"));
 	}
 
 	@Test

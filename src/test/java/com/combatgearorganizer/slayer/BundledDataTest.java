@@ -450,6 +450,7 @@ public class BundledDataTest
 			tips.add(shield.getToolTipText());
 		});
 		assertTrue(tips.get(0), tips.get(0).startsWith("<html>Dragonfire: Bring an anti-dragon shield and/or an antifire potion.<br>Super antifire"));
+		assertTrue(tips.get(0), tips.get(0).contains("fire fully.<br>Vorkath needs a shield and super antifire together<br>"));
 		assertTrue(tips.get(0), tips.get(0).contains("Not in your inventory or worn"));
 		assertTrue(tips.get(1), tips.get(1).contains("Icy breath: Wear an elemental, mind, dragonfire or ancient wyvern shield.<br>"));
 		assertTrue(tips.get(1), tips.get(1).contains("Only the ancient wyvern shield stops the freeze"));
