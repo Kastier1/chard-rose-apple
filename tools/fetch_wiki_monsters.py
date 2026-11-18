@@ -11,6 +11,7 @@ category). OSRS Wiki content is licensed CC BY-NC-SA 3.0, see NOTICE.md.
 Usage: python3 tools/fetch_wiki_monsters.py
        python3 tools/fetch_wiki_monsters.py --attributes   (only refresh monster attributes, e.g. spectral)
        python3 tools/fetch_wiki_monsters.py --locations    (only refresh the place names of each page's spawns)
+       python3 tools/fetch_wiki_monsters.py --combat       (only refresh defence levels, defence bonuses and size)
 """
 import json
 import re
@@ -31,6 +32,10 @@ SUPERIOR_OF = re.compile(r"superior[^.]{0,80}?\b(?:variant|version|form|counterp
                          re.IGNORECASE)
 # Superiors that only existed in a league ("was a variant ... in Trailblazer Reloaded League")
 LEAGUE_ONLY = re.compile(r"\[\[[^\]]*League[^\]]*\]\]", re.IGNORECASE)
+# What the gear-up DPS maths needs about each monster version (infobox_monster bucket)
+COMBAT_FIELDS = ["combat_level", "hitpoints", "defence_level", "magic_level", "magic_attack_bonus", "stab_defence_bonus", "slash_defence_bonus",
+                 "crush_defence_bonus", "magic_defence_bonus", "light_range_defence_bonus",
+                 "standard_range_defence_bonus", "heavy_range_defence_bonus", "size"]
 FIELDS = ["page_name", "name", "version_anchor", "combat_level", "hitpoints", "slayer_experience", "slayer_category",
           "attack_style", "elemental_weakness", "elemental_weakness_percent"]
 
@@ -84,6 +89,32 @@ def update_attributes():
     OUT.write_text(json.dumps(data, separators=(",", ":")))
     spectral = sum(1 for v in data["attributes"].values() if "spectral" in v)
     print(f"{len(data['attributes'])} monsters with attributes ({spectral} spectral) -> {OUT}")
+
+
+def fetch_combat():
+    """[{page_name, version_anchor, defence_level, ...}, ...] for every slayer monster version, sorted."""
+    rows, offset = [], 0
+    select = ",".join(f"'{f}'" for f in ["page_name", "version_anchor"] + COMBAT_FIELDS)
+    while True:
+        page = bucket(f"bucket('infobox_monster').select({select})"
+                      f".where('slayer_category','!=',bucket.Null()).orderBy('page_name','asc')"
+                      f".limit(500).offset({offset}).run()")
+        rows += page
+        if len(page) < 500:
+            break
+        offset += 500
+        time.sleep(0.5)
+    out = [{k: r[k] for k in ["page_name", "version_anchor"] + COMBAT_FIELDS if r.get(k) is not None} for r in rows]
+    # Some pages repeat a version name with other stats, so the whole row breaks ties
+    return sorted(out, key=lambda r: (r["page_name"], r.get("version_anchor", ""), json.dumps(r, sort_keys=True)))
+
+
+def update_combat():
+    """Refresh only the combat stats in the existing data file, leaving everything else as it was fetched."""
+    data = json.loads(OUT.read_text())
+    data["combat"] = fetch_combat()
+    OUT.write_text(json.dumps(data, separators=(",", ":")))
+    print(f"{len(data['combat'])} monster versions with combat stats -> {OUT}")
 
 
 def templates(text, name):
@@ -296,6 +327,7 @@ def main():
     clog = fetch_collection_log_items()
     attributes = fetch_attributes()
     spawn_locations = fetch_spawn_locations(sorted(spawns))
+    combat = fetch_combat()
     print(f"{len(clog)} collection log items")
     print(f"{len(drops)} monsters with drop tables")
     print(f"{len(superiors)} superiors, {len(spawns)} monsters with spawn points")
@@ -312,6 +344,7 @@ def main():
         "collection_log_items": clog,
         "attributes": attributes,
         "spawn_locations": spawn_locations,
+        "combat": combat,
     }, separators=(",", ":")))
     print(f"-> {OUT}")
 
@@ -321,5 +354,7 @@ if __name__ == "__main__":
         update_attributes()
     elif "--locations" in sys.argv[1:]:
         update_locations()
+    elif "--combat" in sys.argv[1:]:
+        update_combat()
     else:
         main()

@@ -134,6 +134,21 @@ a slot goes with the unsetted armour so it can't widen the set. Sets are ordered
 tie goes to melee, ranged, magic order) then strength (sum of power). Adding a weapon, jewellery or odd armour never
 moves a set; a new set or a stronger set can move the sets after it. Not yet seen in a logged-in client.
 
+**Update 2026-11-18 (issue #34):** the monster card has a *Best with what you have* section: the player's best
+weapon per style for the selected monster by expected DPS, with the runner-up and a tooltip (max hit, hit chance,
+speed, ammo or spell, slayer helmet or salve worn, next three, assumptions). Pure maths in the new `dps` package:
+`CombatMath` (the wiki's formula pages, cited in comments), `WeaponRules` (demonbane, dragonbane, keris, leaf-bladed,
+silver and vampyrebane, powered staff max hits, by item name), `RangedAmmo` (ammo kind, light/standard/heavy defence,
+which ammo fits which bow or crossbow), `StandardSpells`, and `WeaponRanker`, which holds the rest of the gear simple:
+the best owned piece per slot for the style by `GearClassifier.power`, plus a slayer helmet / black mask or salve when
+that does more (they don't stack; salve wins when it applies). Assumptions are in `GearUp.ASSUMPTIONS`. `BankGear`
+remembers the bank's wearable item ids per account (config group `combatgearorganizerbank`, key `items`, written to
+the profile it was read for, placeholders left out) and adds inventory and worn; `SlayerHelper.updateGear` turns the
+ids into `GearPiece`s on the client thread and hands an `OwnedGear` to the panel, which ranks on the EDT and caches the
+rows per monster. Monster defence stats come from `tools/fetch_wiki_monsters.py --combat` (key `combat` in
+`wiki_monsters.json`) and are bundled per variant as `combat` (most common version; zeros left out) with
+`attributes`. Not yet seen in a logged-in client.
+
 Still open from the review: boss/Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping; By set covers armour only), and the scope doc's wrong required items.
 
@@ -166,10 +181,13 @@ src/main/java/com/combatgearorganizer/
   CombatTabPanel.java              Swing: Combat tab section (tag, layout, Organize now, checklist)
   CombatTabStatus.java, SetupChecklist.java, OrganizeSummary.java  its pure logic
   ItemValues.java, ItemValueMode.java  the one place to ask what an item is worth (GE or high alch setting)
+  EquipmentBonuses.java            RuneLite item stats -> Bonuses
+  dps/                             pure DPS maths: CombatMath, WeaponRules, RangedAmmo, StandardSpells, WeaponRanker
   slayer/
     SlayerHelper.java              reads the task each game tick, drives the panel, routes via Shortest Path
     ItemNameResolver.java          drop name -> item id, by walking item definitions a batch per tick
     DropItems.java, DropSlot.java  drop ids/values handed to the panel; one item picture with its log status
+    BankGear.java, GearUp.java     remembered bank gear per account; the "Best with what you have" rows
     SlayerPanel.java               Swing: the Slayer section of the side panel
     LocationPicker.java            which locations to show (Konar area, Krystilia Wilderness list, Wilderness toggle)
     ShortestPathBridge.java        PluginMessage("shortestpath", "path"/"clear") wrapper

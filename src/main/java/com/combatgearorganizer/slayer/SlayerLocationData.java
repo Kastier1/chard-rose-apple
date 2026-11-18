@@ -59,11 +59,40 @@ public class SlayerLocationData
 		private List<String> alwaysDrops = Collections.emptyList();
 		/** Prayer and storage items worth bringing for it (bonecrusher, herb sack...). */
 		private List<Carry> carry = Collections.emptyList();
+		/** Its defence stats, for the gear-up DPS maths. Null when the wiki has none. */
+		private Combat combat;
+		/** Wiki monster attributes, lower case: "demon", "dragon", "undead", "kalphite", "leafy", "vampyre1"... */
+		private List<String> attributes = Collections.emptyList();
 
 		public boolean isRegular()
 		{
 			return !superior && !boss;
 		}
+	}
+
+	/**
+	 * A monster's defensive stats from the wiki's monster infobox (its most common version). Values left out of the
+	 * file are 0.
+	 */
+	@Data
+	public static class Combat
+	{
+		/** Defence level. */
+		private int defence;
+		/** Magic level, which magic attacks roll against. */
+		private int magic;
+		/** Magic attack bonus; the Twisted bow scales with this or the Magic level, whichever is higher. */
+		private int magicAttack;
+		private int stab;
+		private int slash;
+		private int crush;
+		private int magicDefence;
+		/** Ranged defence against light (thrown, darts), standard (arrows) and heavy (bolts, javelins) ammo. */
+		private int light;
+		private int standard;
+		private int heavy;
+		/** Tiles per side; 0 in the file means 1. */
+		private int size;
 	}
 
 	@Data

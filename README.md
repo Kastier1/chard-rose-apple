@@ -165,6 +165,32 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
 
   Hover an item to see why, for example "Herb sack: Grimy herbs drop about 1 in 4 kills". The rules follow the
   OSRS Wiki, and the rates come from the bundled drop tables.
+- **Best with what you have** names your best weapon per style (melee, ranged, magic) for the selected monster,
+  with its expected damage per second and why, for example `Arclight 12.2 DPS (demonbane)` and under it
+  `then Dual macuahuitl 10.4`. Hover a line for the max hit, hit chance, attack speed, ammo or spell, the slayer
+  helmet or salve it assumes you wear, the next three weapons and the assumptions.
+  - It uses the items in your bank from the last time you opened it (remembered per account, across relogs), plus
+    your inventory and what you wear. Until you open your bank once it says "Open your bank once so the plugin can
+    see your gear."
+  - The maths is the OSRS Wiki's: max hit and accuracy against the monster's defence level and defence bonus for the
+    attack type, its Magic level and magic defence for spells, and light, standard or heavy ranged defence for the
+    ammo. Weapon speed comes from the item stats.
+  - Fixed assumptions: your real levels with a super combat potion, ranging potion or magic potion, and Piety,
+    Rigour or Augury; your other gear is your best piece per slot for that style (the same ranking as the bank
+    tab); you're on task. Melee uses accurate or aggressive, whichever does more; ranged uses rapid; powered staves
+    cast their own spell on accurate; other staves cast the best standard elemental spell (strike to surge) your
+    Magic level allows, or Magic Dart from a staff that casts it. No special attacks, set effects, void, bolt
+    effects or ancient spells.
+  - Monster bonuses: demonbane (Arclight and Emberlight +70%, Darklight +60%, Silverlight +60% damage, scorching
+    bow +30%), dragonbane (dragon hunter lance +20%, crossbow +30% accuracy and +25% damage, wand +75% and +40%),
+    the keris against kalphites, the leaf-bladed battleaxe against turoth and kurask, silver and blisterwood or
+    Ivandis weapons against vampyres, Twisted bow scaling, Tumeken's shadow, the scythe's extra hits on big
+    monsters, the dual macuahuitl's split hit and Osmumten's fang's double accuracy roll, and the spell's elemental
+    weakness. A slayer helmet or black mask and a salve amulet don't stack: the salve's bonus replaces the
+    helmet's, so the plugin wears whichever does more.
+  - Weapons that can't hurt the monster are left out: only leaf-bladed weapons, broad arrows and bolts and Magic
+    Dart for turoth and kurask; only silver weapons or silver bolts for tier 2 vampyres; only blisterwood and
+    Ivandis weapons for tier 3. If none of yours of a style can, the line says what can.
 - **Task progress** shows under the kill count: kills per hour, about how long is left, slayer XP gained, superiors
   seen and the value of what task monsters dropped. Kills are counted from the task count going down, so any way of
   killing counts. Only time while logged in counts, and a gap of 5 minutes or more without a kill is left out of

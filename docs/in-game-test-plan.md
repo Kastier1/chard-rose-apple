@@ -88,6 +88,21 @@ Have a task, and open the **Slayer** tab.
     drakes have no *Dragonfire*.
   - [ ] Skeletal or Fossil Island wyvern task: *Icy breath* shows instead, with the ancient wyvern shield picture.
     An anti-dragon shield or antifire doesn't tick it; an elemental, mind, dragonfire or ancient wyvern shield does.
+- [ ] **Best with what you have** (under *Carry*):
+  - [ ] Before opening your bank on this account: it says "Open your bank once so the plugin can see your gear."
+  - [ ] Open your bank, close it: one line per style you have a weapon for, best first, with DPS. Hover: max hit,
+    hit chance, speed, ammo or spell, the next weapons, the assumptions.
+  - [ ] Relog (or restart the client) without opening the bank: the lines are still there. Switch to another account:
+    it asks you to open the bank again.
+  - [ ] Greater demons with Arclight (or Emberlight) and a dual macuahuitl in the bank: the sword is first, marked
+    *demonbane*.
+  - [ ] A dragon task with a dragon hunter lance or crossbow: it's first in its style, marked *dragonbane*.
+  - [ ] An undead task with a salve amulet (ei) and a slayer helmet (i): the tooltip names one of them, never both.
+  - [ ] Kurask or turoth: only leaf-bladed weapons, broad ammo and Magic Dart staves are listed; with none it says
+    what hurts them.
+  - [ ] Put a weapon from the bank into your inventory and back: the lines don't change (it counts either way).
+  - [ ] Compare one line with the wiki's DPS calculator (dps.osrs.wiki) using the gear the tooltip assumes: about
+    the same number.
 - [ ] **Task progress** after 5+ kills: kills/hour and time left look plausible, slayer XP matches the XP drops,
   loot value roughly matches what dropped.
   - [ ] Log out and back in mid-task: progress is still there.

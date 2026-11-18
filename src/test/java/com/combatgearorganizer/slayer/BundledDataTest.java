@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import com.combatgearorganizer.CombatTabPanel;
 import com.combatgearorganizer.ItemValueMode;
 import com.combatgearorganizer.OrganizerPanel;
+import com.combatgearorganizer.dps.OwnedGear;
+import com.combatgearorganizer.dps.WikiGear;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -292,6 +294,87 @@ public class BundledDataTest
 			.view(50, ItemValueMode.HIGH_ALCHEMY));
 	}
 
+	/** Every weapon and piece of armour the tests have wiki stats for. */
+	private static final OwnedGear BIG_BANK = WikiGear.bank("Darklight", "Arclight", "Emberlight", "Dual macuahuitl",
+		"Abyssal whip", "Dragon hunter lance", "Dragon hunter crossbow", "Armadyl crossbow", "Twisted bow",
+		"Toxic blowpipe", "Trident of the Swamp", "Kodai wand", "Tumeken's shadow", "Sanguinesti staff", "Keris partisan",
+		"Leaf-bladed battleaxe", "Slayer's staff (e)", "Ghrazi rapier", "Osmumten's fang", "Scythe of Vitur",
+		"Blisterwood flail", "Ivandis flail", "Dragon hunter wand", "Scorching bow", "Dragon bolts",
+		"Ruby dragon bolts (e)", "Dragon arrow", "Broad bolts", "Amethyst broad bolts", "Silver bolts", "Rune arrow",
+		"Dragon dart", "Slayer helmet (i)", "Salve amulet(ei)", "Salve amulet", "Black mask", "Leaf-bladed sword",
+		"Rune crossbow", "Magic shortbow (i)");
+
+	@Test
+	public void panelDrawsBestGearForEveryMonster() throws Exception
+	{
+		drawEverything(CollectionLog.Snapshot.EMPTY, DropItems.EMPTY, null, BIG_BANK);
+		// Only the inventory: a bank never seen
+		drawEverything(CollectionLog.Snapshot.EMPTY, DropItems.EMPTY, null,
+			new OwnedGear(false, WikiGear.all("Abyssal whip"), BIG_BANK.getLevels()));
+		// A bank with no weapons in it
+		drawEverything(CollectionLog.Snapshot.EMPTY, DropItems.EMPTY, null, WikiGear.bank());
+	}
+
+	@Test
+	public void greaterDemonShowsTheBestWeaponPerStyle() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Greater demons");
+		assertNotNull(t);
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				DropItems.EMPTY);
+			panel.selectVariant("Greater demon");
+			assertTrue(containsText(panel, SlayerPanel.BEST_GEAR));
+			assertTrue(containsText(panel, GearUp.OPEN_BANK));
+
+			panel.setGear(WikiGear.bank("Darklight", "Arclight", "Dual macuahuitl", "Slayer helmet (i)"));
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				DropItems.EMPTY);
+			assertTrue(!containsText(panel, GearUp.OPEN_BANK));
+			assertTrue(containsText(panel, "Arclight "));
+			assertTrue(containsText(panel, " DPS (demonbane)"));
+			assertTrue(containsText(panel, "then "));
+
+			panel.setGear(WikiGear.bank());
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				DropItems.EMPTY);
+			assertTrue(containsText(panel, GearUp.NO_WEAPONS));
+
+			// Not in compact mode: the monster card isn't drawn there
+			panel.setCompact(true);
+			panel.setGear(WikiGear.bank("Arclight"));
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				DropItems.EMPTY);
+			assertTrue(!containsText(panel, SlayerPanel.BEST_GEAR));
+		});
+	}
+
+	@Test
+	public void kuraskSaysWhatHurtsIt() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Kurask");
+		assertNotNull(t);
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.setGear(WikiGear.bank("Abyssal whip", "Leaf-bladed sword"));
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				DropItems.EMPTY);
+			assertTrue(containsText(panel, "Leaf-bladed sword "));
+			assertTrue(!containsText(panel, "Abyssal whip "));
+			panel.setGear(WikiGear.bank("Abyssal whip"));
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				DropItems.EMPTY);
+			assertTrue(containsText(panel, "Only leaf-bladed weapons"));
+		});
+	}
+
 	/** A task tracked from 52 left: two kills a minute apart, XP, a superior and some loot. */
 	private static TaskProgress progress(boolean withExtras)
 	{
@@ -470,10 +553,17 @@ public class BundledDataTest
 
 	private void drawEverything(CollectionLog.Snapshot clog, DropItems items, TaskProgress.View progress) throws Exception
 	{
+		drawEverything(clog, items, progress, OwnedGear.NONE);
+	}
+
+	private void drawEverything(CollectionLog.Snapshot clog, DropItems items, TaskProgress.View progress, OwnedGear gear)
+		throws Exception
+	{
 		List<String> problems = Collections.synchronizedList(new ArrayList<>());
 		SwingUtilities.invokeAndWait(() ->
 		{
 			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.setGear(gear);
 			// With a route line, as after Go
 			panel.showRoute(Route.shortestPath("Catacombs of Kourend"));
 			for (SlayerLocationData.TaskEntry t : data.getTasks())

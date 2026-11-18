@@ -1,8 +1,13 @@
 package com.combatgearorganizer.slayer;
 
 import com.combatgearorganizer.CombatGearOrganizerConfig;
+import com.combatgearorganizer.EquipmentBonuses;
+import com.combatgearorganizer.GearSlot;
 import com.combatgearorganizer.ItemValueMode;
 import com.combatgearorganizer.ItemValues;
+import com.combatgearorganizer.dps.GearPiece;
+import com.combatgearorganizer.dps.Levels;
+import com.combatgearorganizer.dps.OwnedGear;
 import com.google.gson.Gson;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -16,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -51,7 +57,9 @@ import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.events.PluginMessage;
+import net.runelite.client.game.ItemEquipmentStats;
 import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.ItemStats;
 import net.runelite.client.game.ItemStack;
 import net.runelite.client.plugins.slayer.SlayerPluginService;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPoint;
@@ -122,6 +130,9 @@ public class SlayerHelper
 	@Inject
 	private ConfigManager configManager;
 
+	@Inject
+	private BankGear bankGear;
+
 	private SlayerLocationData data;
 	private volatile SlayerPanel panel;
 	private BufferedImage markerImage;
@@ -154,6 +165,12 @@ public class SlayerHelper
 	private List<WorldPoint> mapTargets = Collections.emptyList();
 	/** Redraw the whole panel on the next refresh, e.g. after it showed the logged-out text. */
 	private boolean needsRedraw;
+	/** The gear and levels the panel's "Best with what you have" rows were last worked out from. Client thread. */
+	private OwnedGear ownedGear = OwnedGear.NONE;
+	private int lastGearVersion = -1;
+	private Levels lastLevels;
+	/** Item id to what the DPS maths needs about it; empty optional for items that can't be worn. Client thread. */
+	private final Map<Integer, Optional<GearPiece>> pieces = new HashMap<>();
 
 	public void start()
 	{
@@ -187,13 +204,19 @@ public class SlayerHelper
 			lastSlayerXp = client.getGameState() == GameState.LOGGED_IN ? client.getSkillExperience(Skill.SLAYER) : -1;
 			lastCarried = null;
 			updateCarried();
+			lastGearVersion = -1;
+			ownedGear = OwnedGear.NONE;
 			refresh(true);
 		});
 	}
 
-	/** Call when the inventory or worn equipment changes, on the client thread. */
+	/** Call when the bank, inventory or worn equipment changes, on the client thread. */
 	public void onItemContainerChanged(ItemContainerChanged event)
 	{
+		if (event.getContainerId() == InventoryID.BANK && event.getItemContainer() != null)
+		{
+			bankGear.onBank(event.getItemContainer().getItems());
+		}
 		if (event.getContainerId() == InventoryID.INV || event.getContainerId() == InventoryID.WORN)
 		{
 			updateCarried();
@@ -209,17 +232,20 @@ public class SlayerHelper
 			return;
 		}
 		List<Integer> ids = new ArrayList<>();
+		List<Item[]> containers = new ArrayList<>();
 		for (int container : new int[]{InventoryID.INV, InventoryID.WORN})
 		{
 			ItemContainer items = client.getItemContainer(container);
 			if (items != null)
 			{
+				containers.add(items.getItems());
 				for (Item item : items.getItems())
 				{
 					ids.add(item.getId());
 				}
 			}
 		}
+		bankGear.onCarried(containers);
 		Set<CarryItem> now = CarryItem.carried(ids);
 		if (!now.equals(lastCarried))
 		{
@@ -236,6 +262,7 @@ public class SlayerHelper
 			shortestPath.release();
 			removeMapMarkers();
 			collectionLog.flush();
+			bankGear.flush();
 			saveProgress();
 		});
 		panel = null;
@@ -252,6 +279,7 @@ public class SlayerHelper
 	public void onGameTick()
 	{
 		collectionLog.onGameTick();
+		bankGear.onGameTick();
 		scanItemNames();
 		Player player = client.getLocalPlayer();
 		WorldPoint at = player != null ? player.getWorldLocation() : null;
@@ -370,6 +398,10 @@ public class SlayerHelper
 			case CONNECTION_LOST:
 				saveProgress();
 				progress.onLogout();
+				if (event.getGameState() == GameState.LOGIN_SCREEN)
+				{
+					bankGear.onLogout();
+				}
 				lastSlayerXp = -1;
 				if (event.getGameState() == GameState.LOGIN_SCREEN)
 				{
@@ -418,7 +450,9 @@ public class SlayerHelper
 		collectionLog.ensureLoaded();
 		int clogVersion = collectionLog.getVersion();
 		boolean namesDone = itemNames.isDone();
-		force |= needsRedraw;
+		// A new bank list, gear put on or taken off, or a level gained changes the "Best with what you have" rows
+		boolean gearChanged = updateGear();
+		force |= needsRedraw || gearChanged;
 		needsRedraw = false;
 		if (!force && state.equals(lastState) && spAvailable == lastShortestPathAvailable && clogVersion == lastClogVersion
 			&& namesDone == lastItemNamesDone && progressVersion == lastProgressVersion && valueMode == lastValueMode)
@@ -477,9 +511,11 @@ public class SlayerHelper
 		DropItems items = dropItems(variants);
 		TaskProgress.View view = tp != null && !tp.isDone() ? tp.view(state.getRemaining(), valueMode) : null;
 		boolean compact = config.compactPanel();
+		final OwnedGear gear = ownedGear;
 		SwingUtilities.invokeLater(() ->
 		{
 			p.setCompact(compact);
+			p.setGear(gear);
 			p.setPreview(shownPreview != null, this::stopPreview);
 			p.showTask(state, info, variants, locations, task != null, spAvailable, clog, items, view);
 		});
@@ -754,6 +790,53 @@ public class SlayerHelper
 		else
 		{
 			configManager.setRSProfileConfiguration(PROGRESS_GROUP, PROGRESS_KEY, gson.toJson(p));
+		}
+	}
+
+	/**
+	 * Works out the player's wearable items and real levels again when either changed since the last time. Client
+	 * thread. Returns whether they changed.
+	 */
+	private boolean updateGear()
+	{
+		bankGear.ensureLoaded();
+		Levels levels = Levels.of(client.getRealSkillLevel(Skill.ATTACK), client.getRealSkillLevel(Skill.STRENGTH),
+			client.getRealSkillLevel(Skill.RANGED), client.getRealSkillLevel(Skill.MAGIC));
+		int version = bankGear.getVersion();
+		if (version == lastGearVersion && levels.equals(lastLevels))
+		{
+			return false;
+		}
+		lastGearVersion = version;
+		lastLevels = levels;
+		List<GearPiece> owned = new ArrayList<>();
+		for (int id : bankGear.owned())
+		{
+			pieces.computeIfAbsent(id, this::gearPiece).ifPresent(owned::add);
+		}
+		ownedGear = new OwnedGear(bankGear.isBankSeen(), Collections.unmodifiableList(owned), levels);
+		return true;
+	}
+
+	/** What the DPS maths needs about an item; empty if it can't be worn. Client thread. */
+	private Optional<GearPiece> gearPiece(int itemId)
+	{
+		try
+		{
+			ItemStats stats = itemManager.getItemStats(itemId);
+			if (stats == null || !stats.isEquipable() || stats.getEquipment() == null)
+			{
+				return Optional.empty();
+			}
+			ItemEquipmentStats e = stats.getEquipment();
+			String name = itemManager.getItemComposition(itemId).getName();
+			return Optional.of(new GearPiece(itemId, name, GearSlot.fromEquipmentIndex(e.getSlot()),
+				e.isTwoHanded(), EquipmentBonuses.of(e)));
+		}
+		catch (RuntimeException e)
+		{
+			log.debug("Couldn't read item {}", itemId, e);
+			return Optional.empty();
 		}
 	}
 

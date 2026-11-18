@@ -8,7 +8,8 @@ See NOTICE.md.
 Also reads slayer_tasks.json and slayer_tasks_supplement.json from the same folder, when present, for each
 task's weakness, attack style, prayer, required items and notable drops (same sources and licence).
 
-Monster variants (level, hitpoints, slayer XP, attack styles, weakness, which places they spawn at) come from
+Monster variants (level, hitpoints, slayer XP, attack styles, weakness, which places they spawn at, and the defence
+stats and attributes the gear-up DPS maths needs) come from
 tools/data/wiki_monsters.json, made by tools/fetch_wiki_monsters.py from the OSRS Wiki (CC BY-NC-SA 3.0).
 A monster whose spawns are near none of a task's places gets a place of its own made from those spawns
 (source "wiki"), named from the wiki's location for them.
@@ -533,6 +534,12 @@ def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joi
             variant["drops"] = rare
         if always:
             variant["alwaysDrops"] = always
+        combat = combat_of(versions, wiki)
+        if combat:
+            variant["combat"] = combat
+        attributes = sorted({a for p in pages for a in wiki.get("attributes", {}).get(p, [])})
+        if attributes:
+            variant["attributes"] = attributes
         if weak:
             (element, percent), _ = weak.most_common(1)[0]
             # The wiki says "None" for monsters with no elemental weakness; only real elements are shown
@@ -541,6 +548,38 @@ def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joi
         out.append(variant)
     out.sort(key=lambda v: (v["superior"], v["boss"], v["level"][0] if v["level"] else 0, v["name"]))
     return out
+
+
+# Wiki infobox_monster field -> bundled name, for the gear-up DPS maths (SlayerLocationData.Combat)
+COMBAT_KEYS = [("defence_level", "defence"), ("magic_level", "magic"), ("magic_attack_bonus", "magicAttack"),
+               ("stab_defence_bonus", "stab"), ("slash_defence_bonus", "slash"), ("crush_defence_bonus", "crush"),
+               ("magic_defence_bonus", "magicDefence"), ("light_range_defence_bonus", "light"),
+               ("standard_range_defence_bonus", "standard"), ("heavy_range_defence_bonus", "heavy"), ("size", "size")]
+
+
+def combat_of(versions, wiki):
+    """The defence stats of a monster's most common version (the first such version on a tie), or None.
+
+    A version's stats are the combat row with its page, version name, combat level and hitpoints (some pages repeat a
+    version name). Zeros are left out to keep the file small; the plugin reads a missing value as 0 (size as 1).
+    """
+    index = wiki.get("_combat_index")
+    if index is None:
+        index = {}
+        for r in wiki.get("combat", []):
+            key = (r["page_name"], r.get("version_anchor", ""), r.get("combat_level"), r.get("hitpoints"))
+            index.setdefault(key, []).append(r)
+        wiki["_combat_index"] = index
+    seen = Counter()
+    for v in versions:
+        key = (v["page_name"], v.get("version_anchor", ""), v.get("combat_level"), v.get("hitpoints"))
+        for row in index.get(key, []):
+            if "defence_level" in row:
+                seen[tuple(row.get(field) or 0 for field, _ in COMBAT_KEYS)] += 1
+    if not seen:
+        return None
+    values, _ = seen.most_common(1)[0]
+    return {name: value for (_, name), value in zip(COMBAT_KEYS, values) if value}
 
 
 # Elements the panel knows (TaskTags.Element)

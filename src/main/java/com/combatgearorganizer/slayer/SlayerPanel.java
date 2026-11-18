@@ -2,6 +2,7 @@ package com.combatgearorganizer.slayer;
 
 import com.combatgearorganizer.ItemValueMode;
 import com.combatgearorganizer.ItemValues;
+import com.combatgearorganizer.dps.OwnedGear;
 import com.combatgearorganizer.slayer.SlayerLocationData.Variant;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -19,8 +20,10 @@ import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -73,6 +76,7 @@ public class SlayerPanel extends JPanel
 	static final String NO_WILDERNESS_PLACES = "No Wilderness places for this task in the data yet.";
 	static final String ALL_IN_WILDERNESS = "Every place for this task is in the Wilderness; turn on \"Show Wilderness locations\" to see them.";
 	static final String LAST_TIME = "Last time";
+	static final String BEST_GEAR = "Best with what you have";
 
 	private final Consumer<LocationOption> onGo;
 	private final Consumer<List<LocationOption>> onGoNearest;
@@ -99,6 +103,10 @@ public class SlayerPanel extends JPanel
 	private boolean compact;
 	private boolean previewing;
 	private Runnable onStopPreview;
+	/** The player's wearable items and levels, for the "Best with what you have" rows. */
+	private OwnedGear gear = OwnedGear.NONE;
+	/** The rows worked out for {@link #gear}, per monster, so redraws (a drawer opened, a kill) don't redo them. */
+	private final Map<Variant, List<GearUp.Row>> gearRows = new IdentityHashMap<>();
 	/** Carry items the player has with them, for the ticks in the Carry row. */
 	private Set<CarryItem> carried = EnumSet.noneOf(CarryItem.class);
 	private Route route = Route.NONE;
@@ -182,6 +190,17 @@ public class SlayerPanel extends JPanel
 	PanelMemory getMemory()
 	{
 		return memory;
+	}
+
+	/** The player's gear for the "Best with what you have" rows. Takes effect on the next {@link #showTask}. */
+	public void setGear(OwnedGear gear)
+	{
+		OwnedGear next = gear != null ? gear : OwnedGear.NONE;
+		if (next != this.gear)
+		{
+			gearRows.clear();
+		}
+		this.gear = next;
 	}
 
 	/** Takes effect on the next {@link #showTask}. */
@@ -647,6 +666,7 @@ public class SlayerPanel extends JPanel
 
 		addDrops(card, selected);
 		addCarry(card, selected, locations);
+		addBestGear(card, selected);
 
 		List<String> found = Variants.foundAt(selected, locations);
 		boolean placed = Variants.isAtAny(selected, locations);
@@ -686,6 +706,49 @@ public class SlayerPanel extends JPanel
 		card.add(factRow("Carry", textChip(missing == 0 ? "All with you" : missing + " worth bringing",
 			missing == 0 ? RECOMMENDED_COLOR : ColorScheme.LIGHT_GRAY_COLOR)));
 		card.add(dropGrid(slots));
+	}
+
+	/**
+	 * "Best with what you have": the player's best weapon per style for the selected monster, by expected DPS, with the
+	 * runner-ups and the assumptions in the tooltip. Left out when the data has no defence stats for the monster.
+	 */
+	private void addBestGear(JPanel card, Variant selected)
+	{
+		if (selected.getCombat() == null)
+		{
+			return;
+		}
+		JLabel heading = new JLabel(BEST_GEAR);
+		heading.setFont(FontManager.getRunescapeSmallFont());
+		heading.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		heading.setAlignmentX(LEFT_ALIGNMENT);
+		heading.setBorder(new EmptyBorder(4, 0, 1, 0));
+		heading.setToolTipText(GearUp.ASSUMPTIONS);
+		card.add(heading);
+		if (!gear.isBankSeen())
+		{
+			card.add(factRow("", textChip(escape(GearUp.OPEN_BANK), ColorScheme.MEDIUM_GRAY_COLOR)));
+			return;
+		}
+		List<GearUp.Row> rows = gearRows.computeIfAbsent(selected, v -> GearUp.rows(gear, v));
+		if (rows.isEmpty())
+		{
+			card.add(factRow("", textChip(escape(GearUp.NO_WEAPONS), ColorScheme.MEDIUM_GRAY_COLOR)));
+			return;
+		}
+		for (GearUp.Row row : rows)
+		{
+			String html = row.isUsable() ? "<font color='#ffffff'>" + escape(row.getText()) + "</font>"
+				: escape(row.getText());
+			if (row.getNext() != null)
+			{
+				html += "<br><font color='#a0a0a0'>" + escape(row.getNext()) + "</font>";
+			}
+			JLabel text = textChip(html, row.isUsable() ? Color.WHITE : ColorScheme.MEDIUM_GRAY_COLOR);
+			String tip = "<html>" + escape(row.getTooltip()).replace("\n", "<br>") + "</html>";
+			text.setToolTipText(tip);
+			card.add(factRow(row.getStyle().getDisplayName(), text));
+		}
 	}
 
 	/** The carry items the player has in their inventory or worn. Redraws the monster card when that changes. */

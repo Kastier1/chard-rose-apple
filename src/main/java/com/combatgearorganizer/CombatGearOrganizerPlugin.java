@@ -826,23 +826,7 @@ public class CombatGearOrganizerPlugin extends Plugin
 		}
 
 		final ItemEquipmentStats e = stats.getEquipment();
-		final Bonuses bonuses = Bonuses.builder()
-			.stab(e.getAstab())
-			.slash(e.getAslash())
-			.crush(e.getAcrush())
-			.magic(e.getAmagic())
-			.range(e.getArange())
-			.defStab(e.getDstab())
-			.defSlash(e.getDslash())
-			.defCrush(e.getDcrush())
-			.defMagic(e.getDmagic())
-			.defRange(e.getDrange())
-			.strength(e.getStr())
-			.rangedStrength(e.getRstr())
-			.magicDamage(e.getMdmg())
-			.prayer(e.getPrayer())
-			.attackSpeed(e.getAspeed())
-			.build();
+		final Bonuses bonuses = EquipmentBonuses.of(e);
 
 		final GearSlot slot = GearSlot.fromEquipmentIndex(e.getSlot());
 		final GearStyle style = GearClassifier.classify(name, slot, bonuses);
