@@ -771,7 +771,11 @@ public class CombatGearOrganizerPlugin extends Plugin
 			}
 			for (Item item : container.getItems())
 			{
-				if (item.getId() > 0)
+				// A bank placeholder (quantity 0) is an item the player used to have, not one they own. Counting it
+				// laid out the old version next to the one they have (found testing: a placeholder of Iban's staff
+				// next to the worn Iban's staff (u)). Tagged items kept only as placeholders still get a slot when
+				// no other version is owned.
+				if (item.getId() > 0 && item.getQuantity() > 0)
 				{
 					ids.add(item.getId());
 				}

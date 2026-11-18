@@ -84,6 +84,18 @@ public class TagItemResolverTest
 	}
 
 	@Test
+	public void onlyAPlaceholderOfAnotherVersionGivesNoExtraSlot()
+	{
+		// Found testing in game: the bank kept a placeholder of the old version after it was upgraded. The plugin no
+		// longer passes placeholders as owned, so only the worn version is laid out
+		List<Integer> ids = resolve(Collections.singletonList(-GLORY), null, Collections.singletonList(GLORY_4));
+		assertEquals(Collections.singletonList(GLORY_4), ids);
+		// Nothing owned at all: the old layout entry (or the fallback) still holds the slot
+		ids = resolve(Collections.singletonList(-GLORY), new int[]{GLORY_1}, Collections.emptyList());
+		assertEquals(Collections.singletonList(GLORY_1), ids);
+	}
+
+	@Test
 	public void plainTagOfAnOwnedVersionStaysNextToTheOthers()
 	{
 		// Two real items: both shown
