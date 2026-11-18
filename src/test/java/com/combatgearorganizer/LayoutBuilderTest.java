@@ -6,9 +6,11 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import org.junit.Test;
 
 public class LayoutBuilderTest
@@ -374,104 +376,172 @@ public class LayoutBuilderTest
 		assertEquals(0, LayoutBuilder.build(new ArrayList<>(), Grouping.BY_SET, true).length);
 	}
 
+	@Test
+	public void bySetDoesNotDependOnTheTabOrder()
+	{
+		List<GearItem> items = new ArrayList<>(threeSets);
+		items.add(gear(61, "Helm of neitiznot", GearSlot.HEAD, GearStyle.MELEE, 6));
+		items.add(gear(62, "Verac's helm", GearSlot.HEAD, GearStyle.MELEE, 6));
+		items.add(gear(91, "Abyssal whip", GearSlot.WEAPON, GearStyle.MELEE, 80));
+		int[] expected = LayoutBuilder.build(items, Grouping.BY_SET, true);
+		for (long seed = 0; seed < 20; seed++)
+		{
+			List<GearItem> shuffled = new ArrayList<>(items);
+			Collections.shuffle(shuffled, new Random(seed));
+			assertArrayEquals(expected, LayoutBuilder.build(shuffled, Grouping.BY_SET, true));
+		}
+	}
+
+	@Test
+	public void bySetStyleTieGoesToTheStyleListedFirst()
+	{
+		// One melee and one magic piece: a melee set, so before the ranged set however weak it is
+		List<GearItem> items = Arrays.asList(
+			gear(1, "Infinity hat", GearSlot.HEAD, GearStyle.MAGIC, 1),
+			gear(2, "Infinity top", GearSlot.BODY, GearStyle.MELEE, 1),
+			gear(21, "Karil's coif", GearSlot.HEAD, GearStyle.RANGED, 50),
+			gear(22, "Karil's leathertop", GearSlot.BODY, GearStyle.RANGED, 50)
+		);
+		int[] layout = LayoutBuilder.build(items, Grouping.BY_SET, false);
+		assertLinedUp(layout, 1, 2);
+		assertEquals(0, column(layout, 1));
+		assertEquals(1, column(layout, 21));
+	}
+
+	@Test
+	public void bySetUtilitySetsComeAfterMagic()
+	{
+		// The classifier puts void in utility, so a void set goes after the magic sets
+		List<GearItem> items = new ArrayList<>(threeSets);
+		items.add(gear(1, "Void ranger helm", GearSlot.HEAD, GearStyle.UTILITY, 900));
+		items.add(gear(2, "Elite void top", GearSlot.BODY, GearStyle.UTILITY, 900));
+		int[] layout = LayoutBuilder.build(items, Grouping.BY_SET, false);
+		assertLinedUp(layout, 1, 2);
+		assertEquals(3, column(layout, 1));
+		assertEquals(2, column(layout, 31));
+	}
+
+	@Test
+	public void bySetExactlyEightSetsFillOneBlock()
+	{
+		int[] layout = LayoutBuilder.build(manySets(8), Grouping.BY_SET, true);
+		// Two full rows, no second block and nothing after it
+		assertEquals(16, layout.length);
+		assertTrue(Arrays.stream(layout).noneMatch(i -> i == -1));
+
+		// One odd helm more starts the next block, after a blank row, with only a head row
+		List<GearItem> items = manySets(8);
+		items.add(gear(1, "Helm of neitiznot", GearSlot.HEAD, GearStyle.MELEE, 1));
+		int[] wrapped = LayoutBuilder.build(items, Grouping.BY_SET, true);
+		assertEquals(25, wrapped.length);
+		assertEquals(1, wrapped[24]);
+		for (int i = 16; i < 24; i++)
+		{
+			assertEquals(-1, wrapped[i]);
+		}
+	}
+
 	/**
-	 * The player's own combat tab (issue #31): Bandos, Dharok's, Karil's, black d'hide, Ahrim's and Mystic each line
-	 * up in one column; the odd helms and bodies go to the right. Styles are what the classifier gives; powers are
-	 * rough but in the right order.
+	 * The player's own combat tab (issue #31), with each item's bonuses from the OSRS Wiki run through the real
+	 * classifier: Bandos, Dharok's, Karil's, black d'hide, Ahrim's and Mystic each line up in one column, and the odd
+	 * armour goes to the right in its row.
 	 */
 	@Test
 	public void bySetRealTab()
 	{
-		List<GearItem> items = new ArrayList<>();
-		int id = 1;
+		// name, slot, stab, slash, crush, magic, range attack; stab, slash, crush, magic, range defence;
+		// strength, ranged strength, magic damage %, prayer, attack speed
 		Object[][] tab = {
 			// melee
-			{"Dual macuahuitl", GearSlot.WEAPON, GearStyle.MELEE, 250},
-			{"Abyssal whip", GearSlot.WEAPON, GearStyle.MELEE, 230},
-			{"Dragon longsword", GearSlot.WEAPON, GearStyle.MELEE, 200},
-			{"Dragon battleaxe", GearSlot.WEAPON, GearStyle.MELEE, 190},
-			{"Dragon dagger(p)", GearSlot.WEAPON, GearStyle.MELEE, 120},
-			{"Dragon defender", GearSlot.SHIELD, GearStyle.MELEE, 40},
-			{"Helm of neitiznot", GearSlot.HEAD, GearStyle.MELEE, 6},
-			{"Dharok's helm", GearSlot.HEAD, GearStyle.MELEE, 0},
-			{"Verac's helm", GearSlot.HEAD, GearStyle.MELEE, 0},
-			{"Bandos chestplate", GearSlot.BODY, GearStyle.MELEE, 8},
-			{"Fighter torso", GearSlot.BODY, GearStyle.MELEE, 8},
-			{"Dharok's platebody", GearSlot.BODY, GearStyle.MELEE, 0},
-			{"Proselyte hauberk", GearSlot.BODY, GearStyle.MELEE, 0},
-			{"Bandos tassets", GearSlot.LEGS, GearStyle.MELEE, 4},
-			{"Dharok's platelegs", GearSlot.LEGS, GearStyle.MELEE, 0},
-			{"Barrows gloves", GearSlot.HANDS, GearStyle.MELEE, 36},
-			{"Dragon boots", GearSlot.FEET, GearStyle.MELEE, 8},
-			{"Fire cape", GearSlot.CAPE, GearStyle.MELEE, 30},
-			{"Amulet of fury", GearSlot.NECK, GearStyle.MELEE, 36},
-			{"Berserker ring", GearSlot.RING, GearStyle.MELEE, 8},
+			{"Dual macuahuitl", GearSlot.WEAPON, 115, -4, 121, -4, 0, 0, 0, 0, 0, 0, 81, 0, 0, 0, 4},
+			{"Abyssal whip", GearSlot.WEAPON, 0, 82, 0, 0, 0, 0, 0, 0, 0, 0, 82, 0, 0, 0, 4},
+			{"Dragon longsword", GearSlot.WEAPON, 58, 69, -2, 0, 0, 0, 3, 2, 0, 0, 71, 0, 0, 0, 5},
+			{"Dragon battleaxe", GearSlot.WEAPON, -2, 70, 65, 0, 0, 0, 0, 0, 0, -1, 85, 0, 0, 0, 6},
+			{"Dragon dagger(p)", GearSlot.WEAPON, 40, 25, -4, 1, 0, 0, 0, 0, 1, 0, 40, 0, 0, 0, 4},
+			{"Dragon defender", GearSlot.SHIELD, 25, 24, 23, -3, -2, 25, 24, 23, -3, -2, 6, 0, 0, 0, 0},
+			{"Helm of neitiznot", GearSlot.HEAD, 0, 0, 0, 0, 0, 31, 29, 34, 3, 30, 3, 0, 0, 3, 0},
+			{"Dharok's helm", GearSlot.HEAD, 0, 0, 0, -3, -1, 45, 48, 44, -1, 51, 0, 0, 0, 0, 0},
+			{"Verac's helm", GearSlot.HEAD, 0, 0, 0, -6, -2, 55, 58, 54, 0, 56, 0, 0, 0, 3, 0},
+			{"Bandos chestplate", GearSlot.BODY, 0, 0, 0, -15, -10, 98, 93, 105, -6, 133, 4, 0, 0, 1, 0},
+			{"Fighter torso", GearSlot.BODY, 0, 0, 0, -40, 0, 62, 85, 62, -10, 67, 4, 0, 0, 0, 0},
+			{"Dharok's platebody", GearSlot.BODY, 0, 0, 0, -30, -10, 122, 120, 107, -6, 132, 0, 0, 0, 0, 0},
+			{"Proselyte hauberk", GearSlot.BODY, 0, 0, 0, -30, -15, 65, 63, 55, -6, 63, 0, 0, 0, 8, 0},
+			{"Bandos tassets", GearSlot.LEGS, 0, 0, 0, -21, -7, 71, 63, 66, -4, 93, 2, 0, 0, 1, 0},
+			{"Dharok's platelegs", GearSlot.LEGS, 0, 0, 0, -21, -11, 85, 82, 83, -4, 92, 0, 0, 0, 0, 0},
+			{"Barrows gloves", GearSlot.HANDS, 12, 12, 12, 6, 12, 12, 12, 12, 6, 12, 12, 0, 0, 0, 0},
+			{"Dragon boots", GearSlot.FEET, 0, 0, 0, -3, -1, 16, 17, 18, 0, 0, 4, 0, 0, 0, 0},
+			{"Fire cape", GearSlot.CAPE, 1, 1, 1, 1, 1, 11, 11, 11, 11, 11, 4, 0, 0, 2, 0},
+			{"Amulet of fury", GearSlot.NECK, 10, 10, 10, 10, 10, 15, 15, 15, 15, 15, 8, 0, 0, 5, 0},
+			{"Berserker ring", GearSlot.RING, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 4, 0, 0, 0, 0},
 			// ranged
-			{"Magic shortbow (i)", GearSlot.WEAPON, GearStyle.RANGED, 75},
-			{"Toxic blowpipe", GearSlot.WEAPON, GearStyle.RANGED, 100},
-			{"Armadyl crossbow", GearSlot.WEAPON, GearStyle.RANGED, 140},
-			{"Eclipse atlatl", GearSlot.WEAPON, GearStyle.RANGED, 90},
-			{"Karil's coif", GearSlot.HEAD, GearStyle.RANGED, 7},
-			{"Karil's leathertop", GearSlot.BODY, GearStyle.RANGED, 15},
-			{"Black d'hide body", GearSlot.BODY, GearStyle.RANGED, 30},
-			{"Black d'hide chaps", GearSlot.LEGS, GearStyle.RANGED, 17},
-			{"Karil's leatherskirt", GearSlot.LEGS, GearStyle.RANGED, 12},
-			{"Ava's assembler", GearSlot.CAPE, GearStyle.RANGED, 10},
+			{"Magic shortbow (i)", GearSlot.WEAPON, 0, 0, 0, 0, 75, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4},
+			{"Toxic blowpipe", GearSlot.WEAPON, 0, 0, 0, 0, 30, 0, 0, 0, 0, 0, 0, 20, 0, 0, 3},
+			{"Armadyl crossbow", GearSlot.WEAPON, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0, 0, 0, 0, 1, 6},
+			{"Eclipse atlatl", GearSlot.WEAPON, 0, 0, 0, 0, 87, 0, 0, 0, 0, 0, 40, 0, 0, 0, 4},
+			{"Karil's coif", GearSlot.HEAD, 0, 0, 0, -1, 7, 6, 9, 12, 6, 10, 0, 0, 0, 0, 0},
+			{"Karil's leathertop", GearSlot.BODY, 0, 0, 0, -15, 30, 47, 42, 50, 65, 57, 0, 0, 0, 0, 0},
+			{"Black d'hide body", GearSlot.BODY, 0, 0, 0, -15, 30, 30, 38, 45, 45, 50, 0, 0, 0, 0, 0},
+			{"Black d'hide chaps", GearSlot.LEGS, 0, 0, 0, -10, 17, 18, 20, 26, 23, 26, 0, 0, 0, 0, 0},
+			{"Karil's leatherskirt", GearSlot.LEGS, 0, 0, 0, -10, 17, 26, 20, 28, 35, 33, 0, 0, 0, 0, 0},
+			{"Ava's assembler", GearSlot.CAPE, 0, 0, 0, 0, 8, 1, 1, 1, 8, 2, 0, 2, 0, 0, 0},
 			// magic
-			{"Kodai wand", GearSlot.WEAPON, GearStyle.MAGIC, 60},
-			{"Iban's staff (u)", GearSlot.WEAPON, GearStyle.MAGIC, 40},
-			{"Ahrim's hood", GearSlot.HEAD, GearStyle.MAGIC, 12},
-			{"Ahrim's robetop", GearSlot.BODY, GearStyle.MAGIC, 60},
-			{"Ahrim's robeskirt", GearSlot.LEGS, GearStyle.MAGIC, 44},
-			{"Mystic hat", GearSlot.HEAD, GearStyle.MAGIC, 8},
-			{"Mystic robe top", GearSlot.BODY, GearStyle.MAGIC, 40},
-			{"Mystic robe bottom", GearSlot.LEGS, GearStyle.MAGIC, 30},
-			{"Occult necklace", GearSlot.NECK, GearStyle.MAGIC, 120},
+			{"Kodai wand", GearSlot.WEAPON, 0, 0, 0, 28, 0, 0, 3, 3, 20, 0, 0, 0, 15, 0, 4},
+			{"Iban's staff (u)", GearSlot.WEAPON, 10, -1, 40, 10, 0, 2, 3, 1, 10, 0, 50, 0, 0, 0, 5},
+			{"Ahrim's hood", GearSlot.HEAD, 0, 0, 0, 6, -2, 15, 13, 16, 6, 0, 0, 0, 1, 0, 0},
+			{"Ahrim's robetop", GearSlot.BODY, 0, 0, 0, 30, -10, 52, 37, 63, 30, 0, 0, 0, 1, 0, 0},
+			{"Ahrim's robeskirt", GearSlot.LEGS, 0, 0, 0, 22, -7, 33, 30, 36, 22, 0, 0, 0, 1, 0, 0},
+			{"Mystic hat", GearSlot.HEAD, 0, 0, 0, 4, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0},
+			{"Mystic robe top", GearSlot.BODY, 0, 0, 0, 20, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0},
+			{"Mystic robe bottom", GearSlot.LEGS, 0, 0, 0, 15, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0},
+			{"Occult necklace", GearSlot.NECK, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 5, 2, 0},
 		};
+		List<GearItem> items = new ArrayList<>();
 		Map<String, Integer> ids = new HashMap<>();
+		int id = 1;
 		for (Object[] row : tab)
 		{
-			ids.put((String) row[0], id);
-			items.add(gear(id++, (String) row[0], (GearSlot) row[1], (GearStyle) row[2], (int) row[3]));
+			String name = (String) row[0];
+			GearSlot slot = (GearSlot) row[1];
+			Bonuses b = Bonuses.builder()
+				.stab((int) row[2]).slash((int) row[3]).crush((int) row[4]).magic((int) row[5]).range((int) row[6])
+				.defStab((int) row[7]).defSlash((int) row[8]).defCrush((int) row[9]).defMagic((int) row[10])
+				.defRange((int) row[11]).strength((int) row[12]).rangedStrength((int) row[13])
+				.magicDamage((int) row[14]).prayer((int) row[15]).attackSpeed((int) row[16])
+				.build();
+			GearStyle style = GearClassifier.classify(name, slot, b);
+			ids.put(name, id);
+			items.add(gear(id++, name, slot, style, GearClassifier.power(style, name, slot, b)));
 		}
 
 		int[] layout = LayoutBuilder.build(items, Grouping.BY_SET, true);
+		String grid = render(layout, items);
 		assertEquals(items.size(), positions(layout).size());
 
-		// Each set reads straight down one column, in this order: melee, ranged, magic, strongest first
-		String[][] sets = {
-			{"Bandos chestplate", "Bandos tassets"},
-			{"Dharok's helm", "Dharok's platebody", "Dharok's platelegs"},
-			{"Black d'hide body", "Black d'hide chaps"},
-			{"Karil's coif", "Karil's leathertop", "Karil's leatherskirt"},
-			{"Ahrim's hood", "Ahrim's robetop", "Ahrim's robeskirt"},
-			{"Mystic hat", "Mystic robe top", "Mystic robe bottom"},
+		// The armour block: each set straight down one column, melee, ranged, magic, strongest first (Karil's coif
+		// puts Karil's ahead of black d'hide); then the odd pieces in their rows
+		String[] armour = {
+			".|Dharok's helm|Karil's coif|.|Ahrim's hood|Mystic hat|Helm of neitiznot|Verac's helm",
+			"Bandos chestplate|Dharok's platebody|Karil's leathertop|Black d'hide body|Ahrim's robetop|Mystic robe top"
+				+ "|Fighter torso|Proselyte hauberk",
+			"Bandos tassets|Dharok's platelegs|Karil's leatherskirt|Black d'hide chaps|Ahrim's robeskirt"
+				+ "|Mystic robe bottom|.|.",
+			".|.|.|.|.|.|Barrows gloves|.",
+			".|.|.|.|.|.|Dragon boots|.",
 		};
-		for (int col = 0; col < sets.length; col++)
+		String[] rows = grid.split("\n");
+		for (int r = 0; r < armour.length; r++)
 		{
-			int[] setIds = Arrays.stream(sets[col]).mapToInt(ids::get).toArray();
-			assertLinedUp(layout, setIds);
-			assertEquals(sets[col][0], col, column(layout, setIds[0]));
+			assertEquals(grid, armour[r], rows[r]);
 		}
-
-		// The rest of the armour to the right of the sets, in its own row
-		int helmRow = positions(layout).get(ids.get("Karil's coif")) / 8;
-		int bodyRow = positions(layout).get(ids.get("Karil's leathertop")) / 8;
-		assertEquals(helmRow * 8 + 6, (int) positions(layout).get(ids.get("Helm of neitiznot")));
-		assertEquals(helmRow * 8 + 7, (int) positions(layout).get(ids.get("Verac's helm")));
-		assertEquals(bodyRow * 8 + 6, (int) positions(layout).get(ids.get("Fighter torso")));
-		assertEquals(bodyRow * 8 + 7, (int) positions(layout).get(ids.get("Proselyte hauberk")));
-		assertNotEquals(column(layout, ids.get("Barrows gloves")), column(layout, ids.get("Bandos chestplate")) + 1);
-
-		// Weapons come after the armour block and a blank row
-		int lastArmour = positions(layout).get(ids.get("Dragon boots"));
-		int firstWeapon = positions(layout).get(ids.get("Dual macuahuitl"));
-		assertEquals((lastArmour / 8 + 2) * 8, firstWeapon);
-
-		System.out.println(render(layout, items));
+		// A blank row, then the weapons (melee, ranged, magic, strongest first) and the other slots as in By slot
+		assertEquals(grid, ".|.|.|.|.|.|.|.", rows[5]);
+		assertEquals(grid, (armour.length + 1) * 8, (int) positions(layout).get(ids.get("Dual macuahuitl")));
+		assertEquals(grid, 0, column(layout, ids.get("Dragon defender")));
+		assertEquals(grid, 0, column(layout, ids.get("Fire cape")));
+		assertEquals(grid, ids.get("Berserker ring").intValue(), layout[layout.length - 1]);
 	}
 
-	/** The layout as a text grid, for looking at in the test output. */
+	/** The layout as a text grid of names ("." for a gap), a row per bank row, columns split by "|". */
 	private static String render(int[] layout, List<GearItem> items)
 	{
 		Map<Integer, String> names = new HashMap<>();
@@ -479,12 +549,8 @@ public class LayoutBuilderTest
 		StringBuilder out = new StringBuilder();
 		for (int i = 0; i < layout.length; i++)
 		{
-			String name = layout[i] == -1 ? "." : names.get(layout[i]);
-			out.append(String.format("%-20.20s", name));
-			if (i % 8 == 7 || i == layout.length - 1)
-			{
-				out.append('\n');
-			}
+			out.append(layout[i] == -1 ? "." : names.get(layout[i]));
+			out.append(i % 8 == 7 || i == layout.length - 1 ? '\n' : '|');
 		}
 		return out.toString();
 	}

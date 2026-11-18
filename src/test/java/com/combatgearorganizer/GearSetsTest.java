@@ -76,6 +76,30 @@ public class GearSetsTest
 	}
 
 	@Test
+	public void namesAreNormalized()
+	{
+		// Curly apostrophes, odd case and spacing, and "dragonhide" spelled out
+		assertEquals("Karil's", GearSets.setOf("KARIL\u2019S  coif"));
+		assertEquals("Green d'hide", GearSets.setOf("Green dragonhide body"));
+		assertEquals("Dagon'hai", GearSets.setOf("Dagonhai hat"));
+		// Ornament and trimmed versions in brackets straight after the name
+		assertEquals("Rune armour", GearSets.setOf("Rune platebody(g)"));
+		assertNull(GearSets.setOf(""));
+	}
+
+	@Test
+	public void longestPrefixWins()
+	{
+		// "Armadyl" alone is no set; the god d'hide and rune armour and the boss armour are three different sets
+		assertEquals("Armadyl", GearSets.setOf("Armadyl chestplate"));
+		assertEquals("Armadyl d'hide", GearSets.setOf("Armadyl d'hide body"));
+		assertEquals("Armadyl armour", GearSets.setOf("Armadyl platebody"));
+		assertNull(GearSets.setOf("Armadyl godsword"));
+		assertEquals("Ancestral", GearSets.setOf("Twisted ancestral robe top"));
+		assertEquals("Void knight", GearSets.setOf("Void knight gloves"));
+	}
+
+	@Test
 	public void fallsBackToTheVariationBaseName()
 	{
 		assertEquals("Void knight", GearSets.setOf("Some renamed top", () -> "Void knight top"));
