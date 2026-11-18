@@ -171,6 +171,11 @@ public class SlayerLocationData
 		 * a boss's lair (its points are where the player walks in).
 		 */
 		private String source;
+		/**
+		 * True for a guide place the generator couldn't match to any of the task's monsters (none of their wiki spawn
+		 * spots is near it or named like it, and the task has more than one). The card says so.
+		 */
+		private boolean noMonster;
 
 		public boolean isFromWiki()
 		{

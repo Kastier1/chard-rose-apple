@@ -148,6 +148,16 @@ public class SlayerHelper
 	private List<LocationOption> lastLocations = Collections.emptyList();
 	/** Boosted levels of the skills some place can be boosted for: a boost opens or closes a place. */
 	private BoostWatch boostWatch = new BoostWatch(Collections.<String>emptySet());
+	/**
+	 * Quest states and diary varbits can still read as not done on the first ticks after logging in, before the
+	 * server has sent them. The places' "Needs ..." lines are checked again on each of these ticks after a login, and
+	 * every {@link #REQUIREMENT_RECHECK_EVERY} ticks after that (a quest finished or a level bought mid-task), so a
+	 * stale reading never sticks. It never greys Go out either way: see SlayerPanel.goEnabled.
+	 */
+	static final int REQUIREMENT_RECHECK_AFTER_LOGIN = 10;
+	static final int REQUIREMENT_RECHECK_EVERY = 25;
+	private int requirementRecheckTicks;
+	private int requirementTick;
 	private boolean lastShortestPathAvailable;
 	private int lastClogVersion = -1;
 	private ItemNameResolver itemNames;
@@ -404,6 +414,7 @@ public class SlayerHelper
 			case LOGGED_IN:
 				// Also fires after every loading screen; the clock only restarts if it was stopped
 				progress.onLogin(System.currentTimeMillis());
+				requirementRecheckTicks = REQUIREMENT_RECHECK_AFTER_LOGIN;
 				break;
 			case LOGIN_SCREEN:
 			case HOPPING:
@@ -469,6 +480,13 @@ public class SlayerHelper
 		// Drinking a boost (or it wearing off) changes nothing else watched here, but can open or close a place
 		if (boostWatch.changed(boostedLevels()) && !force && lastTask != null && state.sameTaskAs(lastState)
 			&& BoostWatch.placesChanged(pickLocations(lastTask, state), lastLocations))
+		{
+			force = true;
+		}
+		boolean recheck = requirementRecheckTicks > 0 || ++requirementTick % REQUIREMENT_RECHECK_EVERY == 0;
+		requirementRecheckTicks = Math.max(0, requirementRecheckTicks - 1);
+		if (recheck && !force && lastTask != null && state.sameTaskAs(lastState)
+			&& !sameRequirements(pickLocations(lastTask, state), lastLocations))
 		{
 			force = true;
 		}

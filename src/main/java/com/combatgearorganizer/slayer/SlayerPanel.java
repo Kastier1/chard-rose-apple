@@ -76,6 +76,21 @@ public class SlayerPanel extends JPanel
 	private static final int LEVEL_COLUMN = 34;
 	private static final int XP_COLUMN = 38;
 	private static final int TOTAL_COLUMN = 40;
+	/**
+	 * Empty pixels at least between a number and whatever is to its left (the name, or the column before). The
+	 * numbers are right-aligned, so each column is its widest value plus this.
+	 */
+	static final int COLUMN_GAP = 6;
+	/** {@link java.awt.Component#getName()} of a monster table row, so tests can find the rows. */
+	static final String TABLE_ROW = "monsterTableRow";
+	/** {@link java.awt.Component#getName()} of a place card's monster line. */
+	static final String CARD_MONSTERS = "cardMonsters";
+	/** On a place card when the data can't say which of the task's monsters lives there. */
+	static final String NO_MONSTER_HERE = "Which monster lives here isn't in the data";
+	/** On a place card whose Go is greyed out: the data has no map point to path to. */
+	static final String NO_MAP_POINT = "No map point yet, so Go can't path here";
+	/** Tooltip of a card's monster line when it names the monster shown above. */
+	static final String SELECTED_MONSTER_TIP = "Underlined: the monster shown above";
 	/** Room the crown or star after a monster's name takes: the icon and its gap. */
 	private static final int NAME_ICON_ROOM = 13;
 	/** The task's Go to nearest button's tooltip: it never picks a boss lair or a place the player can't get into. */
@@ -618,14 +633,18 @@ public class SlayerPanel extends JPanel
 	{
 		List<Variant> listed = Variants.listed(variants, locations);
 		FontMetrics fm = TABLE_METRICS.get();
-		int levelWidth = LEVEL_COLUMN;
-		int xpWidth = XP_COLUMN;
+		// Each number column fits its widest value (the header too) plus a gap, so neighbours never touch:
+		// "172-188" and "157-200" side by side used to read "172-188157-200"
+		int levelWidth = Math.max(LEVEL_COLUMN, fm.stringWidth("Lvl") + COLUMN_GAP);
+		int xpWidth = Math.max(XP_COLUMN, fm.stringWidth("XP") + COLUMN_GAP);
+		int totalWidth = Math.max(TOTAL_COLUMN, fm.stringWidth("Task") + COLUMN_GAP);
 		for (Variant v : listed)
 		{
-			levelWidth = Math.max(levelWidth, fm.stringWidth(Variants.range(v.getLevel())) + 1);
-			xpWidth = Math.max(xpWidth, fm.stringWidth(Variants.xpEachShort(v.getXp())) + 1);
+			levelWidth = Math.max(levelWidth, fm.stringWidth(Variants.range(v.getLevel())) + COLUMN_GAP);
+			xpWidth = Math.max(xpWidth, fm.stringWidth(Variants.xpEachShort(v.getXp())) + COLUMN_GAP);
+			totalWidth = Math.max(totalWidth, fm.stringWidth(Variants.xpTotalShort(v.getXp(), left)) + COLUMN_GAP);
 		}
-		int[] widths = {levelWidth, xpWidth, TOTAL_COLUMN};
+		int[] widths = {levelWidth, xpWidth, totalWidth};
 		card.add(variantRow("Monster", null, false, "Lvl", "XP", "Task", ColorScheme.MEDIUM_GRAY_COLOR, false, null, null,
 			widths));
 		for (Variant v : listed)
@@ -1091,6 +1110,7 @@ public class SlayerPanel extends JPanel
 		Color color, boolean selected, Runnable onClick, Consumer<JLabel> totalCell, int[] widths)
 	{
 		JPanel row = new JPanel(new GridBagLayout());
+		row.setName(TABLE_ROW);
 		row.setOpaque(selected);
 		row.setBackground(ColorScheme.DARK_GRAY_HOVER_COLOR);
 		row.setAlignmentX(LEFT_ALIGNMENT);
@@ -1101,6 +1121,7 @@ public class SlayerPanel extends JPanel
 
 		c.weightx = 1;
 		boolean icon = boss || superiorTip != null;
+		// The level column's own gap keeps the name off the first number
 		int room = TABLE_ROW_WIDTH - widths[0] - widths[1] - widths[2] - (icon ? NAME_ICON_ROOM : 0);
 		List<String> lines = wrapName(name, TABLE_METRICS.get(), room);
 		JLabel nameCell = cell(lines.size() == 1 ? name
@@ -1575,20 +1596,26 @@ public class SlayerPanel extends JPanel
 		List<String> here = Variants.at(currentVariants, location.getKey());
 		if (!compact && !here.isEmpty())
 		{
-			StringBuilder names = new StringBuilder();
-			for (String name : here)
-			{
-				if (names.length() > 0)
-				{
-					names.append(", ");
-				}
-				names.append(name.equals(selectedVariant) ? "<font color='#ff981f'>" + escape(name) + "</font>" : escape(name));
-			}
-			JLabel monsters = new JLabel("<html><body style='width:" + CARD_TEXT_WIDTH + "px'>" + names + "</body></html>");
+			JLabel monsters = new JLabel("<html><body style='width:" + CARD_TEXT_WIDTH + "px'>"
+				+ monsterLine(here, selectedVariant) + "</body></html>");
+			monsters.setName(CARD_MONSTERS);
 			monsters.setFont(FontManager.getRunescapeSmallFont());
 			monsters.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 			monsters.setAlignmentX(LEFT_ALIGNMENT);
+			if (here.contains(selectedVariant))
+			{
+				monsters.setToolTipText(SELECTED_MONSTER_TIP);
+				monsters.getAccessibleContext().setAccessibleDescription(selectedVariant + " is the monster shown above");
+			}
 			text.add(monsters);
+		}
+		else if (!compact && !location.isBossLair())
+		{
+			// The guide lists the place for the task, but no monster's spawns match it (and the task has several)
+			JLabel unknown = wrapped(NO_MONSTER_HERE, ColorScheme.MEDIUM_GRAY_COLOR, FontManager.getRunescapeSmallFont(),
+				CARD_TEXT_WIDTH);
+			unknown.setName(CARD_MONSTERS);
+			text.add(unknown);
 		}
 		if (lastTime)
 		{
@@ -1613,6 +1640,11 @@ public class SlayerPanel extends JPanel
 			text.add(wrapped("Needs " + String.join(", ", location.getMissingRequirements()), WILDERNESS_COLOR,
 				FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH));
 		}
+		if (!location.isRoutable())
+		{
+			// Go is greyed out: say why on the card, not only in the button's tooltip (shown in compact too)
+			text.add(wrapped(NO_MAP_POINT, ColorScheme.MEDIUM_GRAY_COLOR, FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH));
+		}
 		if (!compact && location.getNote() != null)
 		{
 			text.add(wrapped(location.getNote(), ColorScheme.LIGHT_GRAY_COLOR, FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH));
@@ -1622,7 +1654,9 @@ public class SlayerPanel extends JPanel
 		JButton go = new JButton("Go");
 		go.setPreferredSize(new Dimension(40, 22));
 		go.setMargin(new java.awt.Insets(0, 0, 0, 0));
-		go.setEnabled(location.isRoutable());
+		// Only a missing map point greys Go out (NO_MAP_POINT says so on the card). A missing quest or level never
+		// does: it's shown as "Needs ...", and the player's state may not be known yet
+		go.setEnabled(goEnabled(location));
 		go.setToolTipText(!location.isRoutable() ? "No map point for this place yet"
 			: location.isAccessible() ? "Path to " + location.getLabel()
 			: "Path to " + location.getLabel() + " (you may not be able to get in yet)");
@@ -1648,6 +1682,30 @@ public class SlayerPanel extends JPanel
 		goWrap.add(go, BorderLayout.NORTH);
 		card.add(goWrap, BorderLayout.EAST);
 		return card;
+	}
+
+	/** Whether a place's Go button works: only when there's a point to path to, whatever the player still needs. */
+	static boolean goEnabled(LocationOption location)
+	{
+		return location.isRoutable();
+	}
+
+	/**
+	 * A place card's monster names (HTML, escaped). The monster shown above is in the selected colour and underlined,
+	 * so it reads without colour too; it's marked on every card that lists it, whichever monster it is.
+	 */
+	static String monsterLine(List<String> here, String selected)
+	{
+		StringBuilder names = new StringBuilder();
+		for (String name : here)
+		{
+			if (names.length() > 0)
+			{
+				names.append(", ");
+			}
+			names.append(name.equals(selected) ? "<font color='#ff981f'><u>" + escape(name) + "</u></font>" : escape(name));
+		}
+		return names.toString();
 	}
 
 	private static JLabel title(String text)

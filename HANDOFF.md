@@ -208,6 +208,32 @@ needed only for the first entry and the loot chest (they respawn without one; th
 and Bryophyta's gate is east of the moss giants. `BOSS_GO_HINT` shows only when the boss's lair card is listed (not for a
 Wilderness boss with *Show Wilderness locations* off). Not yet seen in a logged-in client.
 
+**Update 2026-11-18 (render fixes: table gaps, unlinked places, greyed Go, monster line):**
+- *Monster table:* each number column is its widest value (header included) plus `SlayerPanel.COLUMN_GAP` (6px), the
+  Task column too, so right-aligned neighbours never touch (Black demons read "172-188157-200"). Rows are named
+  `TABLE_ROW`; `SlayerPanelCardsTest.monsterTableColumnsNeverTouch` checks the text gap and cell bounds of every row
+  for every task, master (and Konar area), Wilderness setting and kill count left.
+- *Places no monster was linked to* (117 of them, Chasm of Fire for black demons and Brimhaven Dungeon for greater
+  demons among them; not a regression, f152a69's JSON had the same gaps). The generator matched variants to places by
+  distance only, and only joined by the wiki's spot name for monsters that matched no place at all; an entrance-only
+  place far from the spawns (Chasm of Fire: 185 tiles underground), spawns on another plane (Brimhaven's greater
+  demons upstairs) or a guide row with no points never matched. Now `variants_for` also links every regular monster to
+  the places its `{{LocLine}}` spot names match (`named_places` / `own_places`: `name_keys`, which also drops a bare
+  floor like "upper level", else the same words in any order or a word subset of two or more words, "Kingstown -
+  Councillor Hughes' house"). Wiki-place creation still joins by exact name only. A guide place still unmatched goes
+  to the task's only regular monster when it has one (`link_unmatched`); otherwise it is marked `noMonster` (38
+  places, e.g. Blue dragons' Dragon Nest: the wiki's blue dragon pages have no spawn there, its red dragon pages do)
+  and the card says `NO_MONSTER_HERE`. `validate()` and `everyPlaceListsAMonsterThatLivesThere` fail on any other
+  unlinked place. Three tasks have no regular monster at all (Custodian stalkers, Sourhogs, Warped creatures: no wiki
+  spawns).
+- *Greyed-out Go:* Go is greyed out only when the place has no map point (`SlayerPanel.goEnabled`; Heroes' Guild
+  basement and Crash Site Cavern have none), never for a requirement. The card now says `NO_MAP_POINT` (also in
+  compact mode); before, only the tooltip did. Requirements show as "Needs ..."; `SlayerHelper` re-checks them on the
+  10 ticks after each login and every 25 ticks, so a quest state read before the server sent it doesn't stick.
+- *Monster line on cards:* the rule was already "the selected monster in orange" (the Greater demons render had
+  K'ril selected); it is now also underlined, with a tooltip (`SELECTED_MONSTER_TIP`), so it reads without colour.
+  `theSelectedMonsterIsMarkedOnEveryCardThatListsIt` checks every task and every listed monster.
+
 Still open from the review: Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping; By set covers armour only), and the scope doc's wrong required items.
 

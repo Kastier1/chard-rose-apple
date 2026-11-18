@@ -793,13 +793,19 @@ def same_name(text):
     return re.sub(r"[^a-z0-9]", "", text.lower())
 
 
+# A floor named after the place without brackets: "Brimhaven Dungeon upper level", "Ancient Cavern lower floor"
+LEVEL_SUFFIX = re.compile(r"\s+(?:(?:upper|lower|top|bottom|middle|ground|first|second|third)\s+(?:level|floor)"
+                          r"|(?:level|floor)\s+\d+)$", re.IGNORECASE)
+
+
 def name_keys(text):
     """The forms a wiki location name can match a place's label by: the whole name, then the part before a
     qualifier ("Ancient Cavern (upper level)", "Stronghold of Security: Pit of Pestilence", "Uzer Mastaba - lower
-    level" are in "Ancient Cavern", "Stronghold of Security", "Uzer Mastaba"), each also without a plural s
-    ("Revenant Cave" is "Revenant Caves")."""
+    level" are in "Ancient Cavern", "Stronghold of Security", "Uzer Mastaba") or a bare floor ("Brimhaven Dungeon
+    upper level"), each also without a plural s ("Revenant Cave" is "Revenant Caves")."""
     out = []
-    for part in (text, re.split(r"\s*(?:\(|,|:|\s-\s)", text, maxsplit=1)[0]):
+    head = re.split(r"\s*(?:\(|,|:|\s-\s)", text, maxsplit=1)[0]
+    for part in (text, head, LEVEL_SUFFIX.sub("", head)):
         whole = same_name(part)
         for k in (whole, re.sub(r"s$", "", whole)):
             if k and k not in out:
@@ -821,6 +827,40 @@ def find_by_name(index, text):
     return next((index[k] for k in name_keys(text) if k in index), None)
 
 
+# Words that don't tell two places apart ("In and around Lumbridge" is "Lumbridge")
+FILLER_WORDS = {"the", "of", "in", "at", "a", "an", "and", "around", "near", "to", "on", "by"}
+
+
+def name_words(text):
+    """The words of a place name that matter, without plural s: "The Underground Pass, part 1" ->
+    {"underground", "pass", "part", "1"}. Wiki markup after the name ("{{Refn") is dropped."""
+    text = text.split("{{", 1)[0].lower().replace("'", "")
+    return frozenset(re.sub(r"(?<=[a-z]{3})s$", "", w) for w in re.findall(r"[a-z0-9]+", text)
+                     if w not in FILLER_WORDS)
+
+
+def place_index(places):
+    """What own_places looks places up in: by_name of the labels, and each label's words."""
+    return (by_name((pl["label"], pl["key"]) for pl in places),
+            [(name_words(pl["label"]), pl["key"]) for pl in places])
+
+
+def own_places(index, loc):
+    """Keys of the places (place_index) a wiki location name is one of: the same name (name_keys), else the same
+    words in another order or with more said ("Kingstown - Councillor Hughes' house" is "Councillor Hughes' house in
+    Kingstown"; "Mount Karuulm" is in "Mount Karuulm (north side)"; "Hobgoblin Peninsula west of the Crafting Guild"
+    is "Peninsula West of the Crafting Guild"). One word alone only matches one word ("Lumbridge" is "In and around
+    Lumbridge", but "Crandor" isn't "Crandor and Karamja Dungeon")."""
+    by_label, worded = index
+    same = find_by_name(by_label, loc)
+    if same:
+        return [same]
+    words = name_words(loc)
+    return [key for label_words, key in worded if words and label_words and (
+        words == label_words or min(len(words), len(label_words)) >= 2 and (
+            words <= label_words or label_words <= words))]
+
+
 def spawn_groups(pages, wiki):
     """[(wiki location name or None, [points])] for one monster's spawns, named groups first, by name.
 
@@ -839,6 +879,21 @@ def spawn_groups(pages, wiki):
         if pt not in group:
             group.append(pt)
     return sorted(groups.items(), key=lambda g: (g[0] is None, g[0] or ""))
+
+
+def named_places(pages, wiki, listed, wilderness_only):
+    """Keys of the listed places (place_index) the wiki names one of the monster's spawn spots like (own_places).
+
+    Distance alone misses a place whose only point is an entrance far from the monsters (the Chasm of Fire's black
+    demons, 185 tiles from the entrance underground) or on another plane (Brimhaven Dungeon's greater demons, upstairs),
+    and a guide place with no points at all. With wilderness_only, only spots with a spawn in the Wilderness count.
+    """
+    out = set()
+    for loc, pts in spawn_groups(pages, wiki):
+        pts = [pt for pt in pts if in_wilderness(pt) or not wilderness_only]
+        if pts and loc:
+            out.update(own_places(listed, loc))
+    return out
 
 
 def merge_close(spots):
@@ -885,7 +940,7 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
     """
     if not wiki:
         return [], {}
-    listed = by_name((pl["label"], pl["key"]) for pl in places)
+    listed = place_index(places)
     joined = {}
     spots = {}
     taken = {pl["key"] for pl in places}
@@ -899,7 +954,9 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
         groups = []
         for loc, pts in spawn_groups(pages, wiki):
             pts = [pt for pt in pts if in_wilderness(pt) or not wilderness_only]
-            own = find_by_name(listed, loc) if pts and loc else None
+            # Only the same name joins: a place with more words ("Harmony Island Church") keeps its own spawn
+            # points for Go (variants_for still links the monster to "Harmony Island" too)
+            own = find_by_name(listed[0], loc) if pts and loc else None
             if own:
                 joined.setdefault(name, set()).add(own)
             elif pts:
@@ -990,6 +1047,8 @@ def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joi
     generic = generic_items(wiki)
     superior_of = wiki.get("superior_of", {})
     lairs = lairs or {}
+    # A boss's lair is for the boss alone; the others can also be found by the name the wiki gives a spawn spot
+    listed = place_index([pl for pl in places if pl.get("source") != BOSS_SOURCE])
 
     out = []
     for name, versions in task_monsters(task_name, wiki).items():
@@ -1010,7 +1069,9 @@ def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joi
         elif wilderness_only and not superior and not any(in_wilderness(pt) for pt in spawns):
             continue  # doesn't count for Krystilia, the only master who gives this task
         else:
-            found = places_of(name, spawns, places, all_points) + (joined or {}).get(name, [])
+            named = named_places(pages, wiki, listed, wilderness_only)
+            found = places_of(name, spawns, places, all_points) + (joined or {}).get(name, []) + [
+                k for k in named if (name, k) not in NOT_AT]
         weak = Counter((v["elemental_weakness"], v.get("elemental_weakness_percent"))
                        for v in versions if v.get("elemental_weakness"))
         variant = {
@@ -1159,6 +1220,29 @@ def task_info(info, name):
     return out or None
 
 
+# Shown on a guide place no monster of the task could be matched to (the panel says which monster is unknown)
+NO_MONSTER = "noMonster"
+
+
+def link_unmatched(places, variants):
+    """Guide places that no monster's spawns or spot names matched (an empty "Heroes' Guild (basement)"-style row of
+    the wiki's Slayer task table, or a spot the monster pages name another way).
+
+    The guide's table says the task's monsters are there, so a task with one regular monster gets it (Werewolves at
+    Canifis, Rockslugs in the Crypt of Tonali). With several, which one is a guess: the place is marked NO_MONSTER and
+    the panel says the data doesn't know (Blue dragons at the Dragon Nest: the wiki's Blue, Baby blue and Brutal blue
+    dragon pages have no spawn there, while its Red and Baby red dragon pages do). Changes both lists in place.
+    """
+    regular = [v for v in variants if not v["superior"] and not v["boss"]]
+    for pl in places:
+        if pl.get("source") == BOSS_SOURCE or any(pl["key"] in v["places"] for v in variants):
+            continue
+        if len(regular) == 1:
+            regular[0]["places"] = sorted(set(regular[0]["places"]) | {pl["key"]})
+        elif regular:
+            pl[NO_MONSTER] = True
+
+
 def validate(tasks):
     """Fail the build on values the plugin can't show, instead of breaking the panel in game."""
     problems = []
@@ -1185,7 +1269,13 @@ def validate(tasks):
                 problems.append(f'{t["name"]} / {v["name"]}: a boss needs exactly one place, its lair: {v["places"]}')
             elif not lairs[0]["points"] and not lairs[0]["wildernessPoints"]:
                 problems.append(f'{t["name"]} / {v["name"]}: its lair has no point for Go')
+        regular = [v for v in t.get("variants", []) if not v["superior"] and not v["boss"]]
         for pl in places.values():
+            linked = any(pl["key"] in v["places"] for v in t.get("variants", []))
+            if pl.get("source") != BOSS_SOURCE and regular and not linked and not pl.get(NO_MONSTER):
+                problems.append(f'{t["name"]} / {pl["key"]}: no monster lives here and it isn\'t marked {NO_MONSTER}')
+            if pl.get(NO_MONSTER) and (linked or len(regular) < 2):
+                problems.append(f'{t["name"]} / {pl["key"]}: marked {NO_MONSTER} but a monster is known')
             # Never prayer advice for a boss (plugin hub rules): not even in a lair's note
             if pl.get("source") == BOSS_SOURCE and re.search(r"\bpray", pl.get("note") or "", re.IGNORECASE):
                 problems.append(f'{t["name"]} / {pl["key"]}: prayer advice in a boss lair note')
@@ -1300,6 +1390,7 @@ def main(src):
                     raise SystemExit(f'{t["task"]}: the {lair_id} lair can\'t replace {gone}; it\'s used by {users}')
                 entries = [pl for pl in entries if pl["key"] != gone]
                 wild_entries = [pl for pl in wild_entries if pl["key"] != gone]
+        link_unmatched(entries + wild_entries, variants)
         tasks.append({
             "taskId": tid,
             "name": t["task"],
