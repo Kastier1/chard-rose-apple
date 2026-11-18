@@ -199,6 +199,8 @@ public class SlayerLocationData
 		private Map<String, Integer> skills = Collections.emptyMap();
 		/** Skills in {@link #skills} whose level may be boosted to meet it (the wiki says so for that place). */
 		private List<String> boostable = Collections.emptyList();
+		/** Achievement Diary tiers that must be complete, by {@link Diaries} name ("WILDERNESS_MEDIUM"). */
+		private List<String> diaries = Collections.emptyList();
 	}
 
 	public TaskEntry findTask(int taskId, String name)

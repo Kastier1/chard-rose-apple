@@ -146,6 +146,8 @@ public class SlayerHelper
 	private SlayerLocationData.TaskEntry lastTask;
 	/** The places last drawn for {@link #lastTask}, so a kill only updates the count while they stay the same. */
 	private List<LocationOption> lastLocations = Collections.emptyList();
+	/** Boosted levels of the skills some place can be boosted for: a boost opens or closes a place. */
+	private BoostWatch boostWatch = new BoostWatch(Collections.<String>emptySet());
 	private boolean lastShortestPathAvailable;
 	private int lastClogVersion = -1;
 	private ItemNameResolver itemNames;
@@ -175,6 +177,7 @@ public class SlayerHelper
 	public void start()
 	{
 		data = loadData();
+		boostWatch = new BoostWatch(BoostWatch.boostableSkills(data));
 		List<String> dropNames = new ArrayList<>();
 		List<String> itemNamesWanted = new ArrayList<>();
 		for (SlayerLocationData.TaskEntry t : data.getTasks())
@@ -463,6 +466,12 @@ public class SlayerHelper
 		boolean gearChanged = updateGear();
 		force |= needsRedraw || gearChanged;
 		needsRedraw = false;
+		// Drinking a boost (or it wearing off) changes nothing else watched here, but can open or close a place
+		if (boostWatch.changed(boostedLevels()) && !force && lastTask != null && state.sameTaskAs(lastState)
+			&& BoostWatch.placesChanged(pickLocations(lastTask, state), lastLocations))
+		{
+			force = true;
+		}
 		if (!force && state.equals(lastState) && spAvailable == lastShortestPathAvailable && clogVersion == lastClogVersion
 			&& namesDone == lastItemNamesDone && progressVersion == lastProgressVersion && valueMode == lastValueMode)
 		{
@@ -995,7 +1004,22 @@ public class SlayerHelper
 		});
 	}
 
-	/** Must run on the client thread: reads quest states and skill levels. */
+	/** The boosted level of each skill {@link #boostWatch} watches. Client thread. */
+	private Map<String, Integer> boostedLevels()
+	{
+		Map<String, Integer> levels = new HashMap<>();
+		for (String name : boostWatch.getSkills())
+		{
+			Skill skill = skill(name);
+			if (skill != null)
+			{
+				levels.put(name, client.getBoostedSkillLevel(skill));
+			}
+		}
+		return levels;
+	}
+
+	/** Must run on the client thread: reads quest states, skill levels and diary varbits. */
 	private List<String> missingRequirements(SlayerLocationData.Requirements r)
 	{
 		List<String> missing = new ArrayList<>();
@@ -1026,6 +1050,18 @@ public class SlayerHelper
 			if (!RequirementChecker.meets(client.getRealSkillLevel(skill), client.getBoostedSkillLevel(skill), e.getValue(), boostable))
 			{
 				missing.add(RequirementChecker.skillText(e.getValue(), skill.getName(), boostable));
+			}
+		}
+		for (String d : r.getDiaries())
+		{
+			Integer varbit = Diaries.VARBITS.get(d);
+			if (varbit == null)
+			{
+				log.debug("Unknown diary {} in slayer data", d);
+			}
+			else if (client.getVarbitValue(varbit) != 1)
+			{
+				missing.add(Diaries.text(d));
 			}
 		}
 		return missing;

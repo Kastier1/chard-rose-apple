@@ -45,15 +45,17 @@ def access_note(access):
 
 
 def requirements(*accesses):
-    """Merges the source's access blocks into one {questsFinished, questsStarted, skills} dict (all required)."""
-    finished, started, skills = [], [], {}
+    """Merges the source's access blocks into one {questsFinished, questsStarted, skills, diaries} dict (all required)."""
+    finished, started, skills, diaries = [], [], {}, []
     for access in accesses:
         for a in (access if isinstance(access, list) else [access]) if access else []:
             finished += [q for q in a.get("questsFinished", []) if q not in finished]
             started += [q for q in a.get("questsStarted", []) if q not in started]
+            diaries += [d for d in a.get("diaries", []) if d not in diaries]
             for skill, level in a.get("skills", {}).items():
                 skills[skill] = max(level, skills.get(skill, 0))
-    out = {k: v for k, v in (("questsFinished", finished), ("questsStarted", started), ("skills", skills)) if v}
+    out = {k: v for k, v in (("questsFinished", finished), ("questsStarted", started), ("skills", skills),
+                             ("diaries", diaries)) if v}
     return out or None
 
 
@@ -258,12 +260,41 @@ def in_game_name(item):
     return item[:-len(" (item)")] if item.endswith(" (item)") else item
 
 
+# Drops that are a bag of other drops, each with its own wiki drop table. https://oldschool.runescape.wiki/w/Unsired:
+# "The unsired is a drop from the Abyssal Sire ... it can be offered to the Font of Consumption ... for one of the
+# following rewards" (the bludgeon pieces, abyssal dagger, whip, head, Jar of miasma, orphan). Each reward is listed on
+# the dropping monster too, at the bag's rate times the reward's.
+DROP_CONTENTS = {"Unsired"}
+
+
+def rate_text(p):
+    """1/206.5, written the way the wiki writes a rate (thousands with a comma, at most one decimal)."""
+    n = round(1 / p, 1)
+    return "1/" + (f"{n:,.0f}" if n == int(n) else f"{n:,.1f}")
+
+
+def drop_rows(page, wiki):
+    """A page's drop rows, with each DROP_CONTENTS bag followed by what comes out of it (its rate times the bag's)."""
+    rows = []
+    for row in wiki.get("drops", {}).get(page, []):
+        rows.append(row)
+        item, rarity = row[0], row[1]
+        bag = chance(rarity)
+        if item in DROP_CONTENTS and bag:
+            for sub, sub_rarity, _alt, value, low, high in wiki.get("drops", {}).get(item, []):
+                p = chance(sub_rarity)
+                if p:
+                    # The bag's own alternative rate is for players who already have its pet, not an on-task rate
+                    rows.append([sub, rate_text(bag * p), "", value, low, high])
+    return rows
+
+
 def drops_for(pages, wiki, generic):
     """A monster's own rare drops and collection log slots (rarest first), and what it always drops."""
     clog = {n.lower() for n in wiki.get("collection_log_items", [])}
     best, always = {}, []
     for page in sorted(pages):
-        for item, rarity, alt, value, low, high in wiki.get("drops", {}).get(page, []):
+        for item, rarity, alt, value, low, high in drop_rows(page, wiki):
             if rarity == "Always":
                 if ALWAYS_SHOWN.search(item) and item not in always:
                     always.append(item)
@@ -361,7 +392,7 @@ GWD_MINIONS = {
 }
 # Fights a player has once per account, so never a place to go on a task: Kolodion counts as a black demon, but
 # https://oldschool.runescape.wiki/w/Slayer_task/Black_demons says "Kolodion can only be killed once during the Mage
-# Arena miniquest" (and Porazdir, a boss, is left out of BOSSES for the same reason).
+# Arena miniquest". (Porazdir is left out of BOSSES for a different reason, given there.)
 ONE_TIME_FIGHTS = {"Kolodion"}
 # Regular monsters that live only in a boss's lair (wiki name -> BOSS_LAIRS id). The lair is their only place.
 # https://oldschool.runescape.wiki/w/Slayer_task/Scorpions on Scorpia's offspring: "Only found in Scorpia's Lair in the
@@ -371,9 +402,12 @@ AT_LAIR = {"Scorpia's offspring": "scorpias_cave"}
 # Where each boss that counts for a normal slayer task is fought. Every point is where the player walks in (the
 # entrance object, or the tile Shortest Path uses for it), never a spot inside an instance. The plugin never sends
 # "Go to nearest" to these places: a boss is a choice the player makes. Requirements use RuneLite Quest and Skill enum
-# names; what they can't say (Wilderness diaries, keys, kill count) is in the note. "konar": the guide place whose
+# names, and "diaries" Achievement Diary tiers (SlayerHelper.DIARIES: REGION_TIER, read from the game's diary varbits);
+# what they can't say (keys, kill count, fees) is in the note. "konar": the guide place whose
 # Konar area the lair counts as (the wiki says the boss can be killed on her task there; each of these drops a brimstone
 # key on her tasks). "krystilia": the lair is in the Wilderness and the boss counts on her task.
+# Achievement Diary tiers a place can need; SlayerHelper.DIARIES reads each from its *_DIARY_<TIER>_COMPLETE varbit
+DIARIES = {"WILDERNESS_EASY", "WILDERNESS_MEDIUM", "WILDERNESS_HARD", "WILDERNESS_ELITE"}
 BOSS_LAIRS = {
     # https://oldschool.runescape.wiki/w/Abyssal_Sire: "requires level 85 Slayer". https://oldschool.runescape.wiki/w/
     # Abyssal_Nexus: "a one-way entrance in the southern part of the outer ring of the Abyss ... the code DIP in the fairy
@@ -419,13 +453,20 @@ BOSS_LAIRS = {
                 "60 Strength or 60 Agility, 70 Hitpoints (boostable) to cross the river to Zamorak's Fortress, and 40 Zamorak "
                 "kill count to open the door.",
     },
+    # The six Wilderness lairs below need a diary on a normal task (a boss task, which this data doesn't cover, gets in
+    # without it). https://oldschool.runescape.wiki/w/Callisto%27s_Den: "Entering the boss lair requires completion of the
+    # medium Wilderness diary OR a Callisto boss Slayer task, and a fee of 50,000 coins ... This fee is shared across
+    # Callisto's Den, Hunter's End, the Skeletal Tomb, Vet'ion's Rest, the Silk Chasm, the Web Chasm and the Escape Caves.
+    # The fee does not need to be paid again, unless the player dies to another player".
     # https://oldschool.runescape.wiki/w/Callisto: "requires the medium Wilderness Diary ... a bear Slayer task does not
     # bypass the diary requirement". Point: RuneLite world map DungeonLocation.CALLISTOS_DEN (wiki 3292,3849).
     "callistos_den": {
         "label": "Callisto's Den",
         "points": [[3292, 3850, 0]],
-        "note": "Needs the medium Wilderness Diary or a Callisto boss task (a bear task alone doesn't let you in). "
-                "50,000 coins to enter, taken from the bank.",
+        "requirements": {"diaries": ["WILDERNESS_MEDIUM"]},
+        "note": "Needs the medium Wilderness Diary (or a Callisto boss task; a bear task doesn't let you in). "
+                "A 50,000 coin fee, taken from the bank, opens all the Wilderness boss lairs at once; it is paid again only "
+                "after dying to another player.",
         "krystilia": True,
     },
     # https://oldschool.runescape.wiki/w/Hunter%27s_End: hard Wilderness Diary or a Callisto boss task. Point: RuneLite
@@ -433,8 +474,10 @@ BOSS_LAIRS = {
     "hunters_end": {
         "label": "Hunter's End",
         "points": [[3115, 3677, 0]],
-        "note": "Needs the hard Wilderness Diary or a Callisto boss task (a bear task alone doesn't let you in). "
-                "50,000 coins to enter, taken from the bank.",
+        "requirements": {"diaries": ["WILDERNESS_HARD"]},
+        "note": "Needs the hard Wilderness Diary (or a Callisto boss task; a bear task doesn't let you in). "
+                "A 50,000 coin fee, taken from the bank, opens all the Wilderness boss lairs at once; it is paid again only "
+                "after dying to another player.",
         "krystilia": True,
     },
     # https://oldschool.runescape.wiki/w/Vet%27ion%27s_Rest: medium Wilderness Diary or a Vet'ion boss task. Point:
@@ -442,8 +485,10 @@ BOSS_LAIRS = {
     "vetions_rest": {
         "label": "Vet'ion's Rest",
         "points": [[3221, 3788, 0]],
-        "note": "Needs the medium Wilderness Diary or a Vet'ion boss task (a skeleton task alone doesn't let you in). "
-                "50,000 coins to enter, taken from the bank.",
+        "requirements": {"diaries": ["WILDERNESS_MEDIUM"]},
+        "note": "Needs the medium Wilderness Diary (or a Vet'ion boss task; a skeleton task doesn't let you in). "
+                "A 50,000 coin fee, taken from the bank, opens all the Wilderness boss lairs at once; it is paid again only "
+                "after dying to another player.",
         "krystilia": True,
     },
     # https://oldschool.runescape.wiki/w/Skeletal_Tomb: "the hard Wilderness diary, OR ... a Vet'ion boss Slayer task (a
@@ -451,8 +496,10 @@ BOSS_LAIRS = {
     "skeletal_tomb": {
         "label": "Skeletal Tomb (Graveyard of Shadows)",
         "points": [[3179, 3684, 0]],
-        "note": "Needs the hard Wilderness Diary or a Vet'ion boss task (a skeleton task alone doesn't let you in). "
-                "50,000 coins to enter, taken from the bank.",
+        "requirements": {"diaries": ["WILDERNESS_HARD"]},
+        "note": "Needs the hard Wilderness Diary (or a Vet'ion boss task; a skeleton task doesn't let you in). "
+                "A 50,000 coin fee, taken from the bank, opens all the Wilderness boss lairs at once; it is paid again only "
+                "after dying to another player.",
         "krystilia": True,
     },
     # https://oldschool.runescape.wiki/w/Silk_Chasm: medium Wilderness Diary or a Venenatis boss task. Point: RuneLite
@@ -460,8 +507,10 @@ BOSS_LAIRS = {
     "silk_chasm": {
         "label": "Silk Chasm",
         "points": [[3320, 3798, 0]],
-        "note": "Needs the medium Wilderness Diary or a Venenatis boss task (a spider task alone doesn't let you in). "
-                "50,000 coins to enter, taken from the bank.",
+        "requirements": {"diaries": ["WILDERNESS_MEDIUM"]},
+        "note": "Needs the medium Wilderness Diary (or a Venenatis boss task; a spider task doesn't let you in). "
+                "A 50,000 coin fee, taken from the bank, opens all the Wilderness boss lairs at once; it is paid again only "
+                "after dying to another player.",
         "krystilia": True,
     },
     # https://oldschool.runescape.wiki/w/Web_Chasm: "the hard Wilderness diary, OR ... a Venenatis boss Slayer task (a
@@ -469,8 +518,10 @@ BOSS_LAIRS = {
     "web_chasm": {
         "label": "Web Chasm (eastern ruins)",
         "points": [[3184, 3745, 0]],
-        "note": "Needs the hard Wilderness Diary or a Venenatis boss task (a spider task alone doesn't let you in). "
-                "50,000 coins to enter, taken from the bank.",
+        "requirements": {"diaries": ["WILDERNESS_HARD"]},
+        "note": "Needs the hard Wilderness Diary (or a Venenatis boss task; a spider task doesn't let you in). "
+                "A 50,000 coin fee, taken from the bank, opens all the Wilderness boss lairs at once; it is paid again only "
+                "after dying to another player.",
         "krystilia": True,
     },
     # https://oldschool.runescape.wiki/w/Scorpia: in the cave under the Scorpion Pit. Points: the three "Enter Cavern"
@@ -651,8 +702,12 @@ BOSS_LAIRS = {
 # Bosses that count for a normal slayer task (wiki name -> lair and the tasks it counts for), from the OSRS Wiki's
 # https://oldschool.runescape.wiki/w/Slayer_task "Superiors and alternatives" column and each boss's page (cited at its
 # lair above). Only these bosses are listed: a monster in the wiki's "Bosses" category that isn't here is left out (Zulrah,
-# the Desert Treasure II bosses and the like count only on a boss task). Not here on purpose: Kolodion and Porazdir (Mage
-# Arena fights, once each; Kolodion is left out with ONE_TIME_FIGHTS), Elvarg (Dragon Slayer I only), TzTok-Jad and TzKal-Zuk
+# the Desert Treasure II bosses and the like count only on a boss task). Not here on purpose: Kolodion (one fight per
+# account, left out with ONE_TIME_FIGHTS); Porazdir, who does count as a black demon ("Porazdir is considered a black
+# demon for the purpose of a Slayer assignment", https://oldschool.runescape.wiki/w/Porazdir) and can be fought again,
+# but only as part of the Mage Arena II miniquest "or when reobtaining an imbued Zamorak cape after completing the
+# miniquest" (https://oldschool.runescape.wiki/w/Slayer_task/Black_demons): he only appears for the player who is on
+# that errand, so there is no lair to send a player to on a task; Elvarg (Dragon Slayer I only), TzTok-Jad and TzKal-Zuk
 # (offered instead of a TzHaar task, not killed on one), the Giant Sea Snake (not fightable after Royal Trouble) and the
 # Hell-Rat Behemoth (your cat fights it).
 # "masters": the only masters whose task the boss counts for; "notMasters": masters whose task it doesn't count for (by
@@ -683,7 +738,9 @@ BOSSES = {
     "Dagannoth Supreme": {"lair": "dagannoth_kings", "tasks": ["Dagannoth"]},
     "Sarachnis": {"lair": "sarachnis", "tasks": ["Spiders"]},
     # The wiki's page for the pair is Dusk's (Dawn has no infobox of her own); the core Slayer plugin counts both names
-    "Dusk": {"lair": "grotesque_guardians", "tasks": ["Gargoyles"], "display": "Grotesque Guardians"},
+    # (Dusk's page has no drop table: the pair's loot is on https://oldschool.runescape.wiki/w/Grotesque_Guardians)
+    "Dusk": {"lair": "grotesque_guardians", "tasks": ["Gargoyles"], "display": "Grotesque Guardians",
+             "dropPages": ["Grotesque Guardians"]},
     "Skotizo": {"lair": "skotizo", "tasks": ["Black demons", "Greater demons"]},
     "Obor": {"lair": "obor", "tasks": ["Hill giants"]},
     "Bryophyta": {"lair": "bryophyta", "tasks": ["Moss giants"]},
@@ -957,10 +1014,12 @@ def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joi
         base = next((superior_of[p] for p in sorted(pages) if p in superior_of), None)
         if superior and base:
             variant["superiorOf"] = base
-        carry = carry_for(pages, wiki)
+        # A boss whose loot is on another wiki page (the Grotesque Guardians') takes its drops from there too
+        loot_pages = pages | set(BOSSES[name].get("dropPages", []) if boss else [])
+        carry = carry_for(loot_pages, wiki)
         if carry:
             variant["carry"] = carry
-        rare, always = drops_for(pages, wiki, generic)
+        rare, always = drops_for(loot_pages, wiki, generic)
         if rare:
             variant["drops"] = rare
         if always:
@@ -1127,15 +1186,16 @@ def validate(tasks):
         problems += [f"BOSSES / {name}: no task {task!r}" for task in boss["tasks"] if task not in names]
         problems += [f"BOSSES / {name}: no master {m!r}" for m in boss.get("masters", []) + boss.get("notMasters", [])
                      if m not in MASTERS]
+        if boss["lair"] not in BOSS_LAIRS:
+            problems.append(f"BOSSES / {name}: no lair {boss['lair']!r}")
     for lair_id, lair in BOSS_LAIRS.items():
         req = lair.get("requirements") or {}
         problems += [f"BOSS_LAIRS / {lair_id}: boostable {s!r} isn't a needed skill" for s in req.get("boostable", [])
                      if s not in req.get("skills", {})]
+        problems += [f"BOSS_LAIRS / {lair_id}: unknown diary {d!r}" for d in req.get("diaries", []) if d not in DIARIES]
     for name, lair_id in AT_LAIR.items():
         if lair_id not in BOSS_LAIRS:
             problems.append(f"AT_LAIR / {name}: no lair {lair_id!r}")
-        if boss["lair"] not in BOSS_LAIRS:
-            problems.append(f"BOSSES / {name}: no lair {boss['lair']!r}")
     if problems:
         raise SystemExit("Invalid data:\n  " + "\n  ".join(problems))
 

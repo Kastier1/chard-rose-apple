@@ -78,6 +78,11 @@ public class SlayerPanel extends JPanel
 	private static final int TOTAL_COLUMN = 40;
 	/** Room the crown or star after a monster's name takes: the icon and its gap. */
 	private static final int NAME_ICON_ROOM = 13;
+	/** The task's Go to nearest button's tooltip: it never picks a boss lair or a place the player can't get into. */
+	static final String NEAREST_TIP = "Path to whichever of the places below is quickest to reach. Leaves out boss "
+		+ "lairs and places you can't get into yet.";
+	/** Under a boss's Found at, since Go to nearest (right under the card) never goes to its lair. */
+	static final String BOSS_GO_HINT = "Go to nearest skips boss lairs: use Go on the lair's card below.";
 	/** Long tooltips wrap at this width instead of running across the screen. */
 	private static final int TOOLTIP_WIDTH = 250;
 	private static final Color WEAKNESS_COLOR = new Color(255, 200, 90);
@@ -468,7 +473,7 @@ public class SlayerPanel extends JPanel
 		actions.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		JButton nearest = new JButton("Go to nearest");
 		nearest.setEnabled(routable.size() > 0);
-		nearest.setToolTipText("Path to whichever of these places is quickest to reach");
+		nearest.setToolTipText(NEAREST_TIP);
 		nearest.addActionListener(e -> onGoNearest.accept(routable));
 		actions.add(nearest, BorderLayout.CENTER);
 		actions.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
@@ -763,7 +768,13 @@ public class SlayerPanel extends JPanel
 		{
 			where.add(escape(label));
 		}
-		card.add(factRow("Found at", textChip(String.join(", ", where),
+		String foundAt = String.join(", ", where);
+		if (selected.isBoss())
+		{
+			// The task's Go to nearest sits right under this card but never picks a lair
+			foundAt += "<br><i>" + BOSS_GO_HINT + "</i>";
+		}
+		card.add(factRow("Found at", textChip(foundAt,
 			placed ? ColorScheme.LIGHT_GRAY_COLOR : ColorScheme.MEDIUM_GRAY_COLOR)));
 	}
 

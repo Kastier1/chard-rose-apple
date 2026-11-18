@@ -12,6 +12,7 @@ Usage: python3 tools/fetch_wiki_monsters.py
        python3 tools/fetch_wiki_monsters.py --attributes   (only refresh monster attributes, e.g. spectral)
        python3 tools/fetch_wiki_monsters.py --locations    (only refresh the place names of each page's spawns)
        python3 tools/fetch_wiki_monsters.py --combat       (only refresh defence levels, defence bonuses and size)
+       python3 tools/fetch_wiki_monsters.py --extra-drops  (only refresh the drop tables in EXTRA_DROP_PAGES)
 """
 import json
 import re
@@ -36,6 +37,10 @@ LEAGUE_ONLY = re.compile(r"\[\[[^\]]*League[^\]]*\]\]", re.IGNORECASE)
 COMBAT_FIELDS = ["combat_level", "hitpoints", "defence_level", "magic_level", "magic_attack_bonus", "stab_defence_bonus", "slash_defence_bonus",
                  "crush_defence_bonus", "magic_defence_bonus", "light_range_defence_bonus",
                  "standard_range_defence_bonus", "heavy_range_defence_bonus", "size"]
+# Drop tables kept on a page that isn't a monster's own infobox page, so the monster list doesn't find them: the
+# Grotesque Guardians' loot is on https://oldschool.runescape.wiki/w/Grotesque_Guardians (the monster page is Dusk's),
+# and the Abyssal Sire's uniques come out of the Unsired it drops (https://oldschool.runescape.wiki/w/Unsired).
+EXTRA_DROP_PAGES = ["Grotesque Guardians", "Unsired"]
 FIELDS = ["page_name", "name", "version_anchor", "combat_level", "hitpoints", "slayer_experience", "slayer_category",
           "attack_style", "elemental_weakness", "elemental_weakness_percent"]
 
@@ -115,6 +120,18 @@ def update_combat():
     data["combat"] = fetch_combat()
     OUT.write_text(json.dumps(data, separators=(",", ":")))
     print(f"{len(data['combat'])} monster versions with combat stats -> {OUT}")
+
+
+def update_extra_drops():
+    """Refresh only the drop tables of EXTRA_DROP_PAGES in the existing data file, leaving everything else as it was."""
+    data = json.loads(OUT.read_text())
+    fetched = fetch_drops(EXTRA_DROP_PAGES)
+    missing = [p for p in EXTRA_DROP_PAGES if p not in fetched]
+    if missing:
+        raise RuntimeError(f"no drop table on the wiki for {missing}")
+    data["drops"].update(fetched)
+    OUT.write_text(json.dumps(data, separators=(",", ":")))
+    print(f"drops for {', '.join(EXTRA_DROP_PAGES)} -> {OUT}")
 
 
 def templates(text, name):
@@ -323,7 +340,7 @@ def main():
     bases, league = fetch_superior_bases(superiors)
     print(f"{len(bases)} superiors linked to their monster, {len(league)} league-only: {', '.join(league)}")
     spawns = fetch_spawns(sorted({m["page_name"] for m in monsters}))
-    drops = fetch_drops(sorted({m["page_name"] for m in monsters}))
+    drops = fetch_drops(sorted({m["page_name"] for m in monsters} | set(EXTRA_DROP_PAGES)))
     clog = fetch_collection_log_items()
     attributes = fetch_attributes()
     spawn_locations = fetch_spawn_locations(sorted(spawns))
@@ -356,5 +373,7 @@ if __name__ == "__main__":
         update_locations()
     elif "--combat" in sys.argv[1:]:
         update_combat()
+    elif "--extra-drops" in sys.argv[1:]:
+        update_extra_drops()
     else:
         main()

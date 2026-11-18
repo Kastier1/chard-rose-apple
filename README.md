@@ -151,9 +151,15 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
   Wilderness locations* off, a Wilderness boss stays in the table and its *Found at* says to turn the setting on. A
   boss's card leaves out the task's advice for the regular monsters (the *Attack* row and the *Weakness*, *They attack
   with* and *Bring* notes). Levels the wiki says can be boosted say so ("91 Slayer (boostable)" for Cerberus; 70
-  Hitpoints for K'ril's river) and a boosted level opens the lair. The God Wars Dungeon bodyguards aren't listed:
-  they're part of their general's fight, and nor is Kolodion, who can only be fought once, in the Mage Arena
-  miniquest.
+  Hitpoints for K'ril's river) and a boosted level opens the lair: the card updates as soon as you drink or eat the
+  boost, and again when it wears off. The Wilderness boss lairs need their Wilderness Diary on a normal task (medium for
+  Callisto's Den, Vet'ion's Rest and the Silk Chasm; hard for Hunter's End, the Skeletal Tomb and the Web Chasm), and
+  show as closed without it; their note says the 50,000 coin fee is paid once for all of them. A boss's *Found at*
+  reminds you that **Go to nearest** skips boss lairs (use Go on the lair's card). The Grotesque Guardians' drops come
+  from their own wiki page, and the Abyssal Sire lists the uniques that come out of the Unsired (at the Unsired's rate
+  times theirs). The God Wars Dungeon bodyguards aren't listed: they're part of their general's fight, and nor is
+  Kolodion, who can only be fought once, in the Mage Arena miniquest, or Porazdir, who only turns up for the Mage
+  Arena II miniquest (or to reobtain an imbued Zamorak cape), so has no lair to go to.
 - Monsters that live away from every place in the slayer location guide (tormented demons for Greater demons,
   ice spiders, penguins...) get a place of their own made from their OSRS Wiki spawn points, such as
   "Tormented Demon (Ancient Guthixian Temple)". Its card says so. If the wiki names the spot like one of the task's

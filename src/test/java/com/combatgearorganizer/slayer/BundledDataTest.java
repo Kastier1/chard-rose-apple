@@ -1274,6 +1274,178 @@ public class BundledDataTest
 	}
 
 	@Test
+	public void theCutOffCheckMeasuresAWrappedNameWithAFixedSize() throws Exception
+	{
+		SwingUtilities.invokeAndWait(() ->
+		{
+			// Like the monster table's two-line names: a fixed preferred width of 10, laid out too narrow
+			JLabel name = new JLabel("<html>Grotesque<br>Guardians</html>");
+			name.setPreferredSize(new java.awt.Dimension(10, 16));
+			name.setSize(30, 16);
+			Set<String> problems = new HashSet<>();
+			clipped(name, "test", problems);
+			assertEquals(problems.toString(), 1, problems.size());
+			// Wide and tall enough: no problem
+			name.setSize(name.getUI().getPreferredSize(name));
+			problems.clear();
+			clipped(name, "test", problems);
+			assertTrue(problems.toString(), problems.isEmpty());
+		});
+	}
+
+	@Test
+	public void everyBossHasDropsFromItsWikiPages()
+	{
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			for (SlayerLocationData.Variant v : t.getVariants())
+			{
+				if (v.isBoss())
+				{
+					assertFalse(t.getName() + " / " + v.getName() + " has no drops", v.getDrops().isEmpty());
+				}
+			}
+		}
+		// The Grotesque Guardians' loot is on their own wiki page, not Dusk's
+		SlayerLocationData.Variant gg = Variants.byName(data.findTask(-1, "Gargoyles").getVariants(), "Grotesque Guardians");
+		List<String> ggDrops = new ArrayList<>();
+		gg.getDrops().forEach(d -> ggDrops.add(d.getItem()));
+		assertTrue(ggDrops.toString(), ggDrops.containsAll(Arrays.asList("Granite gloves", "Granite ring", "Granite hammer",
+			"Black tourmaline core", "Noon", "Jar of Stone")));
+		// The Abyssal Sire's uniques come out of the Unsired it drops (1/100), at the Unsired's rate times that
+		SlayerLocationData.Variant sire = Variants.byName(data.findTask(-1, "Abyssal demons").getVariants(), "Abyssal Sire");
+		Map<String, String> rates = new HashMap<>();
+		sire.getDrops().forEach(d -> rates.put(d.getItem(), d.getRarity()));
+		assertEquals("1/100", rates.get("Unsired"));
+		assertEquals("1/206.5", rates.get("Bludgeon claw"));
+		assertEquals("1/492.3", rates.get("Abyssal dagger"));
+		assertEquals("1/2,560", rates.get("Abyssal orphan"));
+		assertTrue(rates.containsKey("Jar of Miasma"));
+		assertTrue(rates.containsKey("Abyssal head"));
+	}
+
+	@Test
+	public void wildernessBossLairsNeedTheirDiary()
+	{
+		Object[][] lairs = {
+			{"Bears", "Callisto", "WILDERNESS_MEDIUM"}, {"Bears", "Artio", "WILDERNESS_HARD"},
+			{"Skeletons", "Vet'ion", "WILDERNESS_MEDIUM"}, {"Skeletons", "Calvar'ion", "WILDERNESS_HARD"},
+			{"Spiders", "Venenatis", "WILDERNESS_MEDIUM"}, {"Spiders", "Spindel", "WILDERNESS_HARD"},
+		};
+		for (Object[] row : lairs)
+		{
+			SlayerLocationData.TaskEntry t = data.findTask(-1, (String) row[0]);
+			String key = Variants.byName(t.getVariants(), (String) row[1]).getPlaces().get(0);
+			// The normal list and Krystilia's Wilderness list both need it
+			List<SlayerLocationData.LocationEntry> both = new ArrayList<>();
+			t.getLocations().stream().filter(l -> l.getKey().equals(key)).forEach(both::add);
+			t.getWildernessLocations().stream().filter(l -> l.getKey().equals(key)).forEach(both::add);
+			assertEquals(row[1] + "", 2, both.size());
+			for (SlayerLocationData.LocationEntry l : both)
+			{
+				assertEquals(row[1] + "", Collections.singletonList(row[2]), l.getRequirements().getDiaries());
+				// One fee for every Wilderness boss lair, not one per entry
+				assertTrue(l.getNote(), l.getNote().contains("opens all the Wilderness boss lairs"));
+				assertFalse(l.getNote(), l.getNote().contains("to enter"));
+			}
+			// Without the diary the lair is closed, and says what it needs
+			RequirementChecker noDiary = r -> r.getDiaries().isEmpty() ? Collections.<String>emptyList()
+				: Collections.singletonList(Diaries.text(r.getDiaries().get(0)));
+			LocationOption lair = LocationPicker.pick(t, 5, 0, true, noDiary).stream()
+				.filter(o -> o.getKey().equals(key)).findFirst().orElse(null);
+			assertNotNull(lair);
+			assertFalse(lair.isAccessible());
+			assertEquals(Collections.singletonList(row[2].equals("WILDERNESS_HARD") ? "Hard Wilderness Diary"
+				: "Medium Wilderness Diary"), lair.getMissingRequirements());
+		}
+		// Every diary in the data is one the plugin can read
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			for (SlayerLocationData.LocationEntry l : allLocations(t))
+			{
+				if (l.getRequirements() != null)
+				{
+					for (String d : l.getRequirements().getDiaries())
+					{
+						assertTrue(t.getName() + " / " + l.getKey() + ": " + d, Diaries.VARBITS.containsKey(d));
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	public void aBoostOpensAndClosesABoostableLair()
+	{
+		// The skills the plugin watches for boosts are the ones some place lists as boostable
+		assertEquals(new java.util.TreeSet<>(Arrays.asList("HITPOINTS", "SLAYER")), BoostWatch.boostableSkills(data));
+		SlayerLocationData.TaskEntry hounds = data.findTask(-1, "Hellhounds");
+		int[] boosted = {89};
+		RequirementChecker slayer89 = r ->
+		{
+			List<String> missing = new ArrayList<>();
+			for (Map.Entry<String, Integer> e : r.getSkills().entrySet())
+			{
+				boolean boostable = r.getBoostable().contains(e.getKey());
+				if (!RequirementChecker.meets(89, boosted[0], e.getValue(), boostable))
+				{
+					missing.add(RequirementChecker.skillText(e.getValue(), e.getKey(), boostable));
+				}
+			}
+			return missing;
+		};
+		BoostWatch watch = new BoostWatch(BoostWatch.boostableSkills(data));
+		Map<String, Integer> levels = new HashMap<>();
+		levels.put("SLAYER", 89);
+		levels.put("HITPOINTS", 99);
+		assertFalse("the first look only remembers", watch.changed(levels));
+		List<LocationOption> shown = LocationPicker.pick(hounds, 5, 0, false, slayer89);
+		assertFalse(shown.stream().filter(LocationOption::isBossLair).findFirst().get().isAccessible());
+
+		// A wild pie: 89 -> 91. The boost is noticed and the Cerberus lair opens, so the panel draws again
+		boosted[0] = 91;
+		levels.put("SLAYER", 91);
+		assertTrue(watch.changed(levels));
+		List<LocationOption> now = LocationPicker.pick(hounds, 5, 0, false, slayer89);
+		assertTrue(now.stream().filter(LocationOption::isBossLair).findFirst().get().isAccessible());
+		assertTrue(BoostWatch.placesChanged(now, shown));
+
+		// Hitpoints going down in a fight is noticed, but changes no place here, so nothing is drawn again
+		levels.put("HITPOINTS", 80);
+		assertTrue(watch.changed(levels));
+		assertFalse(BoostWatch.placesChanged(LocationPicker.pick(hounds, 5, 0, false, slayer89), now));
+		assertFalse("no change", watch.changed(levels));
+
+		// The boost wears off: the lair closes again
+		boosted[0] = 89;
+		levels.put("SLAYER", 89);
+		assertTrue(watch.changed(levels));
+		assertTrue(BoostWatch.placesChanged(LocationPicker.pick(hounds, 5, 0, false, slayer89), now));
+	}
+
+	@Test
+	public void aBossCardSaysGoToNearestSkipsItsLair() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Blue dragons");
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY,
+				DropItems.EMPTY);
+			JButton nearest = buttons(panel, "Go to nearest").get(0);
+			assertEquals(SlayerPanel.NEAREST_TIP, nearest.getToolTipText());
+			assertTrue(SlayerPanel.NEAREST_TIP.contains("boss lairs"));
+			assertFalse(containsText(panel, SlayerPanel.BOSS_GO_HINT));
+			panel.selectVariant("Vorkath");
+			assertTrue(containsText(panel, SlayerPanel.BOSS_GO_HINT));
+			panel.selectVariant("Blue dragon");
+			assertFalse(containsText(panel, SlayerPanel.BOSS_GO_HINT));
+		});
+	}
+
+	@Test
 	public void aWildernessBossGetsALootingBagOnlyForItsOwnLair() throws Exception
 	{
 		SlayerLocationData.TaskEntry t = data.findTask(-1, "Bears");
@@ -1730,9 +1902,14 @@ public class BundledDataTest
 		{
 			JLabel l = (JLabel) c;
 			String text = l.getText();
-			if (text != null && text.startsWith("<html>") && l.getPreferredSize().width > l.getWidth() + 1)
+			// The size the text really needs: a label given a fixed preferred size (the monster table's wrapped names)
+			// would otherwise always look like it fits
+			java.awt.Dimension natural = l.isPreferredSizeSet() && l.getUI() != null ? l.getUI().getPreferredSize(l)
+				: l.getPreferredSize();
+			if (text != null && text.startsWith("<html>")
+				&& (natural.width > l.getWidth() + 1 || (l.isPreferredSizeSet() && natural.height > l.getHeight() + 1)))
 			{
-				problems.add(l.getPreferredSize().width + ">" + l.getWidth() + " "
+				problems.add(natural.width + "x" + natural.height + ">" + l.getWidth() + "x" + l.getHeight() + " "
 					+ text.replaceAll("<[^>]*>", " ").replaceAll("\\s+", " ").trim());
 			}
 			else if (text != null && !text.isEmpty() && !text.startsWith("<html>") && l.getWidth() > 0)

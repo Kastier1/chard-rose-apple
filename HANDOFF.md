@@ -187,8 +187,21 @@ monster table sizes its level and XP columns to the widest value (`Variants.xpEa
 names to fit (`SlayerPanel.wrapName`, `TABLE_ROW_WIDTH`); `noTextIsCutOffAtTheSidebarWidth` now also measures
 plain-text labels. Not yet seen in a logged-in client.
 
-Still open from the review: Venator data, the Wilderness-diary needs of the Wilderness boss lairs (said in the note,
-not checked), the low-severity Shortest Path `clear` items, ammo-slot grouping,
+**Update 2026-11-18 (bosses as variants, review round 2):** place requirements can list `diaries`
+(`Diaries.VARBITS`: `WILDERNESS_EASY`..`WILDERNESS_ELITE`, read from the `*_DIARY_*_COMPLETE` varbits; the generator's
+`DIARIES` must match); the six Wilderness boss lairs need the medium or hard Wilderness Diary (the wiki: a bear,
+skeleton or spider task doesn't bypass it), and their note says the 50,000 coin fee is shared by all the lairs.
+`BoostWatch` keeps the boosted levels of every skill some place lists as `boostable` (Slayer, Hitpoints); when one
+changes, `SlayerHelper.refresh` recomputes the shown places and redraws if any opened or closed. The fetcher's
+`EXTRA_DROP_PAGES` (`--extra-drops` refreshes only those) adds the drop tables of "Grotesque Guardians" (the boss's
+`dropPages` in `BOSSES`; Dusk's page has none) and "Unsired"; the generator's `DROP_CONTENTS` lists what comes out
+of an Unsired on the Sire at the Unsired's rate times the reward's. A boss's *Found at* ends with
+`SlayerPanel.BOSS_GO_HINT`, and Go to nearest's tooltip (`NEAREST_TIP`) says it skips boss lairs. The cut-off test
+measures labels with a fixed preferred size (the table's wrapped names) by their UI's own preferred size. The
+Porazdir comment now gives the real reason he's left out (he only appears for the Mage Arena II errand), not "once".
+Not yet seen in a logged-in client.
+
+Still open from the review: Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping; By set covers armour only), and the scope doc's wrong required items.
 
 Branch: `claude/loving-faraday-7nz9t9` on `Kastier1/chard-rose-apple`. No pull request yet.

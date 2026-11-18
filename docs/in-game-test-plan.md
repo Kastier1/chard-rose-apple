@@ -107,9 +107,19 @@ Have a task, and open the **Slayer** tab.
   a gargoyle and they're back. Dagannoth: Dagannoth Rex has no "Attack: Melee or ranged" row.
 - [ ] The monster table at the normal sidebar width: "Grotesque Guardians", "Thermonuclear smoke devil" and "Dagannoth
   Supreme" wrap onto two lines instead of ending in "..."; Gargoyles' "248-328" level is readable.
-- [ ] With 89 Slayer, eat a wild pie (to 91+): the Cerberus card stops saying "Needs 91 Slayer (boostable)". The
+- [ ] With 89 Slayer, eat a wild pie (to 91+): the Cerberus card stops saying "Needs 91 Slayer (boostable)" within a
+  tick, without a kill or XP drop; when the boost wears off it says it again. The
   Abyssal Nexus card says it needs a first visit to the Abyss. Scorpions: Scorpia's offspring is found at Scorpia's
   cave, not the Scorpion Pit.
+- [ ] Bears, Skeletons, Spiders (Wilderness setting on) on an account without the medium Wilderness Diary: Callisto's
+  Den, Vet'ion's Rest and the Silk Chasm say "Needs Medium Wilderness Diary" and sit with the closed places; Hunter's
+  End, the Skeletal Tomb and the Web Chasm say "Needs Hard Wilderness Diary" until the hard diary is done. Their note
+  says the 50,000 coin fee is paid once for all the Wilderness boss lairs.
+- [ ] Select Vorkath: under *Found at* it says "Go to nearest skips boss lairs: use Go on the lair's card below."
+  Hover **Go to nearest**: the tooltip says it leaves out boss lairs. Select a blue dragon: the line is gone.
+- [ ] Gargoyles, select Grotesque Guardians: a Drops row with the granite gloves, ring, hammer and maul, Black
+  tourmaline core, Noon and Jar of stone. Abyssal demons, select the Abyssal Sire: the bludgeon pieces (about 1/206
+  each), abyssal dagger, whip, head, Jar of miasma and orphan, as well as the Unsired.
 - [ ] **Drops** are item pictures. Hover one: rate, on-task rate, value.
 - [ ] **Item value** setting: switch Grand Exchange ↔ High alchemy. Every value in the panel changes straight away,
   including task loot.
