@@ -53,7 +53,7 @@ public class SlayerPanel extends JPanel
 	private static final Color RECOMMENDED_COLOR = new Color(110, 200, 90);
 	/** Text widths in px, so labels wrap inside the 225px panel. */
 	private static final int FULL_TEXT_WIDTH = 165;
-	private static final int CARD_TEXT_WIDTH = 135;
+	private static final int CARD_TEXT_WIDTH = 115;
 	/**
 	 * The route line shares its row with the Cancel button. Swing draws an HTML label about 1.3 times wider than its
 	 * CSS width, so this keeps "On route to Catacombs of Kourend" wrapping instead of being cut off.
@@ -61,6 +61,8 @@ public class SlayerPanel extends JPanel
 	private static final int ROUTE_TEXT_WIDTH = 105;
 	private static final int INFO_TEXT_WIDTH = 140;
 	private static final int PREVIEW_LENGTH = 22;
+	/** Characters a drawer header fits on one line, its title and the note's preview together. */
+	private static final int PREVIEW_ROOM = 28;
 	private static final int CAPTION_WIDTH = 46;
 	/** Long tooltips wrap at this width instead of running across the screen. */
 	private static final int TOOLTIP_WIDTH = 250;
@@ -1277,7 +1279,7 @@ public class SlayerPanel extends JPanel
 		// The RuneScape font has no arrow characters, so draw the arrow
 		JLabel arrow = new JLabel(open ? ARROW_OPEN : ARROW_CLOSED);
 		arrow.setBorder(new EmptyBorder(0, 0, 0, 4));
-		JLabel header = new JLabel("<html><b>" + escape(title) + "</b>" + (open ? "" : "  " + escape(preview(text))) + "</html>");
+		JLabel header = new JLabel("<html><b>" + escape(title) + "</b>" + (open ? "" : "  " + escape(preview(text, PREVIEW_ROOM - title.length()))) + "</html>");
 		header.setFont(FontManager.getRunescapeSmallFont());
 		header.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 
@@ -1363,13 +1365,20 @@ public class SlayerPanel extends JPanel
 	/** The first few words of a note, cut at a word boundary. */
 	static String preview(String text)
 	{
+		return preview(text, PREVIEW_LENGTH);
+	}
+
+	/** The first words of a note that fit in about {@code room} characters, before the "...". */
+	static String preview(String text, int room)
+	{
 		String t = text.trim();
-		if (t.length() <= PREVIEW_LENGTH)
+		int length = Math.max(6, Math.min(PREVIEW_LENGTH, room));
+		if (t.length() <= length)
 		{
 			return t;
 		}
-		int cut = t.lastIndexOf(' ', PREVIEW_LENGTH);
-		return t.substring(0, cut > PREVIEW_LENGTH / 2 ? cut : PREVIEW_LENGTH).replaceAll("[,;:.]$", "") + "...";
+		int cut = t.lastIndexOf(' ', length);
+		return t.substring(0, cut > length / 2 ? cut : length).replaceAll("[,;:.]$", "") + "...";
 	}
 
 	private static String nullToEmpty(String s)

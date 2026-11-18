@@ -1257,4 +1257,122 @@ public class BundledDataTest
 		}
 		return null;
 	}
+
+	/**
+	 * Lays the panel out at the sidebar's real width and checks that no wrapped label needs more room than it gets,
+	 * which would cut its text off on the right.
+	 */
+	@Test
+	public void noTextIsCutOffAtTheSidebarWidth() throws Exception
+	{
+		Set<String> problems = Collections.synchronizedSet(new java.util.TreeSet<>());
+		SwingUtilities.invokeAndWait(() ->
+		{
+			// The client's own look and feel: its buttons and insets set how much room the text gets
+			javax.swing.LookAndFeel before = javax.swing.UIManager.getLookAndFeel();
+			try
+			{
+				javax.swing.UIManager.setLookAndFeel(new net.runelite.client.ui.laf.RuneLiteLAF());
+			}
+			catch (javax.swing.UnsupportedLookAndFeelException e)
+			{
+				throw new IllegalStateException(e);
+			}
+			try
+			{
+				drawAtSidebarWidth(problems);
+			}
+			finally
+			{
+				try
+				{
+					javax.swing.UIManager.setLookAndFeel(before);
+				}
+				catch (javax.swing.UnsupportedLookAndFeelException e)
+				{
+					throw new IllegalStateException(e);
+				}
+			}
+		});
+		assertTrue(problems.size() + " labels cut off:\n" + String.join("\n", problems), problems.isEmpty());
+	}
+
+	private void drawAtSidebarWidth(Set<String> problems)
+	{
+		{
+			CombatTabPanel combat = new CombatTabPanel(n -> { }, g -> { }, () -> { }, () -> { }, () -> { });
+			OrganizerPanel organizer = new OrganizerPanel(combat);
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			organizer.setSlayerPanel(panel);
+			panel.setGear(BIG_BANK);
+			panel.setPreview(true, () -> { });
+			panel.showRoute(Route.shortestPath("Catacombs of Kourend"));
+			java.awt.Container host = organizer.getWrappedPanel();
+			for (SlayerLocationData.TaskEntry t : data.getTasks())
+			{
+				SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+				for (boolean wilderness : new boolean[]{false, true})
+				{
+					List<LocationOption> locations = LocationPicker.pick(t, 5, 0, wilderness);
+					panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true,
+						CollectionLog.Snapshot.EMPTY, stubItems(ItemValueMode.GRAND_EXCHANGE));
+					for (SlayerLocationData.Variant v : Variants.listed(t.getVariants(), locations))
+					{
+						panel.selectVariant(v.getName());
+						host.setSize(net.runelite.client.ui.PluginPanel.PANEL_WIDTH
+							+ net.runelite.client.ui.PluginPanel.SCROLLBAR_WIDTH, 800);
+						layOut(host);
+						clipped(host, t.getName(), problems);
+					}
+				}
+			}
+		}
+	}
+
+	private static void layOut(Component c)
+	{
+		if (c instanceof Container)
+		{
+			Container k = (Container) c;
+			if (k instanceof javax.swing.JViewport)
+			{
+				Component view = ((javax.swing.JViewport) k).getView();
+				if (view != null)
+				{
+					view.setSize(k.getWidth(), Math.max(k.getHeight(), view.getPreferredSize().height));
+				}
+			}
+			k.doLayout();
+			for (Component child : k.getComponents())
+			{
+				layOut(child);
+			}
+		}
+	}
+
+	private static void clipped(Component c, String task, Set<String> problems)
+	{
+		if (!c.isVisible())
+		{
+			return;
+		}
+		if (c instanceof JLabel)
+		{
+			JLabel l = (JLabel) c;
+			String text = l.getText();
+			if (text != null && text.startsWith("<html>") && l.getPreferredSize().width > l.getWidth() + 1)
+			{
+				problems.add(l.getPreferredSize().width + ">" + l.getWidth() + " "
+					+ text.replaceAll("<[^>]*>", " ").replaceAll("\\s+", " ").trim());
+			}
+		}
+		if (c instanceof Container)
+		{
+			for (Component child : ((Container) c).getComponents())
+			{
+				clipped(child, task, problems);
+			}
+		}
+	}
+
 }
