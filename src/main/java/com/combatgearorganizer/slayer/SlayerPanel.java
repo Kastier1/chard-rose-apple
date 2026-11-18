@@ -90,7 +90,14 @@ public class SlayerPanel extends JPanel
 	/** On a place card whose Go is greyed out: the data has no map point to path to. */
 	static final String NO_MAP_POINT = "No map point yet, so Go can't path here";
 	/** Tooltip of a card's monster line when it names the monster shown above. */
-	static final String SELECTED_MONSTER_TIP = "Underlined: the monster shown above";
+	static final String SELECTED_MONSTER_TIP = "\u2022 marks the monster shown above";
+	/**
+	 * Before the selected monster's name on a card, so it reads without colour too. It sits within the letters' height:
+	 * an underline took the rows between lines and touched the wrapped line, or the line, under it.
+	 */
+	static final String SELECTED_MARK = "\u2022\u00a0";
+	/** Pixels between the wrapped lines of a card's monster line, and under it: the small font's lines touch. */
+	static final int MONSTER_LINE_GAP = 1;
 	/** Room the crown or star after a monster's name takes: the icon and its gap. */
 	private static final int NAME_ICON_ROOM = 13;
 	/** The task's Go to nearest button's tooltip: it never picks a boss lair or a place the player can't get into. */
@@ -1615,10 +1622,13 @@ public class SlayerPanel extends JPanel
 		List<String> here = Variants.at(currentVariants, location.getKey());
 		if (!compact && !here.isEmpty())
 		{
-			JLabel monsters = new JLabel("<html><body style='width:" + CARD_TEXT_WIDTH + "px'>"
-				+ monsterLine(here, selectedVariant) + "</body></html>");
-			monsters.setName(CARD_MONSTERS);
+			JLabel monsters = new JLabel();
 			monsters.setFont(FontManager.getRunescapeSmallFont());
+			monsters.setText(monsterLine(here, selectedVariant, monsters.getFontMetrics(monsters.getFont()),
+				CARD_TEXT_WIDTH));
+			monsters.setName(CARD_MONSTERS);
+			// Room under it: the line below (Recommended, Needs ...) would touch its descenders
+			monsters.setBorder(new EmptyBorder(0, 0, MONSTER_LINE_GAP, 0));
 			monsters.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 			monsters.setAlignmentX(LEFT_ALIGNMENT);
 			if (here.contains(selectedVariant))
@@ -1726,21 +1736,67 @@ public class SlayerPanel extends JPanel
 	}
 
 	/**
-	 * A place card's monster names (HTML, escaped). The monster shown above is in the selected colour and underlined,
-	 * so it reads without colour too; it's marked on every card that lists it, whichever monster it is.
+	 * A place card's monster names, as the label's HTML. The monster shown above is in the selected colour, after
+	 * {@link #SELECTED_MARK} so it reads without colour too; it's marked on every card that lists it, whichever monster
+	 * it is. The names are wrapped here, at {@code width} in {@code fm}, so the lines can have {@link #MONSTER_LINE_GAP}
+	 * between them (Swing's HTML has no line-height); each line's words are joined by no-break spaces so it can't wrap
+	 * again.
 	 */
-	static String monsterLine(List<String> here, String selected)
+	static String monsterLine(List<String> here, String selected, FontMetrics fm, int width)
 	{
-		StringBuilder names = new StringBuilder();
-		for (String name : here)
+		// Words with whether they're the selected monster's; a name's last word takes the comma before the next name
+		List<String> words = new ArrayList<>();
+		List<Boolean> marked = new ArrayList<>();
+		for (int i = 0; i < here.size(); i++)
 		{
-			if (names.length() > 0)
+			String name = here.get(i);
+			String[] parts = name.trim().split("\\s+");
+			for (int j = 0; j < parts.length; j++)
 			{
-				names.append(", ");
+				String w = parts[j];
+				if (j == 0 && name.equals(selected))
+				{
+					w = SELECTED_MARK + w;
+				}
+				if (j == parts.length - 1 && i < here.size() - 1)
+				{
+					w += ",";
+				}
+				words.add(w);
+				marked.add(name.equals(selected));
 			}
-			names.append(name.equals(selected) ? "<font color='#ff981f'><u>" + escape(name) + "</u></font>" : escape(name));
 		}
-		return names.toString();
+
+		StringBuilder html = new StringBuilder("<html><body style='width:" + width + "px'>");
+		int start = 0;
+		while (start < words.size())
+		{
+			// As many words as fit (at least one)
+			int end = start + 1;
+			String plain = words.get(start);
+			while (end < words.size() && fm.stringWidth(plain + " " + words.get(end)) <= width)
+			{
+				plain += " " + words.get(end);
+				end++;
+			}
+			html.append(start == 0 ? "<div>" : "<div style='margin-top:" + MONSTER_LINE_GAP + "px'>");
+			for (int k = start; k < end; k++)
+			{
+				boolean on = marked.get(k);
+				boolean opens = on && (k == start || !marked.get(k - 1));
+				boolean closes = on && (k == end - 1 || !marked.get(k + 1));
+				if (k > start)
+				{
+					// Inside the selected colour when both words are the selected monster's
+					html.append('\u00a0');
+				}
+				html.append(opens ? "<font color='#ff981f'>" : "").append(escape(words.get(k)))
+					.append(closes ? "</font>" : "");
+			}
+			html.append("</div>");
+			start = end;
+		}
+		return html.append("</body></html>").toString();
 	}
 
 	private static JLabel title(String text)

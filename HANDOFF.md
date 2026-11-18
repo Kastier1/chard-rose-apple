@@ -276,6 +276,27 @@ Wilderness boss with *Show Wilderness locations* off). Not yet seen in a logged-
   Waste Plateau)"; the note no longer lists the Ice Queen's Lair, Temple of Ikov and other caves where kills don't count
   for her). Tests: 298.
 
+**Update 2026-11-18 (table gaps and place links, review round 3):**
+- *Five `NO_MONSTER_PLACES` entries were wrong* (the bundled wiki data has the monster there); they are `SPOT_PLACES`
+  now, with points, so the card names the monster and Go works: Birds' Farmer Fred's chicken pen (Chicken "Lumbridge
+  West Farm"), Dwarves' Falador near the Mining Guild ladders (Dwarf "Surface of Mining Guild", plane 0), Ghosts' Temple
+  in The Golem (Ghost "Ruins of Uzer Temple Basement"), Skeletons' Tarn's Lair, Abandoned Mine (Skeleton (Tarn's Lair)
+  "Abandoned Mine (Level 1)"; `tarns_lair` is the other half) and Skeletons' Southern Wilderness mine (the 5 Skeleton
+  "Wilderness, north of Edgeville" points at about 3105,3569; not her "South-west Wilderness mine" at about 3014,3589).
+  29 `noMonster` places now (`everyPlaceListsAMonsterThatLivesThere` caps 29); `handLinkedPlacesHaveTheirMonsterAndAPoint`.
+- *Monster line spacing.* The selected monster's underline took the rows between lines: the RuneScape small font's
+  lines have no gap, so it touched the wrapped line and the line under the label. The mark is now `SELECTED_MARK` (a
+  dot before the name, within the letters' height; tooltip `SELECTED_MONSTER_TIP`), and `SlayerPanel.monsterLine` wraps
+  the names itself (`FontMetrics`, no-break spaces inside a line) into `<div>`s with `MONSTER_LINE_GAP` (1px) between
+  them, plus a 1px bottom border on the label (Swing's HTML ignores `line-height`; bold is a taller face and touched
+  too). `theMonsterLineNeverTouchesTheLinesAroundIt` paints every marked card label: one band of ink per line and a clear
+  row above the next line (117 failures with the underline back).
+- *Requirement re-check tested.* The schedule moved from `SlayerHelper` into `RequirementRecheck` (`onLogin`, `due`,
+  `needsRedraw`; same behaviour: each of the 10 refreshes after LOGGED_IN, then every 25th). `RequirementRecheckTest`
+  drives it with quests that read as not done until tick N: redrawn on that tick within the login window, at the next
+  periodic check after it, never otherwise. Not covered: that `onGameStateChanged` calls `onLogin` (SlayerHelper needs
+  the injected client services). Tests: 304.
+
 Still open from the review: Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping; By set covers armour only), and the scope doc's wrong required items.
 

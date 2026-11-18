@@ -377,7 +377,49 @@ public class SlayerPanelCardsTest
 		assertTrue("marked noMonster but a monster is known: " + wronglyMarked, wronglyMarked.isEmpty());
 		assertTrue("marked noMonster with no reviewed reason: " + unreviewed, unreviewed.isEmpty());
 		// The exceptions stay few: they are guide rows the monster pages' spawns don't cover
-		assertTrue(marked + " places with no known monster", marked <= 34);
+		assertTrue(marked + " places with no known monster", marked <= 29);
+	}
+
+	/**
+	 * Review (round 3): five reviewed noMonster exceptions were wrong; the bundled wiki data has the task monster at
+	 * each (SPOT_PLACES now): Fred's pen is the Chicken's "Lumbridge West Farm", the Mining Guild ladders are the
+	 * Dwarf's "Surface of Mining Guild", the Golem temple is the Ghost's "Ruins of Uzer Temple Basement", the Abandoned
+	 * Mine half of Tarn's Lair is the Tarn's Lair skeleton's "Abandoned Mine (Level 1)", and the Southern Wilderness
+	 * mine (not the list's South-west one) is the Skeleton's "Wilderness, north of Edgeville" spawns at 3105,3569.
+	 * Each names its monster and has a point for Go.
+	 */
+	@Test
+	public void handLinkedPlacesHaveTheirMonsterAndAPoint()
+	{
+		String[][] cases = {
+			{"Birds", "Chicken", "farmer_freds_chicken_pen", "3171,3293"},
+			{"Dwarves", "Dwarf", "falador_near_the_mining_guild_ladders", "3012,3337"},
+			{"Ghosts", "Ghost", "temple_in_the_golem", "2712,4898"},
+			{"Skeletons", "Skeleton", "tarns_lair_abandoned_mine", "3427,9644"},
+			{"Skeletons", "Skeleton", "southern_wilderness_mine", "3102,3569"},
+		};
+		for (String[] c : cases)
+		{
+			TaskEntry t = data.findTask(-1, c[0]);
+			List<LocationEntry> places = new ArrayList<>(t.getLocations());
+			places.addAll(t.getWildernessLocations());
+			LocationEntry l = places.stream().filter(x -> x.getKey().equals(c[2])).findFirst()
+				.orElseThrow(() -> new AssertionError(c[0] + " / " + c[2] + " is gone"));
+			assertFalse(c[0] + " / " + c[2] + " is still noMonster", l.isNoMonster());
+			assertLivesAt(c[0], c[1], c[2]);
+			String[] xy = c[3].split(",");
+			int x = Integer.parseInt(xy[0]);
+			int y = Integer.parseInt(xy[1]);
+			List<int[]> points = new ArrayList<>(l.getPoints());
+			points.addAll(l.getWildernessPoints());
+			assertTrue(c[0] + " / " + c[2] + " has no point at " + c[3],
+				points.stream().anyMatch(p -> p[0] == x && p[1] == y));
+		}
+		// The Southern Wilderness mine isn't the South-west one (about 3014,3589)
+		LocationEntry southern = data.findTask(-1, "Skeletons").getWildernessLocations().stream()
+			.filter(x -> x.getKey().equals("southern_wilderness_mine")).findFirst().orElseThrow(AssertionError::new);
+		assertTrue(southern.getWildernessPoints().stream()
+			.allMatch(p -> Math.abs(p[0] - 3105) <= 5 && Math.abs(p[1] - 3569) <= 5));
 	}
 
 	/**
@@ -753,19 +795,49 @@ public class SlayerPanelCardsTest
 		return places.stream().filter(l -> l.getKey().equals(key)).findFirst().orElseThrow(AssertionError::new);
 	}
 
+	/** Every character 6px wide, so the wrapping is known. */
+	private static final java.awt.FontMetrics SIX_PX = new java.awt.FontMetrics(new java.awt.Font("Dialog", 0, 12))
+	{
+		@Override
+		public int stringWidth(String str)
+		{
+			return 6 * str.length();
+		}
+	};
+
 	@Test
 	public void monsterLineMarksTheSelectedMonsterWithoutColourToo()
 	{
-		assertEquals("<font color='#ff981f'><u>Greater demon</u></font>, Tormented Demon",
-			SlayerPanel.monsterLine(java.util.Arrays.asList("Greater demon", "Tormented Demon"), "Greater demon"));
-		assertEquals("Greater demon", SlayerPanel.monsterLine(Collections.singletonList("Greater demon"), "K'ril Tsutsaroth"));
-		assertEquals("Fish &amp; chips", SlayerPanel.monsterLine(Collections.singletonList("Fish & chips"), null));
+		String nb = "\u00a0";
+		assertEquals("<html><body style='width:160px'><div><font color='#ff981f'>" + SlayerPanel.SELECTED_MARK + "Greater"
+				+ nb + "demon,</font>" + nb + "Tormented</div><div style='margin-top:1px'>Demon</div></body></html>",
+			SlayerPanel.monsterLine(java.util.Arrays.asList("Greater demon", "Tormented Demon"), "Greater demon",
+				SIX_PX, 160));
+		// The mark starts the selected name even after a wrap, and the colour runs across the line's words
+		assertEquals("<html><body style='width:60px'><div>Greater</div><div style='margin-top:1px'>demon,</div>"
+				+ "<div style='margin-top:1px'><font color='#ff981f'>" + SlayerPanel.SELECTED_MARK + "Tormented</font>"
+				+ "</div><div style='margin-top:1px'><font color='#ff981f'>Demon</font></div></body></html>",
+			SlayerPanel.monsterLine(java.util.Arrays.asList("Greater demon", "Tormented Demon"), "Tormented Demon",
+				SIX_PX, 60));
+		assertEquals("<html><body style='width:120px'><div>Greater" + nb + "demon</div></body></html>",
+			SlayerPanel.monsterLine(Collections.singletonList("Greater demon"), "K'ril Tsutsaroth", SIX_PX, 120));
+		assertEquals("<html><body style='width:120px'><div>Fish" + nb + "&amp;" + nb + "chips</div></body></html>",
+			SlayerPanel.monsterLine(Collections.singletonList("Fish & chips"), null, SIX_PX, 120));
 	}
+
+	/** A card label's text as it reads: no tags, entities or no-break spaces. */
+	private static String plain(String html)
+	{
+		return html.replaceAll("<[^>]*>", " ").replace('\u00a0', ' ').replace("&amp;", "&").replace("&lt;", "<")
+			.replace("&gt;", ">").replaceAll("\\s+", " ").trim();
+	}
+
+	private static final String MARK = SlayerPanel.SELECTED_MARK.replace('\u00a0', ' ');
 
 	/**
 	 * Issue: the monster line looked orange on some tasks' cards and grey on others. The rule: the monster shown
-	 * above is marked (colour and underline, with a tooltip) on every card that lists it, and on no other card,
-	 * whichever monster is selected, for every task.
+	 * above is marked (colour and a mark before the name, with a tooltip) on every card that lists it, and on no
+	 * other card, whichever monster is selected, for every task.
 	 */
 	@Test
 	public void theSelectedMonsterIsMarkedOnEveryCardThatListsIt() throws Exception
@@ -788,18 +860,16 @@ public class SlayerPanelCardsTest
 				{
 					host.panel.selectVariant(v.getName());
 					host.draw();
-					String mark = SlayerPanel.monsterLine(Collections.singletonList(v.getName()), v.getName());
 					for (JLabel line : all(host.root, JLabel.class, SlayerPanel.CARD_MONSTERS))
 					{
-						String text = line.getText();
-						String plain = text.replaceAll("<[^>]*>", "").replace("&amp;", "&").replace("&lt;", "<")
-							.replace("&gt;", ">");
-						boolean lists = java.util.Arrays.asList(plain.split(", ")).contains(v.getName());
-						boolean isMarked = text.contains(mark);
+						String said = plain(line.getText());
+						boolean lists = java.util.Arrays.asList(said.replace(MARK, "").split(", ")).contains(v.getName());
+						boolean isMarked = said.startsWith(MARK + v.getName() + ",") || said.equals(MARK + v.getName())
+							|| said.contains(" " + MARK + v.getName() + ",") || said.endsWith(" " + MARK + v.getName());
 						if (lists != isMarked)
 						{
 							problems.add(t.getName() + " / " + v.getName() + ": lists=" + lists + " marked=" + isMarked
-								+ " in " + plain);
+								+ " in " + said);
 						}
 						if (isMarked)
 						{
@@ -809,9 +879,9 @@ public class SlayerPanelCardsTest
 								problems.add(t.getName() + " / " + v.getName() + ": no tooltip on the marked line");
 							}
 						}
-						else if (text.contains("<u>"))
+						else if (said.contains(MARK))
 						{
-							problems.add(t.getName() + " / " + v.getName() + ": another monster marked in " + plain);
+							problems.add(t.getName() + " / " + v.getName() + ": another monster marked in " + said);
 						}
 					}
 				}
@@ -819,6 +889,116 @@ public class SlayerPanelCardsTest
 		});
 		assertTrue(marked[0] > 500);
 		assertTrue(problems.size() + " problems:\n" + String.join("\n", problems), problems.isEmpty());
+	}
+
+	/**
+	 * Review (round 3): the selected monster's underline took the gap between lines, so it touched the descenders
+	 * above it and the next line's ascenders when the monster line wrapped (Blue dragons' Taverley Dungeon: "Baby blue
+	 * dragon, Blue / dragon") and the line under the label ("Recommended" on Dagannoth's Lighthouse). The small font's
+	 * lines have no gap of their own, so the mark is now a dot within the letters' height, and the card wraps the line
+	 * itself with a pixel between lines and under it. Painted with the RuneLite look and feel at the sidebar width,
+	 * each line of a card's monster label is its own band of ink, with a clear row between it and the next line on the
+	 * card, for every task and selected monster. (With the underline back, 117 of these failed.)
+	 */
+	@Test
+	public void theMonsterLineNeverTouchesTheLinesAroundIt() throws Exception
+	{
+		Set<String> problems = new TreeSet<>();
+		int[] checked = {0};
+		inClient(() ->
+		{
+			Host host = new Host();
+			for (TaskEntry t : data.getTasks())
+			{
+				List<LocationOption> locations = LocationPicker.pick(t, 5, 0, true);
+				List<Variant> listed = Variants.listed(Variants.counting(t, 5, 0), locations);
+				if (listed.isEmpty())
+				{
+					continue;
+				}
+				host.show(t, 5, 50, locations);
+				for (Variant v : listed)
+				{
+					host.panel.selectVariant(v.getName());
+					host.draw();
+					for (JLabel line : all(host.root, JLabel.class, SlayerPanel.CARD_MONSTERS))
+					{
+						if (line.getText().contains("ff981f"))
+						{
+							checked[0]++;
+							checkSpacing(line, t.getName() + " / " + v.getName(), problems);
+						}
+					}
+				}
+			}
+		});
+		assertTrue(checked[0] > 500);
+		assertTrue(problems.size() + " problems:\n" + String.join("\n", problems), problems.isEmpty());
+	}
+
+	/** Whether each row of the image holds any ink (not the background). */
+	private static boolean[] inkRows(java.awt.image.BufferedImage img, int bg)
+	{
+		boolean[] ink = new boolean[img.getHeight()];
+		for (int y = 0; y < img.getHeight(); y++)
+		{
+			for (int x = 0; x < img.getWidth() && !ink[y]; x++)
+			{
+				ink[y] = img.getRGB(x, y) != bg;
+			}
+		}
+		return ink;
+	}
+
+	/**
+	 * Paints the label's text column: each of the label's lines must be its own band of ink, with a clear row between
+	 * it and the next, and a clear row between its ink and the ink of the line under the label.
+	 */
+	private static void checkSpacing(JLabel label, String where, Set<String> problems)
+	{
+		Container text = label.getParent();
+		java.awt.Color bg = background(text);
+		java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(text.getWidth(), text.getHeight(),
+			java.awt.image.BufferedImage.TYPE_INT_RGB);
+		java.awt.Graphics2D g = img.createGraphics();
+		g.setColor(bg);
+		g.fillRect(0, 0, img.getWidth(), img.getHeight());
+		text.paint(g);
+		g.dispose();
+		boolean[] ink = inkRows(img, bg.getRGB());
+		String said = plain(label.getText());
+
+		int lines = label.getText().split("<div", -1).length - 1;
+		int bands = 0;
+		int lastInk = -1;
+		for (int y = label.getY(); y < label.getY() + label.getHeight(); y++)
+		{
+			if (ink[y] && (y == label.getY() || !ink[y - 1]))
+			{
+				bands++;
+			}
+			lastInk = ink[y] ? y : lastInk;
+		}
+		if (bands != lines)
+		{
+			problems.add(where + ": " + lines + " lines but " + bands + " bands of ink (lines touch) in " + said);
+		}
+
+		Component[] parts = text.getComponents();
+		int i = java.util.Arrays.asList(parts).indexOf(label);
+		if (i + 1 < parts.length && lastInk >= 0)
+		{
+			Component next = parts[i + 1];
+			int firstInk = -1;
+			for (int y = next.getY(); y < next.getY() + next.getHeight() && firstInk < 0; y++)
+			{
+				firstInk = ink[y] ? y : -1;
+			}
+			if (firstInk >= 0 && firstInk - lastInk < 2)
+			{
+				problems.add(where + ": " + said + " touches the line under it (" + texts(next) + ")");
+			}
+		}
 	}
 
 	@Test
@@ -835,10 +1015,10 @@ public class SlayerPanelCardsTest
 				host.draw();
 			};
 			select.accept("Greater demon");
-			assertTrue(cardLine(host, "Catacombs of Kourend").contains("<u>Greater demon</u>"));
+			assertTrue(cardLine(host, "Catacombs of Kourend").contains(MARK + "Greater demon"));
 			select.accept("K'ril Tsutsaroth");
-			assertFalse(cardLine(host, "Catacombs of Kourend").contains("<u>"));
-			assertTrue(cardLine(host, "K'ril Tsutsaroth's room").contains("<u>K'ril Tsutsaroth</u>"));
+			assertFalse(cardLine(host, "Catacombs of Kourend").contains(MARK));
+			assertTrue(cardLine(host, "K'ril Tsutsaroth's room").contains(MARK + "K'ril Tsutsaroth"));
 		});
 	}
 
@@ -850,7 +1030,7 @@ public class SlayerPanelCardsTest
 			List<String> said = texts(card);
 			if (!said.isEmpty() && said.get(0).startsWith(placeStart))
 			{
-				return all(card, JLabel.class, SlayerPanel.CARD_MONSTERS).get(0).getText();
+				return plain(all(card, JLabel.class, SlayerPanel.CARD_MONSTERS).get(0).getText());
 			}
 		}
 		throw new AssertionError("no card " + placeStart);

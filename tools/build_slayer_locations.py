@@ -1330,6 +1330,30 @@ SPOT_PLACES = {
         "Hellhound", "Outside of the Wilderness Resource Area", None,
         "the Hellhound page's only surface Wilderness spawns (3169-3191, 3906-3956) are just north-east of the "
         "Deserted Keep's lever landing (about 3154,3924)"),
+    ("Birds", "farmer_freds_chicken_pen"): (
+        "Chicken", "Lumbridge West Farm", None,
+        "Fred the Farmer's farm is north-west of Lumbridge, south of the windmill (wiki Fred_the_Farmer); the Chicken "
+        "page's \"Lumbridge West Farm\" spawns (3171-3191, 3277-3305) are his pen and yard"),
+    ("Dwarves", "falador_near_the_mining_guild_ladders"): (
+        "Dwarf", "Surface of Mining Guild", None,
+        "the Dwarf page's \"Surface of Mining Guild\" spawns (3012-3025, 3333-3347, plane 0) are the guild's surface "
+        "entrance building in Falador, where the ladders down are; wiki Mining_Guild: both entrances \"are guarded by "
+        "dwarves\""),
+    ("Ghosts", "temple_in_the_golem"): (
+        "Ghost", "Ruins of Uzer Temple Basement", None,
+        "wiki Ruins_of_Uzer, Temple: \"Underneath the city lies the temple basement. ... A few ghosts lurk in the "
+        "hallways\", with the portal to Thammaron's realm from The Golem"),
+    # The guide row names both; the list's own tarns_lair is the Tarn's Lair part
+    ("Skeletons", "tarns_lair_abandoned_mine"): (
+        "Skeleton", "Abandoned Mine (Level 1)", None,
+        "the Skeleton (Tarn's Lair) page has a spot \"Abandoned Mine (Level 1)\" and says these skeletons are found "
+        "\"inside Tarn's Lair, the Abandoned Mine, and around the Ruins of Ullek\""),
+    # Not the list's south_west_wilderness_mine (about 3014,3589, the Skeleton page's "South-west Wilderness mine")
+    ("Skeletons", "southern_wilderness_mine"): (
+        "Skeleton", "Wilderness, north of Edgeville", [[3102, 3569, 0], [3103, 3567, 0], [3104, 3566, 0],
+                                                      [3106, 3567, 0], [3106, 3570, 0]],
+        "wiki Southern_Wilderness_mine (the \"Skeleton mine\", about 3105,3569) \"is filled with several aggressive "
+        "level 22 and 25 Skeletons\"; these are the Skeleton page's \"Wilderness, north of Edgeville\" spawns there"),
 }
 
 # Guide places no monster of the task lives at, as far as the bundled wiki data knows, with the evidence (reviewed by
@@ -1351,11 +1375,6 @@ NO_MONSTER_PLACES = {
     ("Bears", "west_of_lletya"): NONE_NAMED,
     ("Bears", "west_of_the_graveyard_of_shadows"): NONE_NAMED,
     ("Bears", "south_of_the_western_ruins"): NONE_NAMED,
-    ("Birds", "farmer_freds_chicken_pen"): NONE_NAMED + " (the bird pages' chicken pens are elsewhere: Rellekka, "
-                                           "Lumbridge East Farm)",
-    ("Dwarves", "falador_near_the_mining_guild_ladders"): "the Dwarf page's \"Falador Mining Guild\" and \"Surface "
-                                                         "of Mining Guild\" name the guild, not the ladders, and the "
-                                                         "guide row has no point",
     ("Elves", "prifddinas_south_gate"): "the elf pages name only \"Prifddinas\" (the Guard page), not a gate, and the "
                                         "guide row has no point",
     ("Elves", "prifddinas_east_gate"): "the elf pages name only \"Prifddinas\" (the Guard page), not a gate, and the "
@@ -1369,8 +1388,6 @@ NO_MONSTER_PLACES = {
     ("Elves", "mourner_headquarters_downstairs"): "the Mourner page names the \"Mourner Tunnels\", not the "
                                                   "headquarters, and the guide row has no point",
     ("Elves", "tower_of_voices"): NONE_NAMED,
-    ("Ghosts", "temple_in_the_golem"): "the Ghost page's Uzer spawns are the \"Ruins of Uzer Temple Basement\", not "
-                                       "named as this temple, and the guide row has no point",
     ("Moss giants", "south_east_of_the_lava_maze"): NONE_NAMED + " in the Wilderness",
     ("Ogres", "myths_guild_dungeon"): "no ogre page has a spawn spot named like it or within reach of its entrance "
                                       "(2456,2847)",
@@ -1378,12 +1395,7 @@ NO_MONSTER_PLACES = {
         "the Scorpion page's \"South-west of Stonecutter Outpost\" is another spot, and the guide row has no point"),
     ("Scorpions", "scorpion_pit_cave"): "the cave's scorpions are Scorpia's offspring, which are only listed at "
                                         "Scorpia's lair (AT_LAIR), and the guide row has no point",
-    ("Skeletons", "tarns_lair_abandoned_mine"): "the skeleton pages name \"Tarn's Lair\" and \"Abandoned Mine "
-                                                "(Level 1)\" apart, and the guide row has no point",
     ("Skeletons", "wizards_tower"): NONE_NAMED,
-    ("Skeletons", "southern_wilderness_mine"): "the Skeleton page's Wilderness mine spot (\"South-west Wilderness mine, "
-                                               "just south of the Dark Warriors' Fortress\") is the list's own "
-                                               "\"South-west Wilderness mine\", and the guide row has no point",
     ("Spiders", "south_of_callisto"): NONE_NAMED + " in the Wilderness",
     ("Trolls", "enchanted_valley"): NONE_NAMED,
     ("Vampyres", "burgh_de_rott"): "the vampyre pages' spots are \"West of\" and \"East of Burgh de Rott\", beside "
