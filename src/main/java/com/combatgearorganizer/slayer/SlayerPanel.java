@@ -421,9 +421,8 @@ public class SlayerPanel extends JPanel
 			content.add(sp);
 		}
 
-		List<LocationOption> routable = new ArrayList<>();
-		// "Nearest" leaves out places the player can't get into yet
-		locations.stream().filter(l -> l.isRoutable() && l.isAccessible()).forEach(routable::add);
+		// "Nearest" leaves out places the player can't get into yet, and the wiki-spawn places while a guide place will do
+		List<LocationOption> routable = LocationPicker.nearestTargets(locations);
 
 		JPanel actions = new JPanel(new BorderLayout());
 		actions.setBackground(ColorScheme.DARK_GRAY_COLOR);
@@ -649,16 +648,15 @@ public class SlayerPanel extends JPanel
 		addDrops(card, selected);
 		addCarry(card, selected, locations);
 
+		List<String> found = Variants.foundAt(selected, locations);
+		boolean placed = !found.contains(Variants.NO_PLACE) && !found.contains(Variants.NOT_SHOWN);
 		List<String> where = new ArrayList<>();
-		for (LocationOption l : locations)
+		for (String label : found)
 		{
-			if (selected.getPlaces().contains(l.getKey()))
-			{
-				where.add(escape(l.getLabel()));
-			}
+			where.add(escape(label));
 		}
-		card.add(factRow("Found at", textChip(where.isEmpty() ? "Not matched to a listed place" : String.join(", ", where),
-			where.isEmpty() ? ColorScheme.MEDIUM_GRAY_COLOR : ColorScheme.LIGHT_GRAY_COLOR)));
+		card.add(factRow("Found at", textChip(String.join(", ", where),
+			placed ? ColorScheme.LIGHT_GRAY_COLOR : ColorScheme.MEDIUM_GRAY_COLOR)));
 	}
 
 	/**
@@ -884,21 +882,10 @@ public class SlayerPanel extends JPanel
 			: "Can spawn a superior: " + String.join(", ", names) + ". Needs the Bigger and Badder unlock.";
 	}
 
-	/** Monsters left out of the table, superiors and bosses. */
+	/** Superiors and bosses, which aren't in the table. */
 	private void addVariantExtras(JPanel card, List<Variant> variants, List<LocationOption> locations)
 	{
-		// Monsters that count for the task but don't live at any listed place stay out of the way
-		List<String> elsewhere = new ArrayList<>();
-		for (Variant v : Variants.unlisted(variants, locations))
-		{
-			elsewhere.add(v.getName() + " (level " + Variants.range(v.getLevel()) + ", " + Variants.xpEach(v.getXp()) + " XP)");
-		}
-		if (!elsewhere.isEmpty())
-		{
-			addDrawer(card, "Also counts", String.join(", ", elsewhere) + ". Not at any of the places below.");
-		}
-
-		// Superiors already shown with their monster aren't repeated
+		// Every regular monster is in the table now, so superiors already shown with their monster aren't repeated
 		List<Variant> listed = Variants.listed(variants, locations);
 		addSpecials(card, "Superior", variants, s -> s.isSuperior()
 			&& listed.stream().noneMatch(v -> Variants.superiorsOf(variants, v).contains(s)));

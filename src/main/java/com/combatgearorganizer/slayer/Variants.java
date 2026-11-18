@@ -1,8 +1,11 @@
 package com.combatgearorganizer.slayer;
 
 import com.combatgearorganizer.slayer.SlayerLocationData.Variant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -42,23 +45,45 @@ public final class Variants
 		return regular.isEmpty() ? null : regular.get(0);
 	}
 
+	/** "Found at" for a monster the data has no place for. */
+	public static final String NO_PLACE = "No place in the data yet";
+	/** "Found at" for a monster whose places are all left out of the list (Wilderness setting, Konar's area). */
+	public static final String NOT_SHOWN = "Not at any of the places below";
+
 	/**
-	 * The regular variants found at one of the listed places, to put in the table. When none can be matched to
-	 * a place, every regular variant, so the table is never empty.
+	 * Every regular variant, for the table: the ones at a listed place first, then the rest, each part in the data's
+	 * order (lowest level first). Every monster that counts is in the table; its "Found at" row says where it lives.
 	 */
 	public static List<Variant> listed(List<Variant> variants, List<LocationOption> shownPlaces)
 	{
-		List<Variant> placed = regular(variants).stream()
-			.filter(v -> shownPlaces.stream().anyMatch(p -> v.getPlaces().contains(p.getKey())))
-			.collect(Collectors.toList());
-		return placed.isEmpty() ? regular(variants) : placed;
+		Map<Boolean, List<Variant>> atShown = regular(variants).stream()
+			.collect(Collectors.partitioningBy(v -> isAtAny(v, shownPlaces)));
+		List<Variant> out = new ArrayList<>(atShown.get(true));
+		out.addAll(atShown.get(false));
+		return out;
 	}
 
-	/** Regular variants left out of the table: they count for the task but live somewhere not listed. */
-	public static List<Variant> unlisted(List<Variant> variants, List<LocationOption> shownPlaces)
+	/**
+	 * The labels of the listed places this variant lives at, in list order; or a single line saying why there are
+	 * none ({@link #NO_PLACE} or {@link #NOT_SHOWN}). Plain text, not escaped.
+	 */
+	public static List<String> foundAt(Variant v, List<LocationOption> shownPlaces)
 	{
-		List<Variant> listed = listed(variants, shownPlaces);
-		return regular(variants).stream().filter(v -> !listed.contains(v)).collect(Collectors.toList());
+		if (v.getPlaces().isEmpty())
+		{
+			return Collections.singletonList(NO_PLACE);
+		}
+		List<String> labels = shownPlaces.stream()
+			.filter(p -> v.getPlaces().contains(p.getKey()))
+			.map(LocationOption::getLabel)
+			.collect(Collectors.toList());
+		return labels.isEmpty() ? Collections.singletonList(NOT_SHOWN) : labels;
+	}
+
+	/** True when this variant lives at one of the listed places. */
+	public static boolean isAtAny(Variant v, List<LocationOption> shownPlaces)
+	{
+		return shownPlaces.stream().anyMatch(p -> v.getPlaces().contains(p.getKey()));
 	}
 
 	/** The superiors that can spawn in place of this monster. */

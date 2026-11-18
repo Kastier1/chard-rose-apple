@@ -110,6 +110,14 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
 - Places whose quests or skills you don't have yet are listed last with what you need, and **Go to nearest**
   skips them.
 - Some places have no map point in the data yet; their Go button is greyed out.
+- The **monster table** lists every monster that counts for the task, those at a listed place first. A monster's
+  *Found at* row names its places, or says "Not at any of the places below" (for example a Wilderness place while
+  *Show Wilderness locations* is off) or "No place in the data yet".
+- Monsters that live away from every place in the slayer location guide (tormented demons for Greater demons,
+  God Wars bodyguards, ice spiders...) get a place of their own made from their OSRS Wiki spawn points, such as
+  "Tormented Demon (Ancient Guthixian Temple)". Its card says so. One named like a guide place elsewhere (Ancient
+  Cavern) takes that place's quest and skill needs; otherwise the card says the data has no access details.
+  **Go to nearest** only uses these places when no guide place can be reached.
 - **Drops** show as item pictures, with the stack size when a drop comes in a pile. Hover one for its drop rate,
   the better rate on task, whether it's in your collection log, and its value. Drops you haven't logged are faded
   with a dashed outline; logged ones have a small tick. Superiors and bosses show their notable drops the same way.

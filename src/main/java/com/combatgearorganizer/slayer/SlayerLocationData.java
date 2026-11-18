@@ -131,7 +131,20 @@ public class SlayerLocationData
 		private String note;
 		/** Quests and skills needed to get in. Null when there are none. */
 		private Requirements requirements;
+		/**
+		 * Where the place comes from: null for the slayer location guide, {@link #SOURCE_WIKI} for a place made from
+		 * one monster's OSRS Wiki spawn points because it lives away from every guide place.
+		 */
+		private String source;
+
+		public boolean isFromWiki()
+		{
+			return SOURCE_WIKI.equals(source);
+		}
 	}
+
+	/** {@link LocationEntry#getSource()} of a place made from a monster's wiki spawns. */
+	public static final String SOURCE_WIKI = "wiki";
 
 	@Data
 	public static class Requirements

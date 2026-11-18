@@ -572,6 +572,236 @@ public class BundledDataTest
 	}
 
 	@Test
+	public void everyRegularMonsterHasAPlace()
+	{
+		// The generator only keeps a regular monster when the wiki has spawns for it, so each needs a place
+		List<String> problems = new ArrayList<>();
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			Set<String> keys = new HashSet<>();
+			allLocations(t).forEach(l -> keys.add(l.getKey()));
+			for (SlayerLocationData.Variant v : Variants.regular(t.getVariants()))
+			{
+				if (v.getPlaces().isEmpty())
+				{
+					problems.add(t.getName() + " / " + v.getName() + ": no place");
+				}
+				v.getPlaces().stream().filter(k -> !keys.contains(k))
+					.forEach(k -> problems.add(t.getName() + " / " + v.getName() + ": unknown place " + k));
+			}
+		}
+		assertTrue(String.join("\n", problems), problems.isEmpty());
+	}
+
+	@Test
+	public void wikiSpawnPlacesKeepTheWildernessRules()
+	{
+		int wikiPlaces = 0;
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			for (SlayerLocationData.LocationEntry l : allLocations(t))
+			{
+				if (!l.isFromWiki())
+				{
+					continue;
+				}
+				wikiPlaces++;
+				assertTrue(l.getLabel(), !l.getPoints().isEmpty() || !l.getWildernessPoints().isEmpty());
+				assertNotNull(l.getLabel(), l.getNote());
+				assertTrue(l.getKey(), l.getKey().startsWith("wiki_"));
+				// Someone lives there
+				assertTrue(t.getName() + " / " + l.getLabel(), !Variants.at(t.getVariants(), l.getKey()).isEmpty());
+			}
+			// Krystilia's list only ever gets the Wilderness spawns
+			for (SlayerLocationData.LocationEntry l : t.getWildernessLocations())
+			{
+				if (l.isFromWiki())
+				{
+					assertTrue(l.getLabel(), l.getPoints().isEmpty());
+					assertTrue(t.getName() + " / " + l.getLabel() + " is on her list only when it's on the normal one too, or she alone gives the task",
+						t.getLocations().isEmpty() || t.getLocations().stream().anyMatch(n -> n.getKey().equals(l.getKey())));
+				}
+			}
+			// A task only Krystilia gives gets nothing outside the Wilderness
+			if (t.getLocations().isEmpty())
+			{
+				assertTrue(t.getName(), LocationPicker.pick(t, SlayerMasters.KRYSTILIA, 0, false).stream().allMatch(LocationOption::isWilderness));
+			}
+		}
+		assertTrue("wiki places: " + wikiPlaces, wikiPlaces > 50);
+		// Unique keys in each list
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			Set<String> seen = new HashSet<>();
+			t.getLocations().forEach(l -> assertTrue(t.getName() + " / " + l.getKey(), seen.add(l.getKey())));
+			Set<String> wild = new HashSet<>();
+			t.getWildernessLocations().forEach(l -> assertTrue(t.getName() + " / " + l.getKey(), wild.add(l.getKey())));
+		}
+	}
+
+	private static List<SlayerLocationData.LocationEntry> wikiPlaces(SlayerLocationData.TaskEntry t)
+	{
+		List<SlayerLocationData.LocationEntry> out = new ArrayList<>();
+		for (SlayerLocationData.LocationEntry l : t.getLocations())
+		{
+			if (l.isFromWiki())
+			{
+				out.add(l);
+			}
+		}
+		return out;
+	}
+
+	@Test
+	public void wikiSpawnPlacesJoinBorrowAndMerge()
+	{
+		// Named like the task's own place (whose only point is the entrance): joins it, no extra place
+		SlayerLocationData.TaskEntry fever = data.findTask(-1, "Fever spiders");
+		assertTrue(Variants.byName(fever.getVariants(), "Fever spider").getPlaces().contains("braindeath_island"));
+		assertTrue(wikiPlaces(fever).isEmpty());
+		SlayerLocationData.TaskEntry killerwatts = data.findTask(-1, "Killerwatts");
+		assertTrue(Variants.byName(killerwatts.getVariants(), "Killerwatt").getPlaces().contains("killerwatt_plane"));
+		assertTrue(wikiPlaces(killerwatts).isEmpty());
+
+		// Named like another task's guide place: borrows its access
+		SlayerLocationData.LocationEntry cavern = wikiPlaces(data.findTask(-1, "Skeletons")).stream()
+			.filter(l -> l.getLabel().equals("Ancient Cavern")).findFirst().orElse(null);
+		assertNotNull(cavern);
+		assertNotNull(cavern.getRequirements());
+		assertEquals(Collections.singletonList("BARBARIAN_TRAINING"), cavern.getRequirements().getQuestsStarted());
+		assertEquals("Spawn points from the OSRS Wiki.", cavern.getNote());
+		// No guide place of that name: it says the access isn't known
+		SlayerLocationData.LocationEntry temple = wikiPlaces(data.findTask(-1, "Greater demons")).stream()
+			.filter(l -> l.getLabel().contains("Ancient Guthixian Temple")).findFirst().orElse(null);
+		assertNotNull(temple);
+		assertNull(temple.getRequirements());
+		assertTrue(temple.getNote().contains("no access details"));
+
+		// One boss room the wiki names two ways is one place, for all three bodyguards
+		SlayerLocationData.TaskEntry aviansies = data.findTask(-1, "Aviansies");
+		List<SlayerLocationData.LocationEntry> rooms = wikiPlaces(aviansies);
+		assertEquals(1, rooms.size());
+		assertTrue(Variants.at(aviansies.getVariants(), rooms.get(0).getKey())
+			.containsAll(Arrays.asList("Wingman Skree", "Flockleader Geerin", "Flight Kilisa")));
+
+		// A monster in many spots gets one place that lists them
+		SlayerLocationData.LocationEntry birds = wikiPlaces(data.findTask(-1, "Birds")).stream()
+			.filter(l -> l.getLabel().equals("Bird (several places)")).findFirst().orElse(null);
+		assertNotNull(birds);
+		assertTrue(birds.getNote().contains("Go takes you to the nearest"));
+
+		// Krystilia-only tasks leave out monsters that never spawn in the Wilderness
+		assertNull(Variants.byName(data.findTask(-1, "Chaos druids").getVariants(), "Chaos druid warrior"));
+		assertNull(Variants.byName(data.findTask(-1, "Green dragons").getVariants(), "Elvarg"));
+	}
+
+	@Test
+	public void tormentedDemonsCountForGreaterDemonsAndYouCanGo() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Greater demons");
+		SlayerLocationData.Variant td = Variants.byName(t.getVariants(), "Tormented Demon");
+		assertNotNull(td);
+		assertTrue(td.isRegular());
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		LocationOption temple = locations.stream().filter(l -> td.getPlaces().contains(l.getKey())).findFirst().orElse(null);
+		assertNotNull(temple);
+		assertEquals("Tormented Demon (Ancient Guthixian Temple)", temple.getLabel());
+		assertTrue(temple.isFromWiki());
+		assertTrue(temple.isRoutable());
+		assertTrue(temple.isAccessible());
+		assertEquals(26, temple.getTargets().size());
+		assertTrue(Variants.listed(t.getVariants(), locations).contains(td));
+		// Go to nearest sticks to the guide's places
+		assertTrue(LocationPicker.nearestTargets(locations).stream().noneMatch(LocationOption::isFromWiki));
+		assertTrue(!LocationPicker.nearestTargets(locations).isEmpty());
+
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		List<String> events = new ArrayList<>();
+		List<List<LocationOption>> nearest = new ArrayList<>();
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> events.add("go " + l.getLabel()), nearest::add, () -> { });
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+			panel.selectVariant("Tormented Demon");
+			assertEquals("Tormented Demon", panel.getSelectedVariant());
+			assertTrue(containsText(panel, "Tormented Demon (Ancient Guthixian Temple)"));
+			assertTrue(containsText(panel, "Spawn points from the OSRS Wiki"));
+			buttons(panel, "Go").get(locations.indexOf(temple)).doClick(0);
+			assertEquals("go " + temple.getLabel(), events.get(0));
+			buttons(panel, "Go to nearest").get(0).doClick(0);
+			assertEquals(LocationPicker.nearestTargets(locations), nearest.get(0));
+		});
+	}
+
+	@Test
+	public void monstersWithoutAShownPlaceAreInTheTableAndSayWhy() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Black demons");
+		SlayerLocationData.Variant placeless = new SlayerLocationData.Variant();
+		placeless.setName("Placeless demon");
+		placeless.setLevel(new int[]{1, 1});
+		placeless.setXp(new double[]{10, 10});
+		List<SlayerLocationData.Variant> variants = new ArrayList<>(t.getVariants());
+		variants.add(placeless);
+		// The Wilderness setting off hides the places some of them live at
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		SlayerLocationData.Variant hidden = Variants.regular(t.getVariants()).stream()
+			.filter(v -> !Variants.isAtAny(v, locations)).findFirst().orElse(null);
+		// Kolodion lives in the Mage Arena, in the Wilderness
+		assertNotNull(hidden);
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.showTask(state, t.getInfo(), variants, locations, true, true, CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+			assertTrue(containsText(panel, "Placeless demon"));
+			assertTrue(!containsText(panel, "Also counts"));
+			panel.selectVariant("Placeless demon");
+			assertEquals("Placeless demon", panel.getSelectedVariant());
+			assertTrue(containsText(panel, Variants.NO_PLACE));
+			panel.selectVariant(hidden.getName());
+			assertEquals(hidden.getName(), panel.getSelectedVariant());
+			assertTrue(containsText(panel, Variants.NOT_SHOWN));
+		});
+	}
+
+	@Test
+	public void panelDrawsEveryTaskForKrystiliaAndWithoutTheWilderness() throws Exception
+	{
+		List<String> problems = Collections.synchronizedList(new ArrayList<>());
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			for (SlayerLocationData.TaskEntry t : data.getTasks())
+			{
+				for (int master : new int[]{5, SlayerMasters.KRYSTILIA})
+				{
+					SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, master, 0, null);
+					List<LocationOption> locations = LocationPicker.pick(t, master, 0, false);
+					try
+					{
+						panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true,
+							CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+						for (SlayerLocationData.Variant v : Variants.listed(t.getVariants(), locations))
+						{
+							panel.selectVariant(v.getName());
+							if (containsText(panel, "Couldn't show the details") || !containsText(panel, "Found at"))
+							{
+								problems.add(t.getName() + " (" + master + ") / " + v.getName());
+							}
+						}
+					}
+					catch (RuntimeException e)
+					{
+						problems.add(t.getName() + " (" + master + "): " + e);
+					}
+				}
+			}
+		});
+		assertTrue(String.join("\n", problems), problems.isEmpty());
+	}
+
+	@Test
 	public void routeLineAfterGoUntilCancel() throws Exception
 	{
 		SlayerLocationData.TaskEntry t = data.findTask(-1, "Abyssal demons");

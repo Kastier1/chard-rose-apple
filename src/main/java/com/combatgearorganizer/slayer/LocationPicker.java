@@ -119,6 +119,21 @@ public final class LocationPicker
 			l.getCannon(),
 			l.getNote(),
 			targets,
-			missing);
+			missing,
+			l.isFromWiki());
+	}
+
+	/**
+	 * The places "Go to nearest" chooses between: the routable ones the player can get into, from the slayer location
+	 * guide. Places made from one monster's wiki spawns (a boss room, a quest area) are for going after that
+	 * monster, so they only count when no guide place can be reached.
+	 */
+	public static List<LocationOption> nearestTargets(List<LocationOption> shown)
+	{
+		List<LocationOption> open = shown.stream()
+			.filter(l -> l.isRoutable() && l.isAccessible())
+			.collect(Collectors.toList());
+		List<LocationOption> guide = open.stream().filter(l -> !l.isFromWiki()).collect(Collectors.toList());
+		return guide.isEmpty() ? open : guide;
 	}
 }

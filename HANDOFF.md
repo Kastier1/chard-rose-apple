@@ -96,6 +96,21 @@ what LayoutManager's "Auto layout" menu entry does: `BankTagsPlugin.openTag(tag,
 the plugin instance) and a `ChatboxPanelManager` Keep / Undo menu, `onClose` → `BankSearch.layoutBank()`. If the
 service ever isn't `BankTagsPlugin`, it falls back to the old organize with Undo. Not yet seen in a logged-in client.
 
+**Update 2026-11-18 (issue #32):** monsters that live away from every place in a task's list now get places of
+their own. `tools/fetch_wiki_monsters.py --locations` adds `spawn_locations` (each page's `{{LocLine}}` location names
+and points, read from the wikitext because the locline bucket has no location field) to `wiki_monsters.json`,
+leaving the other keys as they were. The generator's `wiki_places` makes one place per wiki location name for regular
+monsters whose spawns match no listed place (close spots merged, a monster in more than 3 spots gets one "several
+places" place), with `source: "wiki"`, key `wiki_...` and a note. A spot named like one of the task's own places
+joins that place instead (Fever spiders at Braindeath Island, whose only point is the entrance); one named like
+another task's guide place borrows its requirements, combat and cannon. Wilderness spawns stay in `wildernessPoints`, and go
+on Krystilia's list too when she gives the task; a task only she gives gets only those, and drops monsters that never
+spawn in the Wilderness (Chaos druid warrior, Elvarg). The build prints a warning for any regular monster still
+without a place (none now). The panel's monster table lists every regular monster (those at a shown place first);
+*Found at* says "No place in the data yet" or "Not at any of the places below"; the *Also counts* drawer is gone.
+`LocationPicker.nearestTargets` leaves the wiki places out of Go to nearest unless no guide place can be reached.
+Not yet seen in a logged-in client.
+
 Still open from the review: boss/Venator data, the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping), and the scope doc's wrong required items.
 

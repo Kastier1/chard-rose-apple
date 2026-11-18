@@ -144,6 +144,43 @@ public class LocationPickerTest
 		assertEquals(Collections.singletonList("Priest in Peril"), tower.getMissingRequirements());
 	}
 
+	private static LocationOption option(String key, boolean routable, boolean accessible, boolean fromWiki)
+	{
+		return new LocationOption(key, key, false, false, false, null, null, null,
+			routable ? Collections.singletonList(P1) : Collections.emptyList(),
+			accessible ? Collections.emptyList() : Collections.singletonList("Priest in Peril"), fromWiki);
+	}
+
+	@Test
+	public void wikiSpawnPlacesCarryTheirSource()
+	{
+		TaskEntry t = abyssalDemons();
+		LocationEntry wiki = loc("wiki_temple", null, Collections.singletonList(P2), Collections.emptyList());
+		wiki.setSource(SlayerLocationData.SOURCE_WIKI);
+		t.setLocations(Arrays.asList(t.getLocations().get(0), wiki));
+		List<LocationOption> options = LocationPicker.pick(t, 5, 0, false);
+		assertFalse(options.get(0).isFromWiki());
+		assertTrue(options.get(1).isFromWiki());
+		assertTrue(wiki.isFromWiki());
+		assertFalse(t.getLocations().get(0).isFromWiki());
+	}
+
+	@Test
+	public void nearestUsesGuidePlacesBeforeWikiSpawnPlaces()
+	{
+		LocationOption guide = option("guide", true, true, false);
+		LocationOption locked = option("locked", true, false, false);
+		LocationOption noPoint = option("no_point", false, true, false);
+		LocationOption wiki = option("wiki", true, true, true);
+		LocationOption lockedWiki = option("locked_wiki", true, false, true);
+
+		assertEquals(Collections.singletonList(guide), LocationPicker.nearestTargets(Arrays.asList(wiki, locked, guide, noPoint)));
+		// No guide place to go to: the wiki ones will do, still only open and routable ones
+		assertEquals(Collections.singletonList(wiki), LocationPicker.nearestTargets(Arrays.asList(locked, noPoint, wiki, lockedWiki)));
+		assertTrue(LocationPicker.nearestTargets(Arrays.asList(locked, noPoint, lockedWiki)).isEmpty());
+		assertTrue(LocationPicker.nearestTargets(Collections.emptyList()).isEmpty());
+	}
+
 	@Test
 	public void everyKrystiliaTaskInTheSourceIsInTheData() throws Exception
 	{

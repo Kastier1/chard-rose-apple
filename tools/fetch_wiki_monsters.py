@@ -10,6 +10,7 @@ category). OSRS Wiki content is licensed CC BY-NC-SA 3.0, see NOTICE.md.
 
 Usage: python3 tools/fetch_wiki_monsters.py
        python3 tools/fetch_wiki_monsters.py --attributes   (only refresh monster attributes, e.g. spectral)
+       python3 tools/fetch_wiki_monsters.py --locations    (only refresh the place names of each page's spawns)
 """
 import json
 import re
@@ -83,6 +84,94 @@ def update_attributes():
     OUT.write_text(json.dumps(data, separators=(",", ":")))
     spectral = sum(1 for v in data["attributes"].values() if "spectral" in v)
     print(f"{len(data['attributes'])} monsters with attributes ({spectral} spectral) -> {OUT}")
+
+
+def templates(text, name):
+    """The bodies of every {{name ...}} template in a page's wikitext, nested templates and all."""
+    out, start = [], re.compile(r"\{\{\s*" + re.escape(name) + r"\s*\|", re.IGNORECASE)
+    for m in start.finditer(text):
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            if text.startswith("{{", i):
+                depth, i = depth + 1, i + 2
+            elif text.startswith("}}", i):
+                depth, i = depth - 1, i + 2
+            else:
+                i += 1
+        if depth == 0:  # skip a template left open at the end of a broken page
+            out.append(text[m.end():i - 2])
+    return out
+
+
+def plain(wikitext):
+    """"[[Ancient Guthixian Temple]]" -> "Ancient Guthixian Temple"; drops refs, templates and markup."""
+    s = re.sub(r"<ref[^>]*/>|<ref.*?</ref>", "", wikitext, flags=re.DOTALL | re.IGNORECASE)
+    s = re.sub(r"\{\{[^{}]*\}\}", "", s)
+    s = re.sub(r"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]", r"\1", s)
+    s = re.sub(r"<[^>]+>|'{2,}", "", s)
+    # A template that was the only thing in brackets ("Brine Rat Cavern ({{Fairycode|dks}})") leaves "()"
+    s = re.sub(r"\(\s*\)", "", s)
+    s = re.sub(r"\(\s+", "(", re.sub(r"\s+\)", ")", s))
+    return " ".join(s.split())
+
+
+def loclines(text):
+    """[[location name, [[x, y, plane], ...]], ...] from the {{LocLine}} templates in one page's wikitext."""
+    out = []
+    for body in templates(text, "LocLine"):
+        location, plane = "", 0
+        for part in re.split(r"\|(?![^{]*\}\})(?![^\[]*\]\])", body):
+            key, _, value = part.partition("=")
+            key = key.strip().lower()
+            if key == "location":
+                location = plain(value)
+            elif key == "plane" and value.strip().isdigit():
+                plane = int(value.strip())
+        points = [[int(x), int(y), plane] for x, y in COORD.findall(body)]
+        if points:
+            out.append([location, points])
+    return out
+
+
+def fetch_spawn_locations(pages):
+    """page name -> [[location name, [[x, y, plane], ...]], ...] from each page's {{LocLine}} templates.
+
+    The locline bucket has the points but not the place name, so this reads the pages' wikitext.
+    """
+    found = {}
+    for i in range(0, len(pages), 50):
+        batch = pages[i:i + 50]
+        cont = {}
+        while True:
+            d = get({"action": "query", "prop": "revisions", "rvprop": "content", "rvslots": "main", "format": "json",
+                     "redirects": 1, "titles": "|".join(batch), **cont})
+            # Key the result by the page name we asked for, through any title normalisation or redirect
+            asked = {t: t for t in batch}
+            for step in d["query"].get("normalized", []) + d["query"].get("redirects", []):
+                for name, current in list(asked.items()):
+                    if current == step["from"]:
+                        asked[name] = step["to"]
+            by_title = {current: name for name, current in asked.items()}
+            for page in d["query"]["pages"].values():
+                if "revisions" in page and page["title"] in by_title:
+                    lines = loclines(page["revisions"][0]["slots"]["main"]["*"])
+                    if lines:
+                        found[by_title[page["title"]]] = lines
+            # Big batches come back in parts
+            if "continue" not in d:
+                break
+            cont = d["continue"]
+            time.sleep(0.5)
+        time.sleep(0.5)
+    return {k: found[k] for k in sorted(found)}
+
+
+def update_locations():
+    """Refresh only the spawn place names in the existing data file, leaving everything else as it was fetched."""
+    data = json.loads(OUT.read_text())
+    data["spawn_locations"] = fetch_spawn_locations(sorted(data["spawns"]))
+    OUT.write_text(json.dumps(data, separators=(",", ":")))
+    print(f"{len(data['spawn_locations'])} monsters with named spawn places -> {OUT}")
 
 
 def fetch_superiors():
@@ -206,6 +295,7 @@ def main():
     drops = fetch_drops(sorted({m["page_name"] for m in monsters}))
     clog = fetch_collection_log_items()
     attributes = fetch_attributes()
+    spawn_locations = fetch_spawn_locations(sorted(spawns))
     print(f"{len(clog)} collection log items")
     print(f"{len(drops)} monsters with drop tables")
     print(f"{len(superiors)} superiors, {len(spawns)} monsters with spawn points")
@@ -221,6 +311,7 @@ def main():
         "drops": drops,
         "collection_log_items": clog,
         "attributes": attributes,
+        "spawn_locations": spawn_locations,
     }, separators=(",", ":")))
     print(f"-> {OUT}")
 
@@ -228,5 +319,7 @@ def main():
 if __name__ == "__main__":
     if "--attributes" in sys.argv[1:]:
         update_attributes()
+    elif "--locations" in sys.argv[1:]:
+        update_locations()
     else:
         main()

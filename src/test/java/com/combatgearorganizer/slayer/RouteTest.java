@@ -52,6 +52,6 @@ public class RouteTest
 	private static LocationOption place(String key, String... missing)
 	{
 		return new LocationOption(key, key, false, false, false, null, null, null,
-			Collections.singletonList(new int[]{3200, 3200, 0}), Arrays.asList(missing));
+			Collections.singletonList(new int[]{3200, 3200, 0}), Arrays.asList(missing), false);
 	}
 }

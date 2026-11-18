@@ -33,7 +33,7 @@ public class VariantsTest
 	private static LocationOption place(String key)
 	{
 		return new LocationOption(key, key, false, false, false, null, null, null,
-			Collections.emptyList(), Collections.emptyList());
+			Collections.emptyList(), Collections.emptyList(), false);
 	}
 
 	@Test
@@ -51,18 +51,46 @@ public class VariantsTest
 	}
 
 	@Test
-	public void tableListsOnlyVariantsAtShownPlaces()
+	public void tableListsEveryRegularVariantThoseAtShownPlacesFirst()
 	{
 		List<Variant> dogs = Arrays.asList(
-			variant("Jackal", 27, false, "nardah"),
 			variant("Shadow Hound", 62, false),
-			variant("Wild dog", 62, false, "brimhaven"));
+			variant("Jackal", 27, false, "nardah"),
+			variant("Hellhound", 116, false, "taverley"),
+			variant("Wild dog", 62, false, "brimhaven"),
+			variant("Superior dog", 500, true, "brimhaven"));
 		List<LocationOption> shown = Arrays.asList(place("brimhaven"), place("nardah"));
-		assertEquals(Arrays.asList(dogs.get(0), dogs.get(2)), Variants.listed(dogs, shown));
-		assertEquals(Collections.singletonList(dogs.get(1)), Variants.unlisted(dogs, shown));
-		// Nothing matches a place: show them all rather than an empty table
-		assertEquals(dogs, Variants.listed(dogs, Collections.singletonList(place("elsewhere"))));
-		assertTrue(Variants.unlisted(dogs, Collections.singletonList(place("elsewhere"))).isEmpty());
+		// At a shown place first (data order), then the rest; never the superior
+		assertEquals(Arrays.asList(dogs.get(1), dogs.get(3), dogs.get(0), dogs.get(2)), Variants.listed(dogs, shown));
+		// Nothing matches a place: all of them, in the data's order
+		assertEquals(dogs.subList(0, 4), Variants.listed(dogs, Collections.singletonList(place("elsewhere"))));
+		assertEquals(dogs.subList(0, 4), Variants.listed(dogs, Collections.emptyList()));
+		assertTrue(Variants.listed(Collections.singletonList(dogs.get(4)), shown).isEmpty());
+	}
+
+	@Test
+	public void foundAtSaysWhereOrWhyNot()
+	{
+		Variant jackal = variant("Jackal", 27, false, "nardah", "pollnivneach");
+		Variant hound = variant("Shadow Hound", 62, false);
+		Variant hellhound = variant("Hellhound", 116, false, "taverley");
+		LocationOption nardah = new LocationOption("nardah", "West of Nardah", false, false, false, null, null, null,
+			Collections.emptyList(), Collections.emptyList(), false);
+		LocationOption pollnivneach = new LocationOption("pollnivneach", "Pollnivneach", false, false, false, null, null, null,
+			Collections.emptyList(), Collections.emptyList(), false);
+		List<LocationOption> shown = Arrays.asList(pollnivneach, place("brimhaven"), nardah);
+
+		// The shown places' labels, in list order
+		assertEquals(Arrays.asList("Pollnivneach", "West of Nardah"), Variants.foundAt(jackal, shown));
+		assertTrue(Variants.isAtAny(jackal, shown));
+		// The data has no place for it at all
+		assertEquals(Collections.singletonList(Variants.NO_PLACE), Variants.foundAt(hound, shown));
+		assertEquals("No place in the data yet", Variants.NO_PLACE);
+		assertTrue(!Variants.isAtAny(hound, shown));
+		// It has places, just none of the shown ones (Wilderness setting off, Konar's area)
+		assertEquals(Collections.singletonList(Variants.NOT_SHOWN), Variants.foundAt(hellhound, shown));
+		assertEquals(Collections.singletonList(Variants.NOT_SHOWN), Variants.foundAt(hellhound, Collections.emptyList()));
+		assertEquals(Collections.singletonList(Variants.NO_PLACE), Variants.foundAt(hound, Collections.emptyList()));
 	}
 
 	@Test
