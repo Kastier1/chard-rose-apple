@@ -58,13 +58,29 @@ public final class TagItemResolver
 			}
 		}
 
-		final Set<Integer> result = new LinkedHashSet<>(plain);
+		final Set<Integer> ownedIds = new HashSet<>();
+		for (int id : owned)
+		{
+			ownedIds.add(items.canonicalize(id));
+		}
 
+		// A plain tag is laid out as it is, except one for a version of a variation-tagged group that the player
+		// doesn't own: that one only stands in if they own no version of the group at all. Otherwise an old tag of
+		// the uncharged version would sit as a ghost next to the charged one they wear.
+		final Set<Integer> result = new LinkedHashSet<>();
+		final Set<Integer> standIns = new LinkedHashSet<>();
 		// Groups that already have a concrete item in the result
 		final Set<Integer> groupsFound = new HashSet<>();
 		for (int id : plain)
 		{
-			groupsFound.add(items.variationBase(id));
+			int base = items.variationBase(id);
+			if (groups.contains(base) && !ownedIds.contains(id))
+			{
+				standIns.add(id);
+				continue;
+			}
+			result.add(id);
+			groupsFound.add(base);
 		}
 
 		// Each version of a tagged group the player owns. The tab shows all of them, so lay them all out.
@@ -76,6 +92,15 @@ public final class TagItemResolver
 			{
 				result.add(c);
 				groupsFound.add(base);
+			}
+		}
+
+		// Unowned plain tags of a group the player owns no version of
+		for (int id : standIns)
+		{
+			if (groupsFound.add(items.variationBase(id)))
+			{
+				result.add(id);
 			}
 		}
 
@@ -93,7 +118,7 @@ public final class TagItemResolver
 				int base = items.variationBase(c);
 				if (plain.contains(c))
 				{
-					continue; // already in
+					continue; // decided above
 				}
 				if (groups.contains(base) && groupsFound.add(base))
 				{
