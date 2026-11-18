@@ -502,7 +502,7 @@ public class SlayerHelper
 		SlayerLocationData.TaskEntry task = findByName(data, query);
 		if (task == null)
 		{
-			return "No slayer task called \"" + query + "\". Try the task's name as a master gives it, e.g. \"abyssal demons\".";
+			return "No slayer task or monster called \"" + query + "\". Try the task's name as a master gives it, e.g. \"abyssal demons\".";
 		}
 		int masterId = master != null ? SlayerMasters.idForName(master) : 0;
 		if (master != null && masterId == 0)
@@ -541,7 +541,10 @@ public class SlayerHelper
 		return preview != null;
 	}
 
-	/** Exact name first, then a name starting with the query, then one containing it. Case doesn't matter. */
+	/**
+	 * Exact task name first, then a task name starting with the query, then one containing it, then a task with a
+	 * monster of that name. Case doesn't matter.
+	 */
 	static SlayerLocationData.TaskEntry findByName(SlayerLocationData data, String query)
 	{
 		String q = query.trim().toLowerCase(java.util.Locale.ROOT);
@@ -567,7 +570,22 @@ public class SlayerHelper
 				contains = t;
 			}
 		}
-		return starts != null ? starts : contains;
+		if (starts != null || contains != null)
+		{
+			return starts != null ? starts : contains;
+		}
+		// A monster's name finds its task ("sulphur nagua" finds Lesser Nagua)
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			for (SlayerLocationData.Variant v : t.getVariants())
+			{
+				if (v.getName().toLowerCase(java.util.Locale.ROOT).contains(q))
+				{
+					return t;
+				}
+			}
+		}
+		return null;
 	}
 
 	/** The task's places for this master, with what the player still needs for each. Client thread. */

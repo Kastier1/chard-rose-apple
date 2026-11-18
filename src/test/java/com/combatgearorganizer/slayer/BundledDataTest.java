@@ -784,6 +784,9 @@ public class BundledDataTest
 		assertEquals("Abyssal demons", SlayerHelper.findByName(data, "abyssal").getName());
 		assertEquals("Lava dragons", SlayerHelper.findByName(data, "lava dragons").getName());
 		assertNull(SlayerHelper.findByName(data, "not a task at all"));
+		// By monster name, when no task name matches
+		assertEquals("Lesser Nagua", SlayerHelper.findByName(data, "sulphur nagua").getName());
+		assertEquals("Lesser Nagua", SlayerHelper.findByName(data, "nagua").getName());
 		assertNull(SlayerHelper.findByName(data, "  "));
 		assertEquals(SlayerMasters.KONAR, SlayerMasters.idForName("Konar"));
 		assertEquals(0, SlayerMasters.idForName("demons"));
