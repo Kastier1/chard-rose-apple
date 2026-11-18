@@ -18,4 +18,19 @@ public interface RequirementChecker
 	 * player can get in
 	 */
 	List<String> missing(Requirements requirements);
+
+	/**
+	 * Whether the player's level meets a place's need. A boostable need (the wiki says a boost works there, such as a
+	 * wild pie for Cerberus) is met by the current, boosted level as well as the real one.
+	 */
+	static boolean meets(int real, int boosted, int needed, boolean boostable)
+	{
+		return real >= needed || (boostable && boosted >= needed);
+	}
+
+	/** "91 Slayer", or "91 Slayer (boostable)" when a boost is enough. */
+	static String skillText(int needed, String skill, boolean boostable)
+	{
+		return needed + " " + skill + (boostable ? " (boostable)" : "");
+	}
 }

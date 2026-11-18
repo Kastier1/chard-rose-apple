@@ -94,7 +94,9 @@ NEAR_UNDERGROUND = 100
 # Big dungeons whose only known point is an entrance far from where the monsters are
 NEAR_UNDERGROUND_WIDE = {"neypotzli": 250, "karuulm_slayer_dungeon": 250}
 # Wide matches that land on a neighbouring dungeon (Frost Nagua live in the Ruins of Tapoyauik)
-NOT_AT = {("Frost Nagua", "neypotzli")}
+NOT_AT = {("Frost Nagua", "neypotzli"),
+          # The KBD lair's map icon sits above the Lava Maze Dungeon, whose black dragons are listed there already
+          ("Black dragon", "king_black_dragon_lair")}
 MELEE_WORDS = {"melee", "stab", "slash", "crush"}
 
 
@@ -305,7 +307,7 @@ def task_monsters(task_name, wiki):
         categories = [c.lower() for c in m.get("slayer_category", [])]
         if m["name"] not in bosses and (category not in categories or "bosses" in categories):
             continue
-        if m["name"] in GWD_MINIONS or NOT_A_TASK_KILL.search(m["name"]) or NOT_A_TASK_PAGE.search(m["page_name"]):
+        if m["name"] in GWD_MINIONS | ONE_TIME_FIGHTS or NOT_A_TASK_KILL.search(m["name"]) or NOT_A_TASK_PAGE.search(m["page_name"]):
             continue
         if (m.get("version_anchor") or "").lower() in QUEST_VERSIONS:
             continue
@@ -357,6 +359,14 @@ GWD_MINIONS = {
     "Starlight", "Growler", "Bree",  # Commander Zilyana
     "Fumus", "Umbra", "Cruor", "Glacies",  # Nex
 }
+# Fights a player has once per account, so never a place to go on a task: Kolodion counts as a black demon, but
+# https://oldschool.runescape.wiki/w/Slayer_task/Black_demons says "Kolodion can only be killed once during the Mage
+# Arena miniquest" (and Porazdir, a boss, is left out of BOSSES for the same reason).
+ONE_TIME_FIGHTS = {"Kolodion"}
+# Regular monsters that live only in a boss's lair (wiki name -> BOSS_LAIRS id). The lair is their only place.
+# https://oldschool.runescape.wiki/w/Slayer_task/Scorpions on Scorpia's offspring: "Only found in Scorpia's Lair in the
+# Wilderness."
+AT_LAIR = {"Scorpia's offspring": "scorpias_cave"}
 
 # Where each boss that counts for a normal slayer task is fought. Every point is where the player walks in (the
 # entrance object, or the tile Shortest Path uses for it), never a spot inside an instance. The plugin never sends
@@ -367,13 +377,16 @@ GWD_MINIONS = {
 BOSS_LAIRS = {
     # https://oldschool.runescape.wiki/w/Abyssal_Sire: "requires level 85 Slayer". https://oldschool.runescape.wiki/w/
     # Abyssal_Nexus: "a one-way entrance in the southern part of the outer ring of the Abyss ... the code DIP in the fairy
-    # ring network". Point: the DIP fairy ring (Shortest Path fairy_rings.tsv).
+    # ring network". Abyssal Sire page: "To access the boss, the player must have visited the Abyss at least once, either
+    # through the Mage of Zamorak or the Fairy Ring network" (either route, so not a hard quest requirement: ENTER_THE_ABYSS
+    # alone would close it to players who came by fairy ring). Point: the DIP fairy ring (Shortest Path fairy_rings.tsv).
     "abyssal_nexus": {
         "label": "Abyssal Nexus",
         "points": [[3037, 4763, 0]],
         "requirements": {"skills": {"SLAYER": 85}},
-        "note": "Fairy ring DIP, or the one-way entrance in the south of the Abyss's outer ring. "
-                "The Sire is fought in one of four chambers.",
+        "note": "Needs a first visit to the Abyss (through the Mage of Zamorak or a fairy ring). Then fairy ring DIP, "
+                "or the one-way entrance in the south of the Abyss's outer ring. The Sire is fought in one of four "
+                "chambers.",
         "konar": "the_abyss",
     },
     # https://oldschool.runescape.wiki/w/Araxxor: "requires level 92 Slayer". Point: the web tunnel into his lair in the
@@ -395,14 +408,15 @@ BOSS_LAIRS = {
                 "kill count to open the door.",
         "konar": "god_wars_dungeon",
     },
-    # https://oldschool.runescape.wiki/w/K%27ril_Tsutsaroth/Strategies: "requires 70 Hitpoints to cross the river"; 40
-    # kill count. Entrance as above.
+    # https://oldschool.runescape.wiki/w/K%27ril_Tsutsaroth/Strategies: "70 Hitpoints (boostable) are required to access
+    # Zamorak's Fortress"; 40 kill count. Entrance as above. (The other generals' 70s can't be boosted: God Wars Dungeon
+    # page, "Accessing the bases requires 70 in their respective stat, which cannot be boosted", Zamorak's aside.)
     "kril": {
         "label": "K'ril Tsutsaroth's room (God Wars Dungeon)",
         "points": [[2917, 3747, 0]],
-        "requirements": {"skills": {"HITPOINTS": 70}},
+        "requirements": {"skills": {"HITPOINTS": 70}, "boostable": ["HITPOINTS"]},
         "note": "Go takes you to the dungeon entrance. Needs part of Troll Stronghold or the easy Combat Achievements, "
-                "60 Strength or 60 Agility, 70 Hitpoints to cross the river to Zamorak's Fortress, and 40 Zamorak "
+                "60 Strength or 60 Agility, 70 Hitpoints (boostable) to cross the river to Zamorak's Fortress, and 40 Zamorak "
                 "kill count to open the door.",
     },
     # https://oldschool.runescape.wiki/w/Callisto: "requires the medium Wilderness Diary ... a bear Slayer task does not
@@ -475,6 +489,9 @@ BOSS_LAIRS = {
         "points": [[3067, 10253, 0]],
         "note": "Pull the lever in the Lava Maze Dungeon, deep in the Wilderness. Doesn't count on a task from "
                 "Krystilia.",
+        # https://oldschool.runescape.wiki/w/Slayer_task/Black_dragons lists the "King Black Dragon Lair" for the King
+        # Black Dragon alone ("1 King Black Dragon"); the guide's place for it is the lair's world map icon
+        "replaces": "king_black_dragon_lair",
     },
     # https://oldschool.runescape.wiki/w/Vorkath: "Vorkath is considered a blue dragon and zombie for the purpose of a
     # Slayer task"; fought after Dragon Slayer II. Point: Ice chunks (Vorkath) on Ungael, from the wiki's map.
@@ -505,13 +522,15 @@ BOSS_LAIRS = {
         "note": "The crevice in the north-west of the Smoke Devil Dungeon.",
         "konar": "smoke_devil_dungeon",
     },
-    # https://oldschool.runescape.wiki/w/Cerberus: "Defeating Cerberus requires a Slayer level of 91". Point: the cave in
+    # https://oldschool.runescape.wiki/w/Cerberus: "Defeating Cerberus requires a Slayer level of 91"; on a hellhound task
+    # "wild pies may be used to boost the player's Slayer level. While boosting, the player's Slayer level must remain at
+    # or above 91". Point: the cave in
     # Taverley Dungeon you crawl through (Shortest Path "Crawl Cave 26568"); Konar: "Cerberus lives in her chamber linked
     # to Taverley dungeon".
     "cerberus": {
         "label": "Cerberus' Lair (Taverley Dungeon)",
         "points": [[2873, 9848, 0]],
-        "requirements": {"skills": {"SLAYER": 91}},
+        "requirements": {"skills": {"SLAYER": 91}, "boostable": ["SLAYER"]},
         "note": "Crawl through the cave in the hellhound area of Taverley Dungeon (a dusty key, or 70 Agility for the "
                 "pipe shortcut). Then pick one of the three arenas.",
         "konar": "taverley_dungeon",
@@ -633,9 +652,12 @@ BOSS_LAIRS = {
 # https://oldschool.runescape.wiki/w/Slayer_task "Superiors and alternatives" column and each boss's page (cited at its
 # lair above). Only these bosses are listed: a monster in the wiki's "Bosses" category that isn't here is left out (Zulrah,
 # the Desert Treasure II bosses and the like count only on a boss task). Not here on purpose: Kolodion and Porazdir (Mage
-# Arena fights, once each; Kolodion stays as a normal monster), Elvarg (Dragon Slayer I only), TzTok-Jad and TzKal-Zuk
+# Arena fights, once each; Kolodion is left out with ONE_TIME_FIGHTS), Elvarg (Dragon Slayer I only), TzTok-Jad and TzKal-Zuk
 # (offered instead of a TzHaar task, not killed on one), the Giant Sea Snake (not fightable after Royal Trouble) and the
 # Hell-Rat Behemoth (your cat fights it).
+# "masters": the only masters whose task the boss counts for; "notMasters": masters whose task it doesn't count for (by
+# SlayerMasters name). The plugin also drops a boss whose lair isn't among the places that count for the master: outside
+# the Wilderness for Krystilia, outside Konar's area for her.
 BOSSES = {
     "Abyssal Sire": {"lair": "abyssal_nexus", "tasks": ["Abyssal demons"]},
     "Araxxor": {"lair": "araxxor", "tasks": ["Araxytes", "Spiders"]},
@@ -648,7 +670,8 @@ BOSSES = {
     "Venenatis": {"lair": "silk_chasm", "tasks": ["Spiders"]},
     "Spindel": {"lair": "web_chasm", "tasks": ["Spiders"]},
     "Scorpia": {"lair": "scorpias_cave", "tasks": ["Scorpions"]},
-    "King Black Dragon": {"lair": "king_black_dragon", "tasks": ["Black dragons"]},
+    # "counts towards a black dragon Slayer task, except when assigned by Krystilia"
+    "King Black Dragon": {"lair": "king_black_dragon", "tasks": ["Black dragons"], "notMasters": ["Krystilia"]},
     "Vorkath": {"lair": "vorkath", "tasks": ["Blue dragons", "Zombies"]},
     "Kraken": {"lair": "kraken", "tasks": ["Cave kraken"]},
     "Thermonuclear smoke devil": {"lair": "thermonuclear_smoke_devil", "tasks": ["Smoke devils"]},
@@ -668,15 +691,17 @@ BOSSES = {
     "Brutus": {"lair": "brutus", "tasks": ["Cows"]},
     # https://oldschool.runescape.wiki/w/Slayer_task/Fire_giants: "Players who are not assigned fire giants from Konar or
     # Krystilia can also choose to kill Branda the Fire Queen"
-    "Branda the Fire Queen": {"lair": "royal_titans", "tasks": ["Fire giants"],
+    "Branda the Fire Queen": {"lair": "royal_titans", "tasks": ["Fire giants"], "notMasters": ["Konar", "Krystilia"],
                               "note": "Doesn't count on a fire giant task from Konar or Krystilia."},
     # https://oldschool.runescape.wiki/w/Slayer_task/Ice_giants: "Eldric the Ice King ... can be killed in place of
     # normal ice giants if assigned by Vannaka"
-    "Eldric the Ice King": {"lair": "royal_titans", "tasks": ["Ice giants"],
+    "Eldric the Ice King": {"lair": "royal_titans", "tasks": ["Ice giants"], "masters": ["Vannaka"],
                             "note": "Counts only on an ice giant task from Vannaka."},
     "Shellbane gryphon": {"lair": "shellbane_gryphon", "tasks": ["Gryphons"]},
     "Amoxliatl": {"lair": "amoxliatl", "tasks": ["Lesser Nagua"]},
 }
+# Master names the plugin knows (SlayerMasters)
+MASTERS = {"Turael", "Mazchna", "Vannaka", "Chaeldar", "Duradel", "Nieve", "Krystilia", "Konar", "Spria", "Mortimer"}
 # Where a lair's place comes from (LocationEntry.source): never used by "Go to nearest"
 BOSS_SOURCE = "boss"
 BOSS_KEY_PREFIX = "boss_"
@@ -904,6 +929,10 @@ def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joi
             if name not in lairs:
                 continue  # its lair isn't on this task's list (Krystilia's only task, outside the Wilderness)
             found = [lairs[name]]
+        elif name in AT_LAIR:
+            found = [key for boss_name, key in lairs.items() if BOSSES[boss_name]["lair"] == AT_LAIR[name]][:1]
+            if not found:
+                continue  # its boss's lair isn't on this task's list
         elif not spawns and not superior:
             continue  # minigame, quest or instance only
         elif wilderness_only and not superior and not any(in_wilderness(pt) for pt in spawns):
@@ -922,6 +951,9 @@ def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joi
             "boss": boss,
             "places": sorted(set(found)),
         }
+        for field in ("masters", "notMasters") if boss else ():
+            if BOSSES[name].get(field):
+                variant[field] = BOSSES[name][field]
         base = next((superior_of[p] for p in sorted(pages) if p in superior_of), None)
         if superior and base:
             variant["superiorOf"] = base
@@ -1093,6 +1125,15 @@ def validate(tasks):
     names = {t["name"] for t in tasks}
     for name, boss in BOSSES.items():
         problems += [f"BOSSES / {name}: no task {task!r}" for task in boss["tasks"] if task not in names]
+        problems += [f"BOSSES / {name}: no master {m!r}" for m in boss.get("masters", []) + boss.get("notMasters", [])
+                     if m not in MASTERS]
+    for lair_id, lair in BOSS_LAIRS.items():
+        req = lair.get("requirements") or {}
+        problems += [f"BOSS_LAIRS / {lair_id}: boostable {s!r} isn't a needed skill" for s in req.get("boostable", [])
+                     if s not in req.get("skills", {})]
+    for name, lair_id in AT_LAIR.items():
+        if lair_id not in BOSS_LAIRS:
+            problems.append(f"AT_LAIR / {name}: no lair {lair_id!r}")
         if boss["lair"] not in BOSS_LAIRS:
             problems.append(f"BOSSES / {name}: no lair {boss['lair']!r}")
     if problems:

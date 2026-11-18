@@ -1,6 +1,7 @@
 package com.combatgearorganizer.slayer;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -17,12 +18,21 @@ final class TaskMonsters
 
 	static boolean matches(String npcName, String taskName, Collection<String> variantNames)
 	{
+		return matches(npcName, taskName, variantNames, Collections.emptyList());
+	}
+
+	/**
+	 * As above, but never for the names in {@code notCounting}: the task's bosses that don't count for this master,
+	 * which the task name can match too (the King Black Dragon on Krystilia's black dragon task).
+	 */
+	static boolean matches(String npcName, String taskName, Collection<String> variantNames, Collection<String> notCounting)
+	{
 		if (npcName == null)
 		{
 			return false;
 		}
 		String name = normalise(npcName);
-		if (name.isEmpty())
+		if (name.isEmpty() || isAny(name, notCounting))
 		{
 			return false;
 		}
@@ -39,6 +49,17 @@ final class TaskMonsters
 		}
 		String task = normalise(taskName);
 		return word(task).matcher(name).find() || (task.endsWith("s") && word(task.substring(0, task.length() - 1)).matcher(name).find());
+	}
+
+	/** Whether the NPC's name (normalised) is one of these monster names. */
+	static boolean isAny(String npcName, Collection<String> names)
+	{
+		if (npcName == null)
+		{
+			return false;
+		}
+		String name = normalise(npcName);
+		return names.stream().anyMatch(n -> n != null && normalise(n).equals(name));
 	}
 
 	private static Pattern word(String s)

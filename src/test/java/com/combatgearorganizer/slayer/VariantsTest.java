@@ -92,7 +92,8 @@ public class VariantsTest
 		assertEquals(Collections.singletonList("Vorkath"), Variants.at(blues, "boss_vorkath"));
 		assertEquals(Arrays.asList("Baby blue dragon", "Blue dragon"), Variants.at(blues, "taverley"));
 		assertEquals(Collections.singletonList("boss_vorkath"), Variants.foundAt(vorkath, shown));
-		assertEquals(Collections.singletonList(Variants.NOT_SHOWN), Variants.foundAt(vorkath, Collections.singletonList(place("taverley"))));
+		// A boss whose lair isn't listed: the bosses that don't count are left out already, so it's the Wilderness setting
+		assertEquals(Collections.singletonList(Variants.BOSS_IN_WILDERNESS), Variants.foundAt(vorkath, Collections.singletonList(place("taverley"))));
 	}
 
 	@Test
@@ -209,5 +210,68 @@ public class VariantsTest
 		assertEquals(Collections.singletonList("Abyssal whip"), items(Variants.notableDrops(all, greater)));
 		// Base monster not in the list
 		assertEquals(1, Variants.notableDrops(Collections.singletonList(greater), greater).size());
+	}
+
+	@Test
+	public void tableXpFitsItsColumn()
+	{
+		assertEquals("157.5", Variants.xpEachShort(new double[]{157.5, 157.5}));
+		assertEquals("17-182", Variants.xpEachShort(new double[]{17, 181.5}));
+		assertEquals("600-2.1k", Variants.xpEachShort(new double[]{600, 2137.5}));
+		assertEquals("~50", Variants.xpEachShort(new double[]{49.6, 50}));
+		assertEquals("?", Variants.xpEachShort(null));
+		// The card keeps the exact range
+		assertEquals("17-181.5", Variants.xpEach(new double[]{17, 181.5}));
+	}
+
+	@Test
+	public void longNamesWrapToFitTheTable()
+	{
+		java.awt.FontMetrics fm = new javax.swing.JLabel().getFontMetrics(new java.awt.Font(java.awt.Font.SANS_SERIF, java.awt.Font.PLAIN, 11));
+		assertEquals(Collections.singletonList("Vorkath"), SlayerPanel.wrapName("Vorkath", fm, 200));
+		int room = fm.stringWidth("Grotesque") + 2;
+		assertEquals(Arrays.asList("Grotesque", "Guardians"), SlayerPanel.wrapName("Grotesque Guardians", fm, room));
+		// A word wider than the room is split where it must be, and nothing is lost
+		List<String> lines = SlayerPanel.wrapName("Thermonuclear smoke devil", fm, fm.stringWidth("Thermo"));
+		assertTrue(lines.size() > 2);
+		assertEquals("Thermonuclearsmokedevil", String.join("", lines).replace(" ", ""));
+		for (String line : lines)
+		{
+			assertTrue(line, fm.stringWidth(line) <= fm.stringWidth("Thermo"));
+		}
+	}
+
+	@Test
+	public void boostableLevelsCountABoost()
+	{
+		assertTrue(RequirementChecker.meets(91, 91, 91, false));
+		assertFalse(RequirementChecker.meets(89, 94, 91, false));
+		// A wild pie for Cerberus
+		assertTrue(RequirementChecker.meets(89, 94, 91, true));
+		assertFalse(RequirementChecker.meets(89, 89, 91, true));
+		// A drained level doesn't close a place the real level opens
+		assertTrue(RequirementChecker.meets(91, 80, 91, true));
+		assertEquals("91 Slayer (boostable)", RequirementChecker.skillText(91, "Slayer", true));
+		assertEquals("87 Slayer", RequirementChecker.skillText(87, "Slayer", false));
+	}
+
+	@Test
+	public void aBossCountsOnlyForItsMasters()
+	{
+		Variant eldric = variant("Eldric the Ice King", 1, false, "boss_royal_titans");
+		eldric.setBoss(true);
+		eldric.setMasters(Collections.singletonList("Vannaka"));
+		java.util.Set<String> open = Collections.singleton("boss_royal_titans");
+		assertTrue(Variants.countsFor(eldric, "Vannaka", open));
+		assertFalse(Variants.countsFor(eldric, "Duradel", open));
+		// Unknown master: no master rule
+		assertTrue(Variants.countsFor(eldric, null, open));
+		// Its lair isn't among the places that count (Krystilia, Konar's area)
+		assertFalse(Variants.countsFor(eldric, "Vannaka", Collections.emptySet()));
+		Variant kbd = variant("King Black Dragon", 1, false, "boss_kbd");
+		kbd.setBoss(true);
+		kbd.setNotMasters(Collections.singletonList("Krystilia"));
+		assertFalse(Variants.countsFor(kbd, "Krystilia", Collections.singleton("boss_kbd")));
+		assertTrue(Variants.countsFor(kbd, "Nieve", Collections.singleton("boss_kbd")));
 	}
 }

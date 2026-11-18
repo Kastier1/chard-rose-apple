@@ -135,7 +135,9 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
 - Some places have no map point in the data yet; their Go button is greyed out.
 - The **monster table** lists every monster that counts for the task, those at a listed place first. A monster's
   *Found at* row names its places, or says "Not at any of the places below" (for example a Wilderness place while
-  *Show Wilderness locations* is off) or "No place in the data yet".
+  *Show Wilderness locations* is off) or "No place in the data yet". Long names go onto two lines, and the level and
+  XP columns widen for wide ranges (the table shows XP ranges in whole numbers, "600-2.1k"; the card has the exact
+  range).
 - **Bosses** that count for the task (Vorkath on Blue dragons, K'ril Tsutsaroth and Skotizo on Greater demons,
   Cerberus on Hellhounds, Obor on Hill giants, Scurrius on Rats...) are rows of the table too, after the regular
   monsters, marked with a crown (the tooltip says "Boss"). Click one for its own card: level, hitpoints, XP, drops,
@@ -143,8 +145,15 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
   has its lair as a place, listed last: its Go takes you to where you walk in (Vorkath's ice chunks on Ungael, the
   crawl-through cave to Cerberus' Lair, the God Wars Dungeon entrance), and the card shows what you still need (91
   Slayer for Cerberus, Dragon Slayer II for Vorkath). **Go to nearest** never picks a lair. A Wilderness lair is on
-  Krystilia's list when the boss counts for her, and a lair counts as Konar's area where the wiki says it does. The
-  God Wars Dungeon bodyguards aren't listed: they're part of their general's fight.
+  Krystilia's list when the boss counts for her, and a lair counts as Konar's area where the wiki says it does. A boss
+  that doesn't count for your master isn't listed (the King Black Dragon on a Krystilia task, Eldric the Ice King on
+  any ice giant task but Vannaka's, a lair outside Konar's area), and its loot isn't counted as task loot. With *Show
+  Wilderness locations* off, a Wilderness boss stays in the table and its *Found at* says to turn the setting on. A
+  boss's card leaves out the task's advice for the regular monsters (the *Attack* row and the *Weakness*, *They attack
+  with* and *Bring* notes). Levels the wiki says can be boosted say so ("91 Slayer (boostable)" for Cerberus; 70
+  Hitpoints for K'ril's river) and a boosted level opens the lair. The God Wars Dungeon bodyguards aren't listed:
+  they're part of their general's fight, and nor is Kolodion, who can only be fought once, in the Mage Arena
+  miniquest.
 - Monsters that live away from every place in the slayer location guide (tormented demons for Greater demons,
   ice spiders, penguins...) get a place of their own made from their OSRS Wiki spawn points, such as
   "Tormented Demon (Ancient Guthixian Temple)". Its card says so. If the wiki names the spot like one of the task's

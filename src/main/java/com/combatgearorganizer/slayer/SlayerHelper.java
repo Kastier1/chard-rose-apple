@@ -359,20 +359,29 @@ public class SlayerHelper
 
 	private boolean isTaskMonster(NPC npc, TaskProgress p)
 	{
+		SlayerLocationData.TaskEntry task = data.findTask(p.getTaskId(), p.getTaskName());
+		List<String> names = new ArrayList<>();
+		List<String> notCounting = Collections.emptyList();
+		if (task != null)
+		{
+			// Only the bosses that count for this master: a King Black Dragon kill on Krystilia's task isn't task loot,
+			// though the Slayer plugin's targets and the task name both match him
+			SlayerTaskState real = readTask();
+			Variants.counting(task, real.getMasterId(), real.getKonarAreaId()).forEach(v -> names.add(v.getName()));
+			notCounting = Variants.notCounting(task, real.getMasterId(), real.getKonarAreaId());
+		}
+		if (TaskMonsters.isAny(npc.getName(), notCounting))
+		{
+			return false;
+		}
 		List<NPC> targets = slayerPluginService.getTargets();
 		if (targets != null && targets.contains(npc))
 		{
 			return true;
 		}
 		// The Slayer plugin drops an NPC from its targets when it despawns, which can be before its loot shows
-		SlayerLocationData.TaskEntry task = data.findTask(p.getTaskId(), p.getTaskName());
-		List<String> names = new ArrayList<>();
-		if (task != null)
-		{
-			task.getVariants().forEach(v -> names.add(v.getName()));
-		}
 		String taskName = p.getTaskName() != null ? p.getTaskName() : task != null ? task.getName() : null;
-		return TaskMonsters.matches(npc.getName(), taskName, names);
+		return TaskMonsters.matches(npc.getName(), taskName, names, notCounting);
 	}
 
 	public void onWidgetLoaded(WidgetLoaded event)
@@ -507,7 +516,9 @@ public class SlayerHelper
 		List<LocationOption> locations = task == null ? Collections.<LocationOption>emptyList() : pickLocations(task, state);
 		lastLocations = locations;
 		SlayerLocationData.TaskInfo info = task != null ? task.getInfo() : null;
-		List<SlayerLocationData.Variant> variants = task != null ? task.getVariants() : Collections.emptyList();
+		// The bosses that don't count for this master (or outside Konar's area) aren't listed
+		List<SlayerLocationData.Variant> variants = task != null
+			? Variants.counting(task, state.getMasterId(), state.getKonarAreaId()) : Collections.emptyList();
 		DropItems items = dropItems(variants);
 		TaskProgress.View view = tp != null && !tp.isDone() ? tp.view(state.getRemaining(), valueMode) : null;
 		boolean compact = config.compactPanel();
@@ -1007,9 +1018,14 @@ public class SlayerHelper
 		for (Map.Entry<String, Integer> e : r.getSkills().entrySet())
 		{
 			Skill skill = skill(e.getKey());
-			if (skill != null && client.getRealSkillLevel(skill) < e.getValue())
+			if (skill == null)
 			{
-				missing.add(e.getValue() + " " + skill.getName());
+				continue;
+			}
+			boolean boostable = r.getBoostable().contains(e.getKey());
+			if (!RequirementChecker.meets(client.getRealSkillLevel(skill), client.getBoostedSkillLevel(skill), e.getValue(), boostable))
+			{
+				missing.add(RequirementChecker.skillText(e.getValue(), skill.getName(), boostable));
 			}
 		}
 		return missing;

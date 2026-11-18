@@ -64,6 +64,10 @@ public class SlayerLocationData
 		private Combat combat;
 		/** Wiki monster attributes, lower case: "demon", "dragon", "undead", "kalphite", "leafy", "vampyre1"... */
 		private List<String> attributes = Collections.emptyList();
+		/** For a boss: the only masters (SlayerMasters names) whose task it counts for; empty means any. */
+		private List<String> masters = Collections.emptyList();
+		/** For a boss: masters (SlayerMasters names) whose task it doesn't count for. */
+		private List<String> notMasters = Collections.emptyList();
 
 		public boolean isRegular()
 		{
@@ -193,6 +197,8 @@ public class SlayerLocationData
 		private List<String> questsStarted = Collections.emptyList();
 		/** RuneLite {@code Skill} enum name to the real level needed. */
 		private Map<String, Integer> skills = Collections.emptyMap();
+		/** Skills in {@link #skills} whose level may be boosted to meet it (the wiki says so for that place). */
+		private List<String> boostable = Collections.emptyList();
 	}
 
 	public TaskEntry findTask(int taskId, String name)

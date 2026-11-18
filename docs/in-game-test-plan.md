@@ -94,8 +94,22 @@ Have a task, and open the **Slayer** tab.
 - [ ] Konar Hydras task in the Karuulm Slayer Dungeon: the dungeon and "Alchemical Hydra's lair" are listed, and Go to
   nearest picks the dungeon. Krystilia Bears task: Callisto's Den and Hunter's End are on her list.
 - [ ] Compact mode: the lair cards still show in the place list.
-- [ ] With *Show Wilderness locations* off, pick a monster that only lives in the Wilderness (e.g. Kolodion on Black
-  demons): *Found at* says "Not at any of the places below". There's no *Also counts* drawer any more.
+- [ ] With *Show Wilderness locations* off, pick a monster that only lives in the Wilderness (e.g. a revenant on
+  Ghosts): *Found at* says "Not at any of the places below". There's no *Also counts* drawer any more. Black demons
+  has no Kolodion row and no Mage Arena place.
+- [ ] With *Show Wilderness locations* off, Spiders: Venenatis and Spindel are still rows; selecting one says "In the
+  Wilderness: turn on "Show Wilderness locations" ...". Turn it on: their lairs appear with Go.
+- [ ] Krystilia Black dragons task: no King Black Dragon row (the wiki: he doesn't count for her). Kill a black dragon
+  and check the loot line counts it; on a normal master's black dragon task, there's one King Black Dragon place
+  (the lever lair), not two. Krystilia Spiders: only Venenatis and Spindel as bosses. An ice giant task from anyone
+  but Vannaka: no Eldric row.
+- [ ] Gargoyles: select Grotesque Guardians. No *Attack* row and no *Bring* (rock hammer) or *Weakness* drawers; select
+  a gargoyle and they're back. Dagannoth: Dagannoth Rex has no "Attack: Melee or ranged" row.
+- [ ] The monster table at the normal sidebar width: "Grotesque Guardians", "Thermonuclear smoke devil" and "Dagannoth
+  Supreme" wrap onto two lines instead of ending in "..."; Gargoyles' "248-328" level is readable.
+- [ ] With 89 Slayer, eat a wild pie (to 91+): the Cerberus card stops saying "Needs 91 Slayer (boostable)". The
+  Abyssal Nexus card says it needs a first visit to the Abyss. Scorpions: Scorpia's offspring is found at Scorpia's
+  cave, not the Scorpion Pit.
 - [ ] **Drops** are item pictures. Hover one: rate, on-task rate, value.
 - [ ] **Item value** setting: switch Grand Exchange ↔ High alchemy. Every value in the panel changes straight away,
   including task loot.

@@ -1018,8 +1018,10 @@ public class BundledDataTest
 			assertTrue(Variants.byName(data.findTask(-1, task).getVariants(), "Skotizo").isBoss());
 		}
 		assertTrue(Variants.byName(data.findTask(-1, "Rats").getVariants(), "Scurrius").isBoss());
-		// Kolodion counts (once, in the Mage Arena) but isn't a boss
-		assertTrue(Variants.byName(data.findTask(-1, "Black demons").getVariants(), "Kolodion").isRegular());
+		// Kolodion counts, but only once, in the Mage Arena miniquest: no row and no place to go (like Porazdir)
+		SlayerLocationData.TaskEntry blackDemons = data.findTask(-1, "Black demons");
+		assertNull(Variants.byName(blackDemons.getVariants(), "Kolodion"));
+		assertTrue(allLocations(blackDemons).stream().noneMatch(l -> l.getLabel().contains("Kolodion")));
 		// Quest-only versions don't stretch a boss's level range
 		assertArrayEquals(new int[]{732, 732}, Variants.byName(data.findTask(-1, "Blue dragons").getVariants(), "Vorkath").getLevel());
 		assertArrayEquals(new int[]{263, 263}, Variants.byName(data.findTask(-1, "Lesser Nagua").getVariants(), "Amoxliatl").getLevel());
@@ -1074,9 +1076,10 @@ public class BundledDataTest
 				{
 					problems.add(t.getName() + " / " + l.getKey() + ": " + l.getNote());
 				}
-				// Only the boss lives there
+				// Only the boss lives there, and monsters the wiki says live only in its lair (Scorpia's offspring)
 				List<String> here = Variants.at(t.getVariants(), l.getKey());
-				if (here.isEmpty() || here.stream().anyMatch(n -> Variants.byName(t.getVariants(), n).isRegular()))
+				if (here.isEmpty() || here.stream().anyMatch(n -> Variants.byName(t.getVariants(), n).isRegular()
+					&& !n.equals("Scorpia's offspring")))
 				{
 					problems.add(t.getName() + " / " + l.getKey() + ": " + here);
 				}
@@ -1293,7 +1296,7 @@ public class BundledDataTest
 	@Test
 	public void monstersWithoutAShownPlaceAreInTheTableAndSayWhy() throws Exception
 	{
-		SlayerLocationData.TaskEntry t = data.findTask(-1, "Black demons");
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Ghosts");
 		SlayerLocationData.Variant placeless = new SlayerLocationData.Variant();
 		placeless.setName("Placeless demon");
 		placeless.setLevel(new int[]{1, 1});
@@ -1304,7 +1307,7 @@ public class BundledDataTest
 		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
 		SlayerLocationData.Variant hidden = Variants.regular(t.getVariants()).stream()
 			.filter(v -> !Variants.isAtAny(v, locations)).findFirst().orElse(null);
-		// Kolodion lives in the Mage Arena, in the Wilderness
+		// The revenants live in the Wilderness
 		assertNotNull(hidden);
 		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
 		SwingUtilities.invokeAndWait(() ->
@@ -1337,9 +1340,10 @@ public class BundledDataTest
 					List<LocationOption> locations = LocationPicker.pick(t, master, 0, false);
 					try
 					{
-						panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true,
+						List<SlayerLocationData.Variant> counting = Variants.counting(t, master, 0);
+						panel.showTask(state, t.getInfo(), counting, locations, true, true,
 							CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
-						for (SlayerLocationData.Variant v : Variants.listed(t.getVariants(), locations))
+						for (SlayerLocationData.Variant v : Variants.listed(counting, locations))
 						{
 							panel.selectVariant(v.getName());
 							if (containsText(panel, "Couldn't show the details") || !containsText(panel, "Found at"))
@@ -1731,6 +1735,19 @@ public class BundledDataTest
 				problems.add(l.getPreferredSize().width + ">" + l.getWidth() + " "
 					+ text.replaceAll("<[^>]*>", " ").replaceAll("\\s+", " ").trim());
 			}
+			else if (text != null && !text.isEmpty() && !text.startsWith("<html>") && l.getWidth() > 0)
+			{
+				// Plain text (the monster table's cells): its text and icon must fit inside the label's insets, or
+				// Swing shows "..." in place of the end of it
+				java.awt.Insets in = l.getInsets();
+				int need = l.getFontMetrics(l.getFont()).stringWidth(text)
+					+ (l.getIcon() != null ? l.getIcon().getIconWidth() + l.getIconTextGap() : 0);
+				int room = l.getWidth() - in.left - in.right;
+				if (need > room)
+				{
+					problems.add(need + ">" + room + " " + text);
+				}
+			}
 		}
 		if (c instanceof Container)
 		{
@@ -1741,4 +1758,154 @@ public class BundledDataTest
 		}
 	}
 
+	private static List<String> bossNames(List<SlayerLocationData.Variant> variants)
+	{
+		List<String> out = new ArrayList<>();
+		Variants.bosses(variants).forEach(v -> out.add(v.getName()));
+		Collections.sort(out);
+		return out;
+	}
+
+	@Test
+	public void bossesThatDontCountForTheMasterAreLeftOut() throws Exception
+	{
+		// Krystilia (wiki Krystilia page): "The King Black Dragon and lava dragons do not count"; for spiders only
+		// Venenatis and Spindel also count; her kills only count in the Wilderness
+		SlayerLocationData.TaskEntry black = data.findTask(-1, "Black dragons");
+		assertEquals(Collections.singletonList("King Black Dragon"), bossNames(Variants.counting(black, 5, 0)));
+		assertEquals(Collections.emptyList(), bossNames(Variants.counting(black, SlayerMasters.KRYSTILIA, 0)));
+		assertEquals(Collections.singletonList("Krystilia"), Variants.byName(black.getVariants(), "King Black Dragon").getNotMasters());
+		SlayerLocationData.TaskEntry spiders = data.findTask(-1, "Spiders");
+		assertEquals(Arrays.asList("Spindel", "Venenatis"), bossNames(Variants.counting(spiders, SlayerMasters.KRYSTILIA, 0)));
+		assertEquals(Arrays.asList("Araxxor", "Sarachnis", "Spindel", "Venenatis"), bossNames(Variants.counting(spiders, 6, 0)));
+		SlayerLocationData.TaskEntry greater = data.findTask(-1, "Greater demons");
+		assertEquals(Collections.emptyList(), bossNames(Variants.counting(greater, SlayerMasters.KRYSTILIA, 0)));
+		assertEquals(Arrays.asList("Callisto", "Artio").size(),
+			bossNames(Variants.counting(data.findTask(-1, "Bears"), SlayerMasters.KRYSTILIA, 0)).size());
+		// Eldric only for Vannaka; Branda not for Konar or Krystilia
+		SlayerLocationData.TaskEntry ice = data.findTask(-1, "Ice giants");
+		assertEquals(Collections.singletonList("Eldric the Ice King"), bossNames(Variants.counting(ice, 3, 0)));
+		assertEquals(Collections.emptyList(), bossNames(Variants.counting(ice, 5, 0)));
+		assertEquals(Collections.emptyList(), bossNames(Variants.counting(ice, SlayerMasters.KRYSTILIA, 0)));
+		SlayerLocationData.TaskEntry fire = data.findTask(-1, "Fire giants");
+		assertEquals(Collections.singletonList("Branda the Fire Queen"), bossNames(Variants.counting(fire, 5, 0)));
+		assertEquals(Collections.emptyList(), bossNames(Variants.counting(fire, SlayerMasters.KONAR, 0)));
+		// Unknown master: every boss in the data
+		assertEquals(bossNames(black.getVariants()), bossNames(Variants.counting(black, 0, 0)));
+		// Konar's area: only a lair that counts as her place (the Alchemical Hydra's, in the Karuulm Slayer Dungeon)
+		SlayerLocationData.TaskEntry hydras = data.findTask(-1, "Hydras");
+		int karuulm = place(hydras, "karuulm_slayer_dungeon").getAreaId();
+		assertEquals(Collections.singletonList("Alchemical Hydra"), bossNames(Variants.counting(hydras, SlayerMasters.KONAR, karuulm)));
+		// The regular monsters are never left out
+		assertEquals(Variants.regular(black.getVariants()), Variants.regular(Variants.counting(black, SlayerMasters.KRYSTILIA, 0)));
+		// So loot from the King Black Dragon isn't taken as Krystilia task loot, though "black dragon" is in his name
+		List<String> names = new ArrayList<>();
+		Variants.counting(black, SlayerMasters.KRYSTILIA, 0).forEach(v -> names.add(v.getName()));
+		List<String> not = Variants.notCounting(black, SlayerMasters.KRYSTILIA, 0);
+		assertEquals(Collections.singletonList("King Black Dragon"), not);
+		assertFalse(TaskMonsters.matches("King Black Dragon", "Black dragons", names, not));
+		assertTrue(TaskMonsters.matches("Black dragon", "Black dragons", names, not));
+		assertTrue(TaskMonsters.matches("King Black Dragon", "Black dragons", names, Collections.emptyList()));
+
+		// The panel for Krystilia's black dragons has no King Black Dragon row
+		SlayerTaskState state = new SlayerTaskState(black.getTaskId(), black.getName(), 50, 120, SlayerMasters.KRYSTILIA, 0, null);
+		List<LocationOption> her = LocationPicker.pick(black, SlayerMasters.KRYSTILIA, 0, false);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.showTask(state, black.getInfo(), Variants.counting(black, SlayerMasters.KRYSTILIA, 0), her, true, true,
+				CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+			assertNull(withTooltip(panel, SlayerPanel.bossTooltip("King Black Dragon")));
+			assertFalse(containsText(panel, "King Black Dragon"));
+		});
+	}
+
+	@Test
+	public void aWildernessBossWithTheWildernessOffSaysWhyItHasNoLair() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Spiders");
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		List<SlayerLocationData.Variant> variants = Variants.counting(t, 5, 0);
+		SlayerLocationData.Variant venenatis = Variants.byName(variants, "Venenatis");
+		assertTrue(Variants.listed(variants, locations).contains(venenatis));
+		assertEquals(Collections.singletonList(Variants.BOSS_IN_WILDERNESS), Variants.foundAt(venenatis, locations));
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.showTask(state, t.getInfo(), variants, locations, true, true, CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+			panel.selectVariant("Venenatis");
+			assertEquals("Venenatis", panel.getSelectedVariant());
+			assertTrue(containsText(panel, "Show Wilderness locations"));
+			assertFalse(containsText(panel, Variants.NOT_SHOWN));
+			// A boss outside the Wilderness still names its lair
+			panel.selectVariant("Sarachnis");
+			assertTrue(containsText(panel, "Sarachnis' crypt"));
+		});
+	}
+
+	@Test
+	public void aBossCardLeavesOutTheTaskAdviceForTheRegularMonsters() throws Exception
+	{
+		SlayerLocationData.TaskEntry t = data.findTask(-1, "Gargoyles");
+		assertTrue(t.getInfo().getRequiredItems().toLowerCase().contains("rock hammer"));
+		SlayerTaskState state = new SlayerTaskState(t.getTaskId(), t.getName(), 50, 120, 5, 0, null);
+		List<LocationOption> locations = LocationPicker.pick(t, 5, 0, false);
+		SlayerLocationData.TaskEntry dags = data.findTask(-1, "Dagannoth");
+		SlayerTaskState dagState = new SlayerTaskState(dags.getTaskId(), dags.getName(), 50, 120, 5, 0, null);
+		SwingUtilities.invokeAndWait(() ->
+		{
+			SlayerPanel panel = new SlayerPanel(new NoIcons(), l -> { }, l -> { }, () -> { });
+			panel.showTask(state, t.getInfo(), t.getVariants(), locations, true, true, CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+			// The gargoyles: the task's attack advice and what to bring
+			assertTrue(hasLabel(panel, "Attack"));
+			assertTrue(containsText(panel, "<b>Bring</b>"));
+			// The Grotesque Guardians: their own facts only, no rock hammer, no task-wide attack style or notes
+			panel.selectVariant("Grotesque Guardians");
+			assertEquals("Grotesque Guardians", panel.getSelectedVariant());
+			assertFalse(hasLabel(panel, "Attack"));
+			assertFalse(containsText(panel, "<b>Bring</b>"));
+			assertFalse(containsText(panel, "<b>Weakness</b>"));
+			assertFalse(containsText(panel, "<b>They attack with</b>"));
+			assertFalse(containsText(panel, "ock hammer"));
+			assertTrue(hasLabel(panel, "Level"));
+			assertTrue(hasLabel(panel, "Found at"));
+
+			// Dagannoth Rex is weak to magic; the task's "Melee or ranged" isn't shown with him
+			panel.showTask(dagState, dags.getInfo(), dags.getVariants(), LocationPicker.pick(dags, 5, 0, false), true, true,
+				CollectionLog.Snapshot.EMPTY, DropItems.EMPTY);
+			assertTrue(hasLabel(panel, "Attack"));
+			panel.selectVariant("Dagannoth Rex");
+			assertEquals("Dagannoth Rex", panel.getSelectedVariant());
+			assertFalse(hasLabel(panel, "Attack"));
+			assertTrue(hasLabel(panel, "Level"));
+		});
+	}
+
+	@Test
+	public void lairFixesFromTheWiki()
+	{
+		// Boostable levels: Cerberus (wild pies on a hellhound task) and K'ril's river (70 Hitpoints, boostable); not
+		// the Kraken ("cannot be boosted") or Kree'arra ("cannot be boosted")
+		assertEquals(Collections.singletonList("SLAYER"), lairOf("Hellhounds", "Cerberus").getRequirements().getBoostable());
+		assertEquals(Collections.singletonList("HITPOINTS"), lairOf("Greater demons", "K'ril Tsutsaroth").getRequirements().getBoostable());
+		assertTrue(lairOf("Cave kraken", "Kraken").getRequirements().getBoostable().isEmpty());
+		assertTrue(lairOf("Aviansies", "Kree'arra").getRequirements().getBoostable().isEmpty());
+		// The Abyssal Nexus needs a first visit to the Abyss, by either route
+		assertTrue(lairOf("Abyssal demons", "Abyssal Sire").getNote().contains("first visit to the Abyss"));
+		// Scorpia's offspring live only in her lair
+		SlayerLocationData.TaskEntry scorpions = data.findTask(-1, "Scorpions");
+		assertEquals(Variants.byName(scorpions.getVariants(), "Scorpia").getPlaces(),
+			Variants.byName(scorpions.getVariants(), "Scorpia's offspring").getPlaces());
+		assertTrue(Variants.byName(scorpions.getVariants(), "Scorpia's offspring").isRegular());
+		// One King Black Dragon lair, the boss's: the guide's place for it is gone, and Go to nearest never goes there
+		SlayerLocationData.TaskEntry black = data.findTask(-1, "Black dragons");
+		assertNull(place(black, "king_black_dragon_lair"));
+		assertEquals(1, allLocations(black).stream().filter(l -> l.getLabel().contains("King Black Dragon")).count());
+		assertFalse(Variants.byName(black.getVariants(), "Black dragon").getPlaces().contains("king_black_dragon_lair"));
+		assertTrue(LocationPicker.nearestTargets(LocationPicker.pick(black, 5, 0, true)).stream()
+			.noneMatch(l -> l.getLabel().contains("King Black Dragon")));
+		// The Lesser demons' place by the lair's entrance is a different place, and stays
+		assertNotNull(place(data.findTask(-1, "Lesser demons"), "king_black_dragon_lair"));
+	}
 }

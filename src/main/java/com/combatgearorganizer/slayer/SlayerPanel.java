@@ -8,6 +8,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.FontMetrics;
 import java.awt.FlowLayout;
 import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
@@ -65,6 +66,18 @@ public class SlayerPanel extends JPanel
 	/** Characters a drawer header fits on one line, its title and the note's preview together. */
 	private static final int PREVIEW_ROOM = 28;
 	private static final int CAPTION_WIDTH = 46;
+	/**
+	 * A monster table row's inner width at the sidebar's width with the scroll bar showing: PluginPanel.PANEL_WIDTH less
+	 * the card's and the row's borders, and a pixel or two the layout keeps. BundledDataTest.noTextIsCutOffAtTheSidebarWidth
+	 * checks every cell fits.
+	 */
+	static final int TABLE_ROW_WIDTH = 200;
+	/** The monster table's number columns: at least this wide, wider when a level or XP range needs it. */
+	private static final int LEVEL_COLUMN = 34;
+	private static final int XP_COLUMN = 38;
+	private static final int TOTAL_COLUMN = 40;
+	/** Room the crown or star after a monster's name takes: the icon and its gap. */
+	private static final int NAME_ICON_ROOM = 13;
 	/** Long tooltips wrap at this width instead of running across the screen. */
 	private static final int TOOLTIP_WIDTH = 250;
 	private static final Color WEAKNESS_COLOR = new Color(255, 200, 90);
@@ -565,7 +578,8 @@ public class SlayerPanel extends JPanel
 		{
 			addVariantTable(card, variants, selected, locations, left);
 		}
-		if (info != null)
+		// The task-wide "Attack" (and its weaknesses) is about the regular monsters; a boss's card has its own facts
+		if (info != null && !isBoss(selected))
 		{
 			card.add(chips(info, TaskTags.from(info), showTaskWeakness, showsPrayer(info, selected)));
 		}
@@ -573,9 +587,10 @@ public class SlayerPanel extends JPanel
 		{
 			addVariantDetails(card, selected, locations, left);
 		}
-		if (info != null)
+		if (info != null && !isBoss(selected))
 		{
-			// With a monster selected, its own drops replace the task-wide drop notes
+			// With a monster selected, its own drops replace the task-wide drop notes. The task's notes (weakness, how
+			// they attack, what to bring) are about its regular monsters, so a boss's card leaves them out
 			addInfoDrawers(card, info, selected);
 		}
 		if (selected != null)
@@ -585,20 +600,83 @@ public class SlayerPanel extends JPanel
 		return card;
 	}
 
-	/** The task's monsters as a clickable table: level, XP each, XP for the kills left. */
+	private static boolean isBoss(Variant v)
+	{
+		return v != null && v.isBoss();
+	}
+
+	/**
+	 * The task's monsters as a clickable table: level, XP each, XP for the kills left. The level and XP columns widen
+	 * to fit the widest range in this table; a name that doesn't fit what's left goes onto more lines.
+	 */
 	private void addVariantTable(JPanel card, List<Variant> variants, Variant selected, List<LocationOption> locations, int left)
 	{
-		card.add(variantRow("Monster", null, false, "Lvl", "XP", "Task", ColorScheme.MEDIUM_GRAY_COLOR, false, null, null));
-		for (Variant v : Variants.listed(variants, locations))
+		List<Variant> listed = Variants.listed(variants, locations);
+		FontMetrics fm = TABLE_METRICS.get();
+		int levelWidth = LEVEL_COLUMN;
+		int xpWidth = XP_COLUMN;
+		for (Variant v : listed)
+		{
+			levelWidth = Math.max(levelWidth, fm.stringWidth(Variants.range(v.getLevel())) + 1);
+			xpWidth = Math.max(xpWidth, fm.stringWidth(Variants.xpEachShort(v.getXp())) + 1);
+		}
+		int[] widths = {levelWidth, xpWidth, TOTAL_COLUMN};
+		card.add(variantRow("Monster", null, false, "Lvl", "XP", "Task", ColorScheme.MEDIUM_GRAY_COLOR, false, null, null,
+			widths));
+		for (Variant v : listed)
 		{
 			boolean on = v == selected;
 			card.add(variantRow(v.getName(), superiorTip(variants, v), v.isBoss(), Variants.range(v.getLevel()),
-				Variants.xpEach(v.getXp()), Variants.xpTotalShort(v.getXp(), left),
+				Variants.xpEachShort(v.getXp()), Variants.xpTotalShort(v.getXp(), left),
 				on ? Color.WHITE : ColorScheme.LIGHT_GRAY_COLOR, on,
 				on ? null : () -> pickVariant(v.getName()),
-				totalCell -> variantTotals.add(new VariantTotal(totalCell, v))));
+				totalCell -> variantTotals.add(new VariantTotal(totalCell, v)), widths));
 		}
 		card.add(Box.createVerticalStrut(6));
+	}
+
+	/** The monster table's font metrics (the RuneScape small font), for sizing its columns. */
+	private static final java.util.function.Supplier<FontMetrics> TABLE_METRICS =
+		() -> new JLabel().getFontMetrics(FontManager.getRunescapeSmallFont());
+
+	/**
+	 * A name split into lines that each fit in {@code room} px, at spaces where it can, else mid-word. One line when it
+	 * fits.
+	 */
+	static List<String> wrapName(String name, FontMetrics fm, int room)
+	{
+		List<String> lines = new ArrayList<>();
+		String line = "";
+		for (String word : name.split(" "))
+		{
+			String joined = line.isEmpty() ? word : line + " " + word;
+			if (fm.stringWidth(joined) <= room)
+			{
+				line = joined;
+				continue;
+			}
+			if (!line.isEmpty())
+			{
+				lines.add(line);
+			}
+			line = word;
+			// A word too long for a line of its own is split where it has to be
+			while (fm.stringWidth(line) > room && line.length() > 1)
+			{
+				int cut = line.length() - 1;
+				while (cut > 1 && fm.stringWidth(line.substring(0, cut)) > room)
+				{
+					cut--;
+				}
+				lines.add(line.substring(0, cut));
+				line = line.substring(cut);
+			}
+		}
+		if (!line.isEmpty())
+		{
+			lines.add(line);
+		}
+		return lines;
 	}
 
 	/** The selected monster's own facts, under the task-wide attack and prayer rows. */
@@ -998,7 +1076,7 @@ public class SlayerPanel extends JPanel
 	 * has a crown after the name, and its tooltip and accessible description say it's a boss.
 	 */
 	private static JPanel variantRow(String name, String superiorTip, boolean boss, String level, String xp, String total,
-		Color color, boolean selected, Runnable onClick, Consumer<JLabel> totalCell)
+		Color color, boolean selected, Runnable onClick, Consumer<JLabel> totalCell, int[] widths)
 	{
 		JPanel row = new JPanel(new GridBagLayout());
 		row.setOpaque(selected);
@@ -1010,7 +1088,13 @@ public class SlayerPanel extends JPanel
 		c.gridy = 0;
 
 		c.weightx = 1;
-		JLabel nameCell = cell(name, color, 0, SwingConstants.LEFT);
+		boolean icon = boss || superiorTip != null;
+		int room = TABLE_ROW_WIDTH - widths[0] - widths[1] - widths[2] - (icon ? NAME_ICON_ROOM : 0);
+		List<String> lines = wrapName(name, TABLE_METRICS.get(), room);
+		JLabel nameCell = cell(lines.size() == 1 ? name
+			: "<html>" + lines.stream().map(SlayerPanel::escape).collect(Collectors.joining("<br>")) + "</html>",
+			color, 0, SwingConstants.LEFT);
+		nameCell.getAccessibleContext().setAccessibleName(name);
 		if (boss || superiorTip != null)
 		{
 			// Crown or star after the name; the tooltip says it's a boss, or which superior
@@ -1027,14 +1111,15 @@ public class SlayerPanel extends JPanel
 				nameCell.setToolTipText(BOSS_TIP);
 			}
 		}
-		// Let the name give up space (and clip) rather than squeezing the number columns
-		nameCell.setPreferredSize(new Dimension(10, 16));
-		nameCell.setMinimumSize(new Dimension(0, 16));
+		// The name takes what the number columns leave, on as many lines as it needs
+		int height = Math.max(16, nameCell.getPreferredSize().height);
+		nameCell.setPreferredSize(new Dimension(10, height));
+		nameCell.setMinimumSize(new Dimension(0, height));
 		row.add(nameCell, c);
 		c.weightx = 0;
-		row.add(cell(level, color, 34, SwingConstants.RIGHT), c);
-		row.add(cell(xp, color, 38, SwingConstants.RIGHT), c);
-		JLabel totalLabel = cell(total, color, 40, SwingConstants.RIGHT);
+		row.add(cell(level, color, widths[0], SwingConstants.RIGHT), c);
+		row.add(cell(xp, color, widths[1], SwingConstants.RIGHT), c);
+		JLabel totalLabel = cell(total, color, widths[2], SwingConstants.RIGHT);
 		row.add(totalLabel, c);
 		if (totalCell != null)
 		{

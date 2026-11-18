@@ -171,6 +171,22 @@ for Calvar'ion (Skeletal Tomb) and Spindel (Web Chasm) are RuneLite world map ic
 tiles; Kraken, Alchemical Hydra, the Dagannoth Kings and the GWD generals go to the dungeon entrance because Shortest
 Path can't path the last stretch. Not yet seen in a logged-in client.
 
+**Update 2026-11-18 (bosses as variants, review round 1):** `Variants.counting(task, masterId, konarAreaId)` drops
+the bosses that don't count for the shown master: a variant's `masters` (only these; Eldric: Vannaka) and
+`notMasters` (KBD: Krystilia; Branda: Konar, Krystilia), from `BOSSES`, and any boss whose lair isn't among
+`LocationPicker.pick(task, master, area, true)` (outside the Wilderness for Krystilia, outside Konar's area).
+`SlayerHelper` hands the panel only those, and the loot fallback ignores the left-out ones (`Variants.notCounting`,
+`TaskMonsters.matches(..., notCounting)`), also when the core Slayer plugin targets them. A listed boss whose lair is
+hidden (Wilderness setting off) says `Variants.BOSS_IN_WILDERNESS`. A boss's card has no task-wide *Attack* chips
+and no *Weakness* / *They attack with* / *Bring* drawers. Lair requirements can list `boostable` skills (Cerberus
+Slayer, K'ril Hitpoints, per the wiki); `RequirementChecker.meets` takes the boosted level for those and the text says
+"(boostable)". Kolodion is left out (`ONE_TIME_FIGHTS`: once, in the Mage Arena miniquest), Scorpia's offspring live
+at Scorpia's lair (`AT_LAIR`), and the KBD lair `replaces` the guide's "King Black Dragon Lair" (the black dragons
+there were the Lava Maze Dungeon's, `NOT_AT`). The Abyssal Nexus note says a first visit to the Abyss is needed. The
+monster table sizes its level and XP columns to the widest value (`Variants.xpEachShort` for the table), and wraps
+names to fit (`SlayerPanel.wrapName`, `TABLE_ROW_WIDTH`); `noTextIsCutOffAtTheSidebarWidth` now also measures
+plain-text labels. Not yet seen in a logged-in client.
+
 Still open from the review: Venator data, the Wilderness-diary needs of the Wilderness boss lairs (said in the note,
 not checked), the low-severity Shortest Path `clear` items, ammo-slot grouping,
 hybrid items, per-slot rows (the "Loadout" grouping; By set covers armour only), and the scope doc's wrong required items.
