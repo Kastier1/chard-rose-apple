@@ -33,7 +33,17 @@ public class ShortestPathBridgeTest
 		/** The setting overrides in force. */
 		Map<String, Object> overrides = new HashMap<>();
 		boolean answers = true;
+		/** Like the real plugin: the reply is read at once but posted on a later client tick, by {@link #flush}. */
+		boolean deferReplies;
+		final List<PluginMessage> deferred = new ArrayList<>();
 		private EventBus bus;
+
+		void flush()
+		{
+			List<PluginMessage> replies = new ArrayList<>(deferred);
+			deferred.clear();
+			replies.forEach(bus::post);
+		}
 
 		@Subscribe
 		public void onPluginMessage(PluginMessage m)
@@ -79,7 +89,15 @@ public class ShortestPathBridgeTest
 						{
 							reply.put("config", new HashMap<>(overrides));
 						}
-						bus.post(new PluginMessage("shortestpath", "currentTarget", reply));
+						PluginMessage answer = new PluginMessage("shortestpath", "currentTarget", reply);
+						if (deferReplies)
+						{
+							deferred.add(answer);
+						}
+						else
+						{
+							bus.post(answer);
+						}
 					}
 					break;
 				default:
@@ -273,12 +291,48 @@ public class ShortestPathBridgeTest
 		assertTrue(sp.overrides.isEmpty());
 		assertFalse(bridge.isOverrideActive());
 
-		// Arriving without a reply: cleared, then our path shown again without the override
+		// Arriving without a reply: cleared to drop the override, and not shown again on a guess that it's still ours
 		bridge.path(Collections.singletonList(WILDY_CAVE), true);
 		bridge.onGameTick(new WorldPoint(3345, 10160, 0));
 		ticks(ShortestPathBridge.REPLY_TIMEOUT_TICKS + 1, new WorldPoint(3345, 10160, 0));
 		assertTrue(sp.overrides.isEmpty());
-		assertEquals(Collections.singletonList(new WorldPoint(3343, 10163, 0)), sp.shownTargets);
+		assertNull(sp.shownTargets);
+		assertFalse(bridge.isPathShown());
+	}
+
+	@Test
+	public void noReplyToARoutineCheckNeverTouchesThePath()
+	{
+		// Review: an older Shortest Path timing out on the routine check wiped the player's own path and redrew ours
+		sp.answers = false;
+		bridge.path(Collections.singletonList(WILDY_CAVE), true);
+		WorldPoint theirs = new WorldPoint(3185, 3436, 0);
+		sp.shownTargets = new ArrayList<>(Collections.singletonList(theirs));
+		ticks(ShortestPathBridge.CHECK_INTERVAL_TICKS + ShortestPathBridge.REPLY_TIMEOUT_TICKS + 1,
+			new WorldPoint(3100, 3500, 0));
+		assertEquals(0, sp.count("clear"));
+		assertEquals(Collections.singletonList(theirs), sp.shownTargets);
+		// It stops asking: this version can't answer
+		long asked = sp.count("getTarget");
+		ticks(ShortestPathBridge.CHECK_INTERVAL_TICKS * 3, new WorldPoint(3100, 3500, 0));
+		assertEquals(asked, sp.count("getTarget"));
+	}
+
+	@Test
+	public void aReplyFromBeforeANewGoIsIgnored()
+	{
+		// Review: Shortest Path answers getTarget on a later client tick; a Go in between must not be undone by it
+		sp.deferReplies = true;
+		bridge.path(Collections.singletonList(WILDY_CAVE), true);
+		bridge.onGameTick(new WorldPoint(3345, 10160, 0)); // arrived: asks whose path is shown
+		WorldPoint other = new WorldPoint(3000, 3700, 0);
+		bridge.path(Collections.singletonList(new int[]{3000, 3700, 0}), true); // a new Go before the answer
+		long clears = sp.count("clear");
+		sp.flush();
+		assertEquals(clears, sp.count("clear"));
+		assertEquals(Collections.singletonList(other), sp.shownTargets);
+		assertEquals(Boolean.FALSE, sp.overrides.get("avoidWilderness"));
+		assertTrue(bridge.isOverrideActive());
 		assertTrue(bridge.isPathShown());
 	}
 

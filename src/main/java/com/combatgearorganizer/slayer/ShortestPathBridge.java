@@ -58,6 +58,13 @@ public class ShortestPathBridge
 	private boolean pendingAutoClear;
 	/** Arrived with our override in force: drop it once Shortest Path says whose path is shown. */
 	private boolean pendingDropOverride;
+	/**
+	 * Numbers our getTarget requests, so a currentTarget reply answering an older request (Shortest Path answers on a
+	 * later client tick) is ignored after a new Go, clear or release.
+	 */
+	private int requestSequence;
+	/** Shortest Path didn't answer a getTarget (an older version): stop the periodic checks, which can't be answered. */
+	private boolean noReplies;
 	private int ticksSinceRequest = -1;
 	private int ticksSinceCheck;
 
@@ -149,6 +156,7 @@ public class ShortestPathBridge
 		overrideActive = override;
 		pendingAutoClear = false;
 		pendingDropOverride = false;
+		requestSequence++;
 		ticksSinceRequest = -1;
 		ticksSinceCheck = 0;
 	}
@@ -218,21 +226,18 @@ public class ShortestPathBridge
 			ticksSinceRequest++;
 			if (ticksSinceRequest > REPLY_TIMEOUT_TICKS)
 			{
-				// Shortest Path didn't answer (an older version without getTarget). Don't clear a path that might not be
-				// ours, unless our Wilderness override is in force: that needs a clear to go. Our path, as far as we
-				// know, is then shown again without it, unless the task ended.
+				// Shortest Path didn't answer (an older version without getTarget), so it can't say whose path is shown.
+				// Never show a path again on a guess: it could cover the player's own or another plugin's. Only when
+				// the player arrived or the task ended, and our Wilderness override is in force, clear: that's the only
+				// way to drop it, and the route's job is done.
 				ticksSinceRequest = -1;
-				if (overrideActive)
+				noReplies = true;
+				if (overrideActive && (pendingDropOverride || pendingAutoClear))
 				{
 					postClear();
-					overrideActive = false;
-					pendingDropOverride = false;
-					if (!pendingAutoClear)
-					{
-						postPath(ourTargets.stream().collect(Collectors.toList()));
-					}
+					reset();
 				}
-				if (pendingAutoClear)
+				else if (pendingAutoClear)
 				{
 					reset();
 				}
@@ -240,7 +245,7 @@ public class ShortestPathBridge
 			return;
 		}
 
-		if (++ticksSinceCheck >= CHECK_INTERVAL_TICKS)
+		if (!noReplies && ++ticksSinceCheck >= CHECK_INTERVAL_TICKS)
 		{
 			ticksSinceCheck = 0;
 			requestTarget();
@@ -255,11 +260,13 @@ public class ShortestPathBridge
 			return;
 		}
 		Map<String, Object> data = message.getData();
-		if (!MESSAGE_ID.equals(data.get("id")))
+		if (!requestId().equals(data.get("id")) || ticksSinceRequest < 0)
 		{
+			// Not ours, or an answer to an older request: what it says may be from before a new Go or clear
 			return;
 		}
 		ticksSinceRequest = -1;
+		noReplies = false;
 
 		boolean shown = Boolean.TRUE.equals(data.get("set"));
 		boolean ours = shown && ourTargets.equals(targetPoints(data.get("target")));
@@ -307,12 +314,18 @@ public class ShortestPathBridge
 		eventBus.post(new PluginMessage(NAMESPACE, "path", data));
 	}
 
+	private String requestId()
+	{
+		return MESSAGE_ID + ":" + requestSequence;
+	}
+
 	private void requestTarget()
 	{
 		Map<String, Object> data = new HashMap<>();
-		data.put("id", MESSAGE_ID);
-		eventBus.post(new PluginMessage(NAMESPACE, "getTarget", data));
+		data.put("id", requestId());
+		// Outstanding before posting: a listener that answers at once (as on the client thread) must find it so
 		ticksSinceRequest = 0;
+		eventBus.post(new PluginMessage(NAMESPACE, "getTarget", data));
 	}
 
 	/** Whether the player is within {@link #ARRIVAL_DISTANCE} tiles of one of the targets, on the same plane. */
@@ -339,6 +352,7 @@ public class ShortestPathBridge
 		routeActive = false;
 		pendingAutoClear = false;
 		pendingDropOverride = false;
+		requestSequence++;
 		ticksSinceRequest = -1;
 		ticksSinceCheck = 0;
 	}

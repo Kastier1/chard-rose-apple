@@ -54,6 +54,15 @@ public class RouteOwnerTest
 	}
 
 	@Test
+	public void aPreviewRouteStillBelongsToThePreviewAfterArriving()
+	{
+		// Review: arriving ended the route line and forgot the owner, so stopping the preview left its path drawn.
+		// SlayerHelper only calls ended() once our path is gone, so the owner is kept here until then.
+		owner.started(true);
+		assertTrue(owner.shownTaskChanged());
+	}
+
+	@Test
 	public void anEndedRouteBelongsToNoOne()
 	{
 		owner.started(true);

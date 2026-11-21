@@ -786,8 +786,9 @@ public class SlayerHelper
 	/** The task the route is for changed or ended. Client thread. */
 	private void endTaskRoute()
 	{
-		// Only clears the path if it is still the one we set
+		// Only clears the path if it is still the one we set; either way it no longer belongs to a task
 		shortestPath.clearIfOurs();
+		routeOwner.ended();
 		removeMapMarkers();
 		setRoute(Route.NONE);
 	}
@@ -795,8 +796,10 @@ public class SlayerHelper
 	/** Client thread. */
 	private void setRoute(Route r)
 	{
-		if (r.getKind() == Route.Kind.NONE)
+		if (r.getKind() == Route.Kind.NONE && !shortestPath.isPathShown())
 		{
+			// Our path is gone. On arrival it stays shown, and still belongs to the task (or preview) it was for, so
+			// that one changing still clears it.
 			routeOwner.ended();
 		}
 		if (r.equals(route))
