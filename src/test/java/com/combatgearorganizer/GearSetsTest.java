@@ -62,6 +62,29 @@ public class GearSetsTest
 	}
 
 	@Test
+	public void setWeaponsAndShields()
+	{
+		// By set puts these under their set's armour
+		assertEquals("Dharok's", GearSets.setOf("Dharok's greataxe"));
+		assertEquals("Karil's", GearSets.setOf("Karil's crossbow 100"));
+		assertEquals("Ahrim's", GearSets.setOf("Ahrim's staff"));
+		assertEquals("Guthan's", GearSets.setOf("Guthan's warspear"));
+		assertEquals("Torag's", GearSets.setOf("Torag's hammers"));
+		assertEquals("Verac's", GearSets.setOf("Verac's flail"));
+		assertEquals("Blue moon", GearSets.setOf("Blue moon spear"));
+		assertEquals("Inquisitor's", GearSets.setOf("Inquisitor's mace"));
+		assertEquals("Void knight", GearSets.setOf("Void knight mace"));
+		assertEquals("Black d'hide", GearSets.setOf("Black d'hide shield"));
+		// Weapons that only share a word with a set stay out of it
+		for (String weapon : new String[]{"Bandos godsword", "Armadyl crossbow", "Saradomin sword", "Ancient sceptre",
+			"Zamorak spear", "Guthix staff", "Dragon battleaxe", "Dragon defender", "Rune crossbow", "Crystal bow",
+			"Granite maul", "Mystic smoke staff", "Dual macuahuitl", "Eclipse atlatl"})
+		{
+			assertNull(weapon, GearSets.setOf(weapon));
+		}
+	}
+
+	@Test
 	public void notSetPieces()
 	{
 		assertNull(GearSets.setOf("Black mask"));

@@ -785,8 +785,8 @@ public class CombatGearOrganizerPlugin extends Plugin
 	}
 
 	/**
-	 * The armour set of the item, from its name or else the name of its variation group base (its uncharged or
-	 * undamaged version). Client thread.
+	 * The set of the item (armour, or a set's own weapon or shield), from its name or else the name of its variation
+	 * group base (its uncharged or undamaged version). Client thread.
 	 */
 	private String setOf(int itemId, String name)
 	{
@@ -831,7 +831,7 @@ public class CombatGearOrganizerPlugin extends Plugin
 		final GearSlot slot = GearSlot.fromEquipmentIndex(e.getSlot());
 		final GearStyle style = GearClassifier.classify(name, slot, bonuses);
 		return new GearItem(itemId, name, slot, style, GearClassifier.power(style, name, slot, bonuses),
-			LayoutBuilder.isArmourSlot(slot) ? setOf(itemId, name) : null);
+			LayoutBuilder.isSetSlot(slot) ? setOf(itemId, name) : null);
 	}
 
 	private static String joinFrom(String[] args, int from)

@@ -297,18 +297,120 @@ public class LayoutBuilderTest
 	}
 
 	@Test
-	public void bySetUnsettedArmourWrapsAfterTheSets()
+	public void bySetUnsettedArmourThatDoesNotFitBesideTheSetsGetsABlockOfItsOwn()
 	{
+		// Seven sets and two columns of odd armour: wrapping one column under the sets would put one odd helm at the
+		// end of the head row and the other in a row far below, so all of it starts the next block
 		List<GearItem> items = manySets(7);
-		items.add(gear(1, "Helm of neitiznot", GearSlot.HEAD, GearStyle.MELEE, 1));
-		items.add(gear(2, "Verac's helm", GearSlot.HEAD, GearStyle.MELEE, 0));
-		items.add(gear(3, "Dragon boots", GearSlot.FEET, GearStyle.MELEE, 0));
+		items.add(gear(901, "Helm of neitiznot", GearSlot.HEAD, GearStyle.MELEE, 1));
+		items.add(gear(902, "Verac's helm", GearSlot.HEAD, GearStyle.MELEE, 0));
+		items.add(gear(903, "Dragon boots", GearSlot.FEET, GearStyle.MELEE, 0));
 		int[] layout = LayoutBuilder.build(items, Grouping.BY_SET, false);
 		Map<Integer, Integer> at = positions(layout);
-		assertEquals(7, (int) at.get(1)); // the last column of the first block's head row
-		assertEquals(23, (int) at.get(3)); // its feet row
-		assertEquals(24, (int) at.get(2)); // the next block, which has only a head row
+		assertEquals(-1, layout[7]); // the sets' block keeps its last column free
+		assertEquals(16, (int) at.get(901)); // the odd helms side by side in the next block's head row
+		assertEquals(17, (int) at.get(902));
+		assertEquals(24, (int) at.get(903)); // its feet row, under the first helm
 		assertEquals(25, layout.length);
+	}
+
+	@Test
+	public void bySetUnsettedArmourThatFitsGoesBesideTheSets()
+	{
+		List<GearItem> items = manySets(6);
+		items.add(gear(901, "Helm of neitiznot", GearSlot.HEAD, GearStyle.MELEE, 1));
+		items.add(gear(902, "Verac's helm", GearSlot.HEAD, GearStyle.MELEE, 0));
+		items.add(gear(903, "Dragon boots", GearSlot.FEET, GearStyle.MELEE, 0));
+		int[] layout = LayoutBuilder.build(items, Grouping.BY_SET, false);
+		Map<Integer, Integer> at = positions(layout);
+		assertEquals(6, (int) at.get(901));
+		assertEquals(7, (int) at.get(902));
+		assertEquals(22, (int) at.get(903)); // the feet row is the block's third
+		assertEquals(23, layout.length);
+	}
+
+	@Test
+	public void bySetUnsettedArmourWiderThanTheBankWrapsInItsOwnBlocks()
+	{
+		List<GearItem> items = manySets(2);
+		for (int i = 0; i < 9; i++)
+		{
+			items.add(gear(501 + i, "Odd helm " + i, GearSlot.HEAD, GearStyle.MELEE, 20 - i));
+		}
+		int[] layout = LayoutBuilder.build(items, Grouping.BY_SET, false);
+		Map<Integer, Integer> at = positions(layout);
+		// The sets' block has two rows; the odd helms fill the next block's head row and wrap into a third
+		assertEquals(-1, layout[2]);
+		assertEquals(16, (int) at.get(501));
+		assertEquals(23, (int) at.get(508));
+		assertEquals(24, (int) at.get(509));
+		assertEquals(25, layout.length);
+	}
+
+	/** Each Barrows brother's weapon goes in his column under his armour; other weapons stay in the weapons rows. */
+	@Test
+	public void bySetSetWeaponsGoUnderTheirSet()
+	{
+		List<GearItem> items = new ArrayList<>(threeSets);
+		items.add(gear(24, "Karil's crossbow", GearSlot.WEAPON, GearStyle.RANGED, 50));
+		items.add(gear(34, "Ahrim's staff", GearSlot.WEAPON, GearStyle.MAGIC, 40));
+		items.add(gear(91, "Abyssal whip", GearSlot.WEAPON, GearStyle.MELEE, 80));
+		int[] layout = LayoutBuilder.build(items, Grouping.BY_SET, false);
+		int[] expected = {
+			-1, 21, 31, -1, -1, -1, -1, -1,
+			11, 22, 32, -1, -1, -1, -1, -1,
+			12, 23, 33, -1, -1, -1, -1, -1,
+			13, -1, -1, -1, -1, -1, -1, -1,
+			-1, 24, 34, -1, -1, -1, -1, -1, // the sets' weapons row
+			91, // weapons in no set
+		};
+		assertArrayEquals(expected, layout);
+	}
+
+	@Test
+	public void bySetSetWeaponWithoutItsArmourStaysWithTheWeapons()
+	{
+		List<GearItem> items = new ArrayList<>(threeSets);
+		items.add(gear(41, "Dharok's greataxe", GearSlot.WEAPON, GearStyle.MELEE, 90));
+		items.add(gear(51, "Verac's flail", GearSlot.WEAPON, GearStyle.MELEE, 60));
+		items.add(gear(52, "Verac's helm", GearSlot.HEAD, GearStyle.MELEE, 10));
+		int[] layout = LayoutBuilder.build(items, Grouping.BY_SET, false);
+		Map<Integer, Integer> at = positions(layout);
+		// Verac's helm and flail are two slots of one set: a column of their own, the flail under the helm
+		assertLinedUp(layout, 52, 51);
+		// No Dharok's armour: the greataxe is in the weapons rows, not alone in a column of the grid
+		assertEquals(0, column(layout, 41));
+		assertTrue(at.get(41) > at.get(51));
+	}
+
+	@Test
+	public void bySetWeaponsAndShieldsOfASetWithNoArmourStayWithTheWeapons()
+	{
+		List<GearItem> items = new ArrayList<>(threeSets);
+		items.add(gear(41, "Black d'hide shield", GearSlot.SHIELD, GearStyle.RANGED, 5));
+		items.add(gear(42, "Black d'hide sword", GearSlot.WEAPON, GearStyle.MELEE, 5)); // made up: weapon and shield
+		int[] layout = LayoutBuilder.build(items, Grouping.BY_SET, false);
+		int[] expected = {
+			-1, 21, 31, -1, -1, -1, -1, -1,
+			11, 22, 32, -1, -1, -1, -1, -1,
+			12, 23, 33, -1, -1, -1, -1, -1,
+			13, -1, -1, -1, -1, -1, -1, -1,
+			42, -1, -1, -1, -1, -1, -1, -1,
+			41,
+		};
+		assertArrayEquals(expected, layout);
+	}
+
+	@Test
+	public void bySetSecondWeaponOfASetGoesWithTheWeapons()
+	{
+		List<GearItem> items = new ArrayList<>(threeSets);
+		items.add(gear(24, "Karil's crossbow", GearSlot.WEAPON, GearStyle.RANGED, 50));
+		items.add(gear(25, "Karil's crossbow 0", GearSlot.WEAPON, GearStyle.RANGED, 1)); // degraded
+		int[] layout = LayoutBuilder.build(items, Grouping.BY_SET, false);
+		assertLinedUp(layout, 21, 22, 23, 24);
+		assertEquals(33, (int) positions(layout).get(24)); // the grid's weapons row, in Karil's column
+		assertEquals(40, (int) positions(layout).get(25)); // the row after the grid, with the other weapons
 	}
 
 	@Test
@@ -324,6 +426,8 @@ public class LayoutBuilderTest
 			new GearItem[]{gear(67, "Abyssal whip", GearSlot.WEAPON, GearStyle.MELEE, 600)},
 			new GearItem[]{gear(68, "Amulet of fury", GearSlot.NECK, GearStyle.MELEE, 600)},
 			new GearItem[]{gear(14, "Bandos chestplate (or)", GearSlot.BODY, GearStyle.MELEE, 1)},
+			// The set's own weapon goes under it, however strong, without moving it or the others
+			new GearItem[]{gear(24, "Karil's crossbow", GearSlot.WEAPON, GearStyle.RANGED, 6000)},
 			// A new set after the others (weakest magic set) leaves their columns alone
 			new GearItem[]{gear(81, "Mystic hat", GearSlot.HEAD, GearStyle.MAGIC, 1),
 				gear(82, "Mystic robe top", GearSlot.BODY, GearStyle.MAGIC, 1)}
@@ -431,10 +535,10 @@ public class LayoutBuilderTest
 
 		// One odd helm more starts the next block, after a blank row, with only a head row
 		List<GearItem> items = manySets(8);
-		items.add(gear(1, "Helm of neitiznot", GearSlot.HEAD, GearStyle.MELEE, 1));
+		items.add(gear(901, "Helm of neitiznot", GearSlot.HEAD, GearStyle.MELEE, 1));
 		int[] wrapped = LayoutBuilder.build(items, Grouping.BY_SET, true);
 		assertEquals(25, wrapped.length);
-		assertEquals(1, wrapped[24]);
+		assertEquals(901, wrapped[24]);
 		for (int i = 16; i < 24; i++)
 		{
 			assertEquals(-1, wrapped[i]);

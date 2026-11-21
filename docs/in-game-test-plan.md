@@ -57,9 +57,11 @@ log in in the window that opens, pick your character, then *Play Now*. Next time
   Mystic...) reads straight down one column: melee sets, then ranged, then magic. Helms, bodies, legs, gloves and
   boots are the rows.
   - [ ] Odd pieces (Helm of neitiznot, Fighter torso, a lone Verac's helm, Barrows gloves) sit to the right of the
-    sets in their own row.
+    sets in their own row. With 7 or 8 sets, they start a block of their own below instead, all odd helms in one row.
+  - [ ] A set's weapon (Dharok's greataxe, Karil's crossbow, Ahrim's staff, Blue moon spear) is in the set's column
+    under its armour; a Barrows weapon whose armour you don't have stays with the other weapons.
   - [ ] A degraded or charged piece (Dharok's helm 100, Torva full helm (damaged)) still lines up with its set.
-  - [ ] Weapons, shields, capes, amulets and rings follow below the armour, a row block each.
+  - [ ] Other weapons, shields, capes, amulets and rings follow below the armour, a row block each.
   - [ ] Tag one more odd item (a weapon, a ring, a helm) and organize again: no set changes column.
 - [ ] `::gearsort` and `::gearsort undo` still work.
 

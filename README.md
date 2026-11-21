@@ -29,15 +29,17 @@ Switch **Group by** to *Equipment slot* if you'd rather have one row-block per s
 all helms together, …), each ordered melee → ranged → magic.
 
 Switch it to *Gear set* to line up your armour sets: armour slots are rows (helms, bodies, legs, gloves, boots) and
-each set is one column, so Bandos, Karil's or Ahrim's reads straight down. For example:
+each set is one column, so Bandos, Karil's or Ahrim's reads straight down, with the set's own weapon under it. For
+example:
 
 ```
 -                     Dharok's helm         Karil's coif          Ahrim's hood          Helm of neitiznot
 Bandos chestplate     Dharok's platebody    Karil's leathertop    Ahrim's robetop       Fighter torso
 Bandos tassets        Dharok's platelegs    Karil's leatherskirt  Ahrim's robeskirt
 -                     -                     -                     -                     Barrows gloves
+-                     Dharok's greataxe     Karil's crossbow      Ahrim's staff
 (blank)
-weapons, shields, capes, amulets, rings, ammo and supplies: one row block each, as with Equipment slot
+other weapons, shields, capes, amulets, rings, ammo and supplies: one row block each, as with Equipment slot
 ```
 
 - Sets are found from item names (charged and degraded versions count), from a table in `GearSets.java`: Barrows,
@@ -45,10 +47,14 @@ weapons, shields, capes, amulets, rings, ammo and supplies: one row block each, 
   Proselyte, Crystal, Obsidian, d'hide and blessed d'hide, rune / dragon / god armour, Mystic, Infinity, Lunar,
   Dagon'hai, Elder chaos, Ghostly, Graceful, Spirit angler and others.
 - Melee sets come first, then ranged, then magic (a set's style is that of most of its pieces), strongest first.
+- A set's own weapon or shield (Barrows weapons, Blue moon spear, Inquisitor's mace, Void knight mace, a d'hide
+  shield) goes in the set's column, under its armour. Without any of the set's armour in the tab it stays with the
+  other weapons.
 - Armour that isn't in a set, or is the only piece of its set in the tab, goes to the right of the sets in its own
   row. So does a second piece for a slot a set already has (a second void helm).
-- More than 8 columns wrap into another block of rows below.
-- Adding a weapon, jewellery or an odd piece of armour never moves a set. A new set, or a set getting stronger, can
+- More than 8 sets wrap into another block of rows below. Odd armour that doesn't all fit beside the last sets
+  starts a block of its own, so all your odd helms stay in one row.
+- Adding a weapon (even the set's own), jewellery or an odd piece of armour never moves a set. A new set, or a set getting stronger, can
   move the sets that come after it.
 
 ## Usage

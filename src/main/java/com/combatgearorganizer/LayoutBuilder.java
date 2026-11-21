@@ -19,10 +19,16 @@ public final class LayoutBuilder
 {
 	public static final int BANK_COLUMNS = 8;
 
-	/** The By set layout's armour rows, top to bottom. Other slots get rows of their own below, as in By slot. */
+	/**
+	 * The By set layout's rows, top to bottom: the armour, then a set's own weapon and shield (Dharok's greataxe under
+	 * Dharok's armour). Other slots, and weapons in no set, get rows of their own below, as in By slot.
+	 */
 	static final List<GearSlot> SET_ROWS = Collections.unmodifiableList(Arrays.asList(
+		GearSlot.HEAD, GearSlot.BODY, GearSlot.LEGS, GearSlot.HANDS, GearSlot.FEET, GearSlot.WEAPON, GearSlot.SHIELD));
+	private static final Set<GearSlot> ARMOUR_SLOTS = Collections.unmodifiableSet(EnumSet.of(
 		GearSlot.HEAD, GearSlot.BODY, GearSlot.LEGS, GearSlot.HANDS, GearSlot.FEET));
-	private static final Set<GearSlot> ARMOUR_SLOTS = Collections.unmodifiableSet(EnumSet.copyOf(SET_ROWS));
+	/** Slots whose items can be in a set's column; only armour in no set goes in the grid too. */
+	private static final Set<GearSlot> SET_SLOTS = Collections.unmodifiableSet(EnumSet.copyOf(SET_ROWS));
 
 	/** Melee, ranged, magic..., then strongest first: the order within a By slot section or a By set row. */
 	private static final Comparator<GearItem> STYLE_THEN_POWER = Comparator.comparing(GearItem::getStyle)
@@ -43,13 +49,16 @@ public final class LayoutBuilder
 		final List<List<Integer>> sections = new ArrayList<>();
 		if (grouping == Grouping.BY_SET)
 		{
-			final List<GearItem> armour = new ArrayList<>();
+			final List<GearItem> grid = new ArrayList<>();
 			final List<GearItem> rest = new ArrayList<>();
 			for (GearItem item : items)
 			{
-				(isArmourSlot(item.getSlot()) ? armour : rest).add(item);
+				// A weapon or shield goes in the grid only as part of a set; setBlocks hands it back otherwise
+				final boolean inGrid = isArmourSlot(item.getSlot())
+					|| (isSetSlot(item.getSlot()) && item.getSet() != null);
+				(inGrid ? grid : rest).add(item);
 			}
-			sections.addAll(setBlocks(armour));
+			sections.addAll(setBlocks(grid, rest));
 			sectionsBySlot(rest).forEach(s -> sections.add(ids(s)));
 		}
 		else
@@ -93,23 +102,32 @@ public final class LayoutBuilder
 		return ids;
 	}
 
-	/** Whether the item goes in the By set armour grid (supplies are always slot NONE). */
+	/** Whether the item goes in the By set grid whether or not it's in a set (supplies are always slot NONE). */
 	public static boolean isArmourSlot(GearSlot slot)
 	{
 		return ARMOUR_SLOTS.contains(slot);
 	}
 
+	/** Whether an item in this slot can be in a set's By set column: armour, or the set's own weapon or shield. */
+	public static boolean isSetSlot(GearSlot slot)
+	{
+		return SET_SLOTS.contains(slot);
+	}
+
 	/**
-	 * The By set armour block: a row per armour slot and a column per set, so each set reads straight down one column.
-	 * Sets come melee, ranged, magic (then prayer, utility), strongest first; armour in no set (or the only piece of
-	 * its set in the tab) fills the columns to the right in its own row. Columns past the bank's 8 wrap into another
-	 * block below. Each block is a list of full rows, leaving out slots with nothing in that block.
+	 * The By set block: a row per {@link #SET_ROWS} slot and a column per set, so each set reads straight down one
+	 * column, its weapon under its armour. Sets come melee, ranged, magic (then prayer, utility), strongest first, and
+	 * wrap into another block below past the bank's 8 columns. Armour in no set (or the only piece of its set in the
+	 * tab) goes in columns of its own, each row's pieces left to right: beside the last sets if it all fits there,
+	 * otherwise in blocks of its own, so its pieces for a slot stay in one row. Each block is a list of full rows,
+	 * leaving out slots with nothing in that block. Weapons and shields that end up in no set's column go to
+	 * {@code rest}.
 	 */
-	private static List<List<Integer>> setBlocks(List<GearItem> armour)
+	private static List<List<Integer>> setBlocks(List<GearItem> grid, List<GearItem> rest)
 	{
 		final Map<String, List<GearItem>> bySet = new HashMap<>();
 		final List<GearItem> unsetted = new ArrayList<>();
-		for (GearItem item : armour)
+		for (GearItem item : grid)
 		{
 			if (item.getSet() == null)
 			{
@@ -126,35 +144,48 @@ public final class LayoutBuilder
 		{
 			final List<GearItem> pieces = e.getValue();
 			final long slots = pieces.stream().map(GearItem::getSlot).distinct().count();
-			if (slots < 2)
+			if (slots < 2 || pieces.stream().noneMatch(i -> isArmourSlot(i.getSlot())))
 			{
-				// One piece (or only one slot's worth) of a set lines nothing up
-				unsetted.addAll(pieces);
+				// One piece (or only one slot's worth) of a set lines nothing up, nor does a weapon and shield alone
+				pieces.forEach(i -> (isArmourSlot(i.getSlot()) ? unsetted : rest).add(i));
 			}
 			else
 			{
 				final GearSet set = new GearSet(e.getKey(), pieces);
 				sets.add(set);
-				unsetted.addAll(set.extras);
+				set.extras.forEach(i -> (isArmourSlot(i.getSlot()) ? unsetted : rest).add(i));
 			}
+		}
+		if (sets.isEmpty() && unsetted.isEmpty())
+		{
+			return Collections.emptyList();
 		}
 		sets.sort(Comparator.comparing((GearSet s) -> s.style)
 			.thenComparing(Comparator.comparingInt((GearSet s) -> s.strength).reversed())
 			.thenComparing(s -> s.name, String.CASE_INSENSITIVE_ORDER)
 			.thenComparing(s -> s.name));
 
-		final List<GearItem[]> columns = new ArrayList<>();
+		final List<GearItem[]> setColumns = new ArrayList<>();
 		for (GearSet set : sets)
 		{
-			columns.add(set.column);
+			setColumns.add(set.column);
 		}
 		// Armour in no set: column j holds each row's j-th item
-		columns.addAll(columns(unsetted, STYLE_THEN_POWER));
+		final List<GearItem[]> unsettedColumns = columns(unsetted, STYLE_THEN_POWER);
 
-		final List<List<GearItem[]>> blocks = new ArrayList<>();
-		for (int start = 0; start < columns.size(); start += BANK_COLUMNS)
+		final List<List<GearItem[]>> blocks = new ArrayList<>(inBlocks(setColumns));
+		final List<GearItem[]> last = blocks.isEmpty() ? null : blocks.get(blocks.size() - 1);
+		if (last != null && last.size() + unsettedColumns.size() <= BANK_COLUMNS)
 		{
-			blocks.add(columns.subList(start, Math.min(start + BANK_COLUMNS, columns.size())));
+			// It all fits beside the last sets
+			final List<GearItem[]> joined = new ArrayList<>(last);
+			joined.addAll(unsettedColumns);
+			blocks.set(blocks.size() - 1, joined);
+		}
+		else
+		{
+			// Wrapping some of it under the sets would split a slot's odd pieces between two rows far apart
+			blocks.addAll(inBlocks(unsettedColumns));
 		}
 
 		final List<List<Integer>> sections = new ArrayList<>();
@@ -182,6 +213,17 @@ public final class LayoutBuilder
 			sections.add(rows);
 		}
 		return sections;
+	}
+
+	/** The columns in blocks of at most the bank's width. */
+	private static List<List<GearItem[]>> inBlocks(List<GearItem[]> columns)
+	{
+		final List<List<GearItem[]>> blocks = new ArrayList<>();
+		for (int start = 0; start < columns.size(); start += BANK_COLUMNS)
+		{
+			blocks.add(columns.subList(start, Math.min(start + BANK_COLUMNS, columns.size())));
+		}
+		return blocks;
 	}
 
 	/** The items as columns of {@link #SET_ROWS}: each row's items in this order, left to right. */
@@ -217,9 +259,12 @@ public final class LayoutBuilder
 		 * widen the set and push the sets after it along.
 		 */
 		final List<GearItem> extras = new ArrayList<>();
-		/** The column's most common style; a tie goes to the style listed first (melee, ranged, magic...). */
+		/**
+		 * The column's armour's most common style; a tie goes to the style listed first (melee, ranged, magic...). Its
+		 * weapon and shield don't count, so getting the set's weapon doesn't move the set.
+		 */
 		final GearStyle style;
-		/** Sum of the column's power. */
+		/** Sum of the column's armour's power. */
 		final int strength;
 
 		GearSet(String name, List<GearItem> pieces)
@@ -236,7 +281,7 @@ public final class LayoutBuilder
 			int sum = 0;
 			for (GearItem piece : column)
 			{
-				if (piece != null)
+				if (piece != null && isArmourSlot(piece.getSlot()))
 				{
 					counts.merge(piece.getStyle(), 1, Integer::sum);
 					sum += piece.getPower();
