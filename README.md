@@ -50,14 +50,16 @@ other weapons, shields, capes, amulets, rings, ammo and supplies: one row block 
 - A set's own weapon or shield (Barrows weapons, the moon sets' weapons, Inquisitor's mace, Void knight mace, Lunar
   staff, a d'hide shield) goes in the set's column, under its armour. It needs the set to have a column (armour for
   two slots); otherwise it stays with the other weapons.
-- Armour that isn't in a set, or is the only piece of its set in the tab, goes to the right of the sets in its own
-  row. So does a second piece for a slot a set already has (a second void helm).
+- A set needs armour for two different slots. Armour in no set, or of a set with armour for only one slot in the
+  tab, goes to the right of the sets in its own row. So does a weaker second piece for a slot a set already has (a
+  second void helm): the set's column takes the strongest piece for each slot.
 - More than 8 sets wrap into another block of rows below. Odd armour sits beside the last block of sets when all of
   its columns fit in the bank's 8; otherwise it starts a block of its own below, so its helms stay in one row (it
   wraps again only past 8 odd pieces for one slot).
 - Adding a weapon (even the set's own), jewellery or an odd piece of armour never moves a set to another column. It
   can add a row, which moves the rows below down: the first set weapon adds a weapons row, odd gloves a gloves row. A
-  new set, or a set getting stronger, can move the sets that come after it.
+  new set, or a set getting stronger or changing style (a stronger piece of another style replacing one in its
+  column), can move it and the sets that come after it.
 
 ## Usage
 

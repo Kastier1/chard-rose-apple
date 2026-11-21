@@ -117,10 +117,10 @@ public final class LayoutBuilder
 	/**
 	 * The By set block: a row per {@link #SET_ROWS} slot and a column per set, so each set reads straight down one
 	 * column, its weapon under its armour. Sets come melee, ranged, magic (then prayer, utility), strongest first, and
-	 * wrap into another block below past the bank's 8 columns. Armour in no set (or the only piece of its set in the
-	 * tab) goes in columns of its own, each row's pieces left to right: beside the last sets if it all fits there,
-	 * otherwise in blocks of its own, so its pieces for a slot stay in one row. Each block is a list of full rows,
-	 * leaving out slots with nothing in that block. Weapons and shields that end up in no set's column go to
+	 * wrap into another block below past the bank's 8 columns. Armour in no set (or of a set with armour for only one
+	 * slot in the tab) goes in columns of its own, each row's pieces left to right: beside the last sets if it all fits
+	 * there, otherwise in blocks of its own, so its pieces for a slot stay in one row. Each block is a list of full
+	 * rows, leaving out slots with nothing in that block. Weapons and shields that end up in no set's column go to
 	 * {@code rest}.
 	 */
 	private static List<List<Integer>> setBlocks(List<GearItem> grid, List<GearItem> rest)

@@ -367,6 +367,31 @@ public class LayoutBuilderTest
 		assertArrayEquals(expected, layout);
 	}
 
+	/** Tested in game: the Blood moon and Eclipse moon weapons aren't named after their set, but go under it too. */
+	@Test
+	public void bySetMoonWeaponsGoUnderTheirSets()
+	{
+		List<GearItem> items = Arrays.asList(
+			gear(1, "Blood moon helm", GearSlot.HEAD, GearStyle.MELEE, 30),
+			gear(2, "Blood moon chestplate", GearSlot.BODY, GearStyle.MELEE, 30),
+			gear(3, "Blood moon tassets", GearSlot.LEGS, GearStyle.MELEE, 30),
+			gear(4, "Dual macuahuitl", GearSlot.WEAPON, GearStyle.MELEE, 80),
+			gear(11, "Eclipse moon helm", GearSlot.HEAD, GearStyle.RANGED, 30),
+			gear(12, "Eclipse moon chestplate", GearSlot.BODY, GearStyle.RANGED, 30),
+			gear(13, "Eclipse moon tassets", GearSlot.LEGS, GearStyle.RANGED, 30),
+			gear(14, "Eclipse atlatl", GearSlot.WEAPON, GearStyle.RANGED, 80),
+			gear(21, "Blue moon helm", GearSlot.HEAD, GearStyle.MAGIC, 30),
+			gear(22, "Blue moon chestplate", GearSlot.BODY, GearStyle.MAGIC, 30),
+			gear(23, "Blue moon tassets", GearSlot.LEGS, GearStyle.MAGIC, 30),
+			gear(24, "Blue moon spear", GearSlot.WEAPON, GearStyle.MAGIC, 80)
+		);
+		int[] layout = LayoutBuilder.build(items, Grouping.BY_SET, false);
+		assertLinedUp(layout, 1, 2, 3, 4);
+		assertLinedUp(layout, 11, 12, 13, 14);
+		assertLinedUp(layout, 21, 22, 23, 24);
+		assertEquals(27, layout.length); // three armour rows, then the weapons row ending at the Blue moon spear
+	}
+
 	@Test
 	public void bySetSetWeaponWithoutItsArmourStaysWithTheWeapons()
 	{

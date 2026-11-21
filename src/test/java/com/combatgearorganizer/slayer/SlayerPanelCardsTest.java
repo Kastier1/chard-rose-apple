@@ -806,16 +806,16 @@ public class SlayerPanelCardsTest
 	};
 
 	@Test
-	public void monsterLineMarksTheSelectedMonsterWithoutColourToo()
+	public void monsterLineColoursTheSelectedMonster()
 	{
 		String nb = "\u00a0";
-		assertEquals("<html><body style='width:160px'><div><font color='#ff981f'>" + SlayerPanel.SELECTED_MARK + "Greater"
+		assertEquals("<html><body style='width:160px'><div><font color='#ff981f'>Greater"
 				+ nb + "demon,</font>" + nb + "Tormented</div><div style='margin-top:1px'>Demon</div></body></html>",
 			SlayerPanel.monsterLine(java.util.Arrays.asList("Greater demon", "Tormented Demon"), "Greater demon",
 				SIX_PX, 160));
-		// The mark starts the selected name even after a wrap, and the colour runs across the line's words
+		// The colour starts the selected name even after a wrap, and runs across the line's words
 		assertEquals("<html><body style='width:60px'><div>Greater</div><div style='margin-top:1px'>demon,</div>"
-				+ "<div style='margin-top:1px'><font color='#ff981f'>" + SlayerPanel.SELECTED_MARK + "Tormented</font>"
+				+ "<div style='margin-top:1px'><font color='#ff981f'>Tormented</font>"
 				+ "</div><div style='margin-top:1px'><font color='#ff981f'>Demon</font></div></body></html>",
 			SlayerPanel.monsterLine(java.util.Arrays.asList("Greater demon", "Tormented Demon"), "Tormented Demon",
 				SIX_PX, 60));
@@ -832,12 +832,26 @@ public class SlayerPanelCardsTest
 			.replace("&gt;", ">").replaceAll("\\s+", " ").trim();
 	}
 
-	private static final String MARK = SlayerPanel.SELECTED_MARK.replace('\u00a0', ' ');
+	private static final java.util.regex.Pattern SELECTED = java.util.regex.Pattern.compile(
+		"<font color='#ff981f'>(.*?)</font>");
+
+	/** The words of a monster line in the selected colour, as they read, without the comma after the name. */
+	private static String coloured(String html)
+	{
+		java.util.regex.Matcher m = SELECTED.matcher(html);
+		StringBuilder out = new StringBuilder();
+		while (m.find())
+		{
+			out.append(out.length() > 0 ? " " : "").append(plain(m.group(1)));
+		}
+		String words = out.toString();
+		return words.endsWith(",") ? words.substring(0, words.length() - 1) : words;
+	}
 
 	/**
 	 * Issue: the monster line looked orange on some tasks' cards and grey on others. The rule: the monster shown
-	 * above is marked (colour and a mark before the name, with a tooltip) on every card that lists it, and on no
-	 * other card, whichever monster is selected, for every task.
+	 * above is marked (in the selected colour, with a tooltip) on every card that lists it, and on no other card,
+	 * whichever monster is selected, for every task.
 	 */
 	@Test
 	public void theSelectedMonsterIsMarkedOnEveryCardThatListsIt() throws Exception
@@ -863,9 +877,9 @@ public class SlayerPanelCardsTest
 					for (JLabel line : all(host.root, JLabel.class, SlayerPanel.CARD_MONSTERS))
 					{
 						String said = plain(line.getText());
-						boolean lists = java.util.Arrays.asList(said.replace(MARK, "").split(", ")).contains(v.getName());
-						boolean isMarked = said.startsWith(MARK + v.getName() + ",") || said.equals(MARK + v.getName())
-							|| said.contains(" " + MARK + v.getName() + ",") || said.endsWith(" " + MARK + v.getName());
+						boolean lists = java.util.Arrays.asList(said.split(", ")).contains(v.getName());
+						String colour = coloured(line.getText());
+						boolean isMarked = colour.equals(v.getName());
 						if (lists != isMarked)
 						{
 							problems.add(t.getName() + " / " + v.getName() + ": lists=" + lists + " marked=" + isMarked
@@ -879,7 +893,7 @@ public class SlayerPanelCardsTest
 								problems.add(t.getName() + " / " + v.getName() + ": no tooltip on the marked line");
 							}
 						}
-						else if (said.contains(MARK))
+						else if (!colour.isEmpty())
 						{
 							problems.add(t.getName() + " / " + v.getName() + ": another monster marked in " + said);
 						}
@@ -895,7 +909,7 @@ public class SlayerPanelCardsTest
 	 * Review (round 3): the selected monster's underline took the gap between lines, so it touched the descenders
 	 * above it and the next line's ascenders when the monster line wrapped (Blue dragons' Taverley Dungeon: "Baby blue
 	 * dragon, Blue / dragon") and the line under the label ("Recommended" on Dagannoth's Lighthouse). The small font's
-	 * lines have no gap of their own, so the mark is now a dot within the letters' height, and the card wraps the line
+	 * lines have no gap of their own, so the selected monster is now shown by colour alone, and the card wraps the line
 	 * itself with a pixel between lines and under it. Painted with the RuneLite look and feel at the sidebar width,
 	 * each line of a card's monster label is its own band of ink, with a clear row between it and the next line on the
 	 * card, for every task and selected monster. (With the underline back, 117 of these failed.)
@@ -1015,10 +1029,10 @@ public class SlayerPanelCardsTest
 				host.draw();
 			};
 			select.accept("Greater demon");
-			assertTrue(cardLine(host, "Catacombs of Kourend").contains(MARK + "Greater demon"));
+			assertEquals("Greater demon", coloured(cardLine(host, "Catacombs of Kourend")));
 			select.accept("K'ril Tsutsaroth");
-			assertFalse(cardLine(host, "Catacombs of Kourend").contains(MARK));
-			assertTrue(cardLine(host, "K'ril Tsutsaroth's room").contains(MARK + "K'ril Tsutsaroth"));
+			assertEquals("", coloured(cardLine(host, "Catacombs of Kourend")));
+			assertEquals("K'ril Tsutsaroth", coloured(cardLine(host, "K'ril Tsutsaroth's room")));
 		});
 	}
 
@@ -1030,7 +1044,7 @@ public class SlayerPanelCardsTest
 			List<String> said = texts(card);
 			if (!said.isEmpty() && said.get(0).startsWith(placeStart))
 			{
-				return plain(all(card, JLabel.class, SlayerPanel.CARD_MONSTERS).get(0).getText());
+				return all(card, JLabel.class, SlayerPanel.CARD_MONSTERS).get(0).getText();
 			}
 		}
 		throw new AssertionError("no card " + placeStart);

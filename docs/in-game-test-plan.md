@@ -53,7 +53,7 @@ log in in the window that opens, pick your character, then *Play Now*. Next time
   version, and there's no greyed-out duplicate.
 - [ ] Switch **By style** / **By slot** / **By set** in the panel; the plugin settings follow, and the other way
   round.
-- [ ] **By set**: each set you have two or more pieces of (Bandos, Dharok's, Karil's, black d'hide, Ahrim's,
+- [ ] **By set**: each set you have armour for two or more slots of (Bandos, Dharok's, Karil's, black d'hide, Ahrim's,
   Mystic...) reads straight down one column: melee sets, then ranged, then magic. Helms, bodies, legs, gloves and
   boots are the rows.
   - [ ] Odd pieces (Helm of neitiznot, Fighter torso, a lone Verac's helm, Barrows gloves) sit to the right of the

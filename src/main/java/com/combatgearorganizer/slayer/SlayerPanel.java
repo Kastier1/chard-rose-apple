@@ -90,13 +90,7 @@ public class SlayerPanel extends JPanel
 	/** On a place card whose Go is greyed out: the data has no map point to path to. */
 	static final String NO_MAP_POINT = "No map point yet, so Go can't path here";
 	/** Tooltip of a card's monster line when it names the monster shown above. */
-	static final String SELECTED_MONSTER_TIP = "\u00bb marks the monster shown above";
-	/**
-	 * Before the selected monster's name on a card, so it reads without colour too. It sits within the letters' height:
-	 * an underline took the rows between lines and touched the wrapped line, or the line, under it. It must be a glyph
-	 * the RuneScape fonts have: they have no bullet (U+2022), which Swing drew as a box over the name's first letter.
-	 */
-	static final String SELECTED_MARK = "\u00bb\u00a0";
+	static final String SELECTED_MONSTER_TIP = "The monster in orange is the one shown above";
 	/** Pixels between the wrapped lines of a card's monster line, and under it: the small font's lines touch. */
 	static final int MONSTER_LINE_GAP = 1;
 	/** Room the crown or star after a monster's name takes: the icon and its gap. */
@@ -1737,9 +1731,9 @@ public class SlayerPanel extends JPanel
 	}
 
 	/**
-	 * A place card's monster names, as the label's HTML. The monster shown above is in the selected colour, after
-	 * {@link #SELECTED_MARK} so it reads without colour too; it's marked on every card that lists it, whichever monster
-	 * it is. The names are wrapped here, at {@code width} in {@code fm}, so the lines can have {@link #MONSTER_LINE_GAP}
+	 * A place card's monster names, as the label's HTML. The monster shown above is in the selected colour, on every
+	 * card that lists it, whichever monster it is (a mark before the name was dropped: the player found it noise, and
+	 * the RuneScape fonts have no bullet). The names are wrapped here, at {@code width} in {@code fm}, so the lines can have {@link #MONSTER_LINE_GAP}
 	 * between them (Swing's HTML has no line-height); each line's words are joined by no-break spaces so it can't wrap
 	 * again.
 	 */
@@ -1755,10 +1749,6 @@ public class SlayerPanel extends JPanel
 			for (int j = 0; j < parts.length; j++)
 			{
 				String w = parts[j];
-				if (j == 0 && name.equals(selected))
-				{
-					w = SELECTED_MARK + w;
-				}
 				if (j == parts.length - 1 && i < here.size() - 1)
 				{
 					w += ",";
