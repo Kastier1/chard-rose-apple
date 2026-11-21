@@ -864,9 +864,9 @@ public class BundledDataTest
 		assertNotNull(temple);
 		assertEquals(Collections.singletonList("WHILE_GUTHIX_SLEEPS"), temple.getRequirements().getQuestsFinished());
 		assertEquals("Spawn points from the OSRS Wiki.", temple.getNote());
-		// Neither: it says the access isn't known
-		SlayerLocationData.LocationEntry unknown = wikiPlaces(data.findTask(-1, "Skeletons")).stream()
-			.filter(l -> l.getLabel().equals("Skeleton Mage (Piscatoris Fishing Colony)")).findFirst().orElse(null);
+		// Neither: it says the access isn't known (the Isle of Souls has no gate)
+		SlayerLocationData.LocationEntry unknown = wikiPlaces(data.findTask(-1, "Lesser demons")).stream()
+			.filter(l -> l.getLabel().equals("Lesser demon (Isle of Souls Dungeon)")).findFirst().orElse(null);
 		assertNotNull(unknown);
 		assertNull(unknown.getRequirements());
 		assertTrue(unknown.getNote().contains("no access details"));
@@ -1028,6 +1028,8 @@ public class BundledDataTest
 			{"Trolls", "Twig", "death_plateau"}, {"Trolls", "Twig", "ice_path"}, {"Trolls", "Berry", "north_of_the_troll_arena"},
 			{"Ogres", "Zogre", "feldip_hills"}, {"Ogres", "Zogre", "gutanoth"}, {"Ogres", "Zogre", "west_of_yanille"},
 			{"Ogres", "Skogre", "gutanoth"}, {"Ogres", "Enclave guard", "jiggig"},
+			{"Ogres", "Ogre", "jiggig"}, {"Ogres", "Ogre chieftain", "jiggig"},
+			{"Wolves", "Wolf", "wiki_the_proudspire"}, {"Wolves", "White wolf", "wiki_northern_side_of_the_hailstorm_mountains"},
 			{"Scorpions", "Poison Scorpion", "dwarven_mine"},
 			{"Dwarves", "Chaos dwarf", "dwarven_mine"}, {"Dwarves", "Chaos dwarf", "ice_mountain"},
 			{"Dwarves", "Dwarf gang member", "ice_mountain"}, {"Dwarves", "Dwarf gang member", "taverley_dungeon"},
@@ -1039,7 +1041,10 @@ public class BundledDataTest
 			{"Crabs", "Sandy Boulder", "crabclaw_isle"}, {"Crabs", "Sandy Boulder", "hosidius_southern_coast"},
 			{"Vampyres", "Vyrewatch", "haunted_woods"}, {"Vampyres", "Vyrewatch", "east_of_burgh_de_rott"},
 			{"Vampyres", "Vyrewatch", "ver_sinhaza"}, {"Vampyres", "Vyrewatch Sentinel", "haunted_woods"},
-			{"Birds", "Penguin", "wiki_rooster"},
+			{"Birds", "Penguin", "wiki_rooster"}, {"Birds", "Penguin", "wiki_chicken"},
+			// Another monster's "(several places)" card is that monster's alone
+			{"Birds", "Entrana firebird", "wiki_chicken"}, {"Birds", "Evil Chicken", "wiki_chicken"},
+			{"Birds", "Terrorbird", "wiki_duck"}, {"Spiders", "Giant spider", "wiki_deadly_red_spider"},
 			{"Spiritual creatures", "Spiritual Ranger", "wilderness_god_wars_dungeon"},
 			{"Spiritual creatures", "Spiritual Warrior", "wilderness_god_wars_dungeon"},
 			{"Spiritual creatures", "Spiritual Mage", "wilderness_god_wars_dungeon"},
@@ -2500,6 +2505,86 @@ public class BundledDataTest
 					}
 				}
 			}
+		}
+	}
+
+	/**
+	 * Second review of the data-fix commits: wiki places made from spawn spots lacked the gate the wiki gives the spot,
+	 * a merged card took another monster's spot name, and an unreachable island got a card.
+	 */
+	@Test
+	public void wikiSpotGatesAndNames()
+	{
+		// Prifddinas needs Song of the Elves; the gate guards fill the guide's gate places
+		assertEquals(Collections.singletonList("SONG_OF_THE_ELVES"), needs("Elves", "wiki_prifddinas").getQuestsFinished());
+		assertEquals(Collections.singletonList("SONG_OF_THE_ELVES"),
+			needs("Elves", "wiki_prifddinas_upper_level").getQuestsFinished());
+		SlayerLocationData.TaskEntry elves = data.findTask(-1, "Elves");
+		for (String gate : new String[]{"south", "north", "east", "west"})
+		{
+			String key = "prifddinas_" + gate + "_gate";
+			SlayerLocationData.LocationEntry l = place(elves, key);
+			assertFalse(key, l.isNoMonster());
+			assertFalse(key, l.getPoints().isEmpty());
+			assertTrue(key, Variants.byName(elves.getVariants(), "Guard").getPlaces().contains(key));
+		}
+		for (String key : Variants.byName(elves.getVariants(), "Guard").getPlaces())
+		{
+			assertEquals(key, Collections.singletonList("SONG_OF_THE_ELVES"), needs("Elves", key).getQuestsFinished());
+		}
+		assertTrue(hasPointNear(place(elves, "prifddinas_south_gate"), 3263, 6026));
+		// Piscatoris Fishing Colony: Swan Song
+		assertEquals(Collections.singletonList("SWAN_SONG"),
+			wikiPlace("Skeletons", "Skeleton Mage (Piscatoris Fishing Colony)").getRequirements().getQuestsFinished());
+		// The Tonali Cavern: The Final Dawn, on every task
+		String[][] tonali = {{"Crabs", "wiki_tonali_cavern"}, {"Lizards", "wiki_tonali_cavern_moon_chamber"},
+			{"Lizards", "wiki_tonali_cavern_southern_chamber"}, {"Moss giants", "wiki_tonali_cavern_southern_chamber"},
+			{"Skeletons", "wiki_tonali_cavern_southern_chamber"}, {"Skeletons", "wiki_crypt_of_tonali"}};
+		for (String[] t : tonali)
+		{
+			assertEquals(t[0] + " / " + t[1], Collections.singletonList("THE_FINAL_DAWN"), needs(t[0], t[1]).getQuestsFinished());
+		}
+		// The Skeleton's several-places card no longer pools the gated cavern spots
+		assertFalse(wikiPlace("Skeletons", "Skeleton (several places)").getNote().contains("Tonali"));
+		// Melzar's Maze basement: Dragon Slayer I started, as the guide's melzars_maze
+		assertEquals(Collections.singletonList("DRAGON_SLAYER_I"),
+			needs("Lesser demons", "wiki_melzar_s_maze_basement").getQuestsStarted());
+		assertEquals(Collections.singletonList("DRAGON_SLAYER_I"),
+			needs("Spiders", "wiki_melzar_s_maze_basement_floor").getQuestsStarted());
+		// Sailing islands, not boostable
+		String[][] islands = {{"wiki_charred_island", "60"}, {"wiki_wintumber_island", "63"}, {"wiki_tear_of_the_soul", "61"}};
+		for (String[] i : islands)
+		{
+			SlayerLocationData.Requirements r = needs("Crabs", i[0]);
+			assertEquals(i[0], Integer.valueOf(i[1]), r.getSkills().get("SAILING"));
+			assertTrue(i[0], r.getBoostable() == null || !r.getBoostable().contains("SAILING"));
+		}
+		// The Isle of Serpents can't be reached
+		SlayerLocationData.TaskEntry crabs = data.findTask(-1, "Crabs");
+		assertNull(place(crabs, "wiki_isle_of_serpents"));
+		assertFalse(Variants.byName(crabs.getVariants(), "Giant Rock Crab").getPlaces().contains("wiki_isle_of_serpents"));
+		// Dire wolves' Wolf Den is its own card, gated by Meat and Greet; the pooled card leaves it out
+		SlayerLocationData.LocationEntry den = wikiPlace("Wolves", "Dire Wolf (Wolf Den)");
+		assertEquals(Collections.singletonList("MEAT_AND_GREET"), den.getRequirements().getQuestsFinished());
+		SlayerLocationData.LocationEntry dire = wikiPlace("Wolves", "Dire Wolf (several places)");
+		assertNull(dire.getRequirements());
+		assertFalse(dire.getNote().contains("after completing"));
+		assertFalse(hasPointNear(dire, 1480, 9502));
+		// Wolf and White wolf spots are two cards, each named for its own spot
+		SlayerLocationData.TaskEntry wolves = data.findTask(-1, "Wolves");
+		assertEquals("Wolf (Northern side of the Hailstorm Mountains)",
+			place(wolves, "wiki_northern_side_of_the_hailstorm_mountains").getLabel());
+		assertEquals("White wolf (The Proudspire)", place(wolves, "wiki_the_proudspire").getLabel());
+		assertEquals(Collections.singletonList("wiki_northern_side_of_the_hailstorm_mountains"),
+			Variants.byName(wolves.getVariants(), "Wolf").getPlaces().stream()
+				.filter(k -> k.equals("wiki_northern_side_of_the_hailstorm_mountains") || k.equals("wiki_the_proudspire"))
+				.collect(java.util.stream.Collectors.toList()));
+		// Sea mogres say they're fought from a boat
+		for (String task : new String[]{"Mogres", "Ogres"})
+		{
+			SlayerLocationData.LocationEntry sea = place(data.findTask(-1, task), "wiki_kharazi_strait_south_of_the_kharazi_jungle");
+			assertNotNull(task, sea);
+			assertTrue(task, sea.getNote().contains("from a boat"));
 		}
 	}
 

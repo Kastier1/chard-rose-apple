@@ -500,8 +500,11 @@ public class SlayerPanelCardsTest
 		assertLivesAt("Blue dragons", "Baby blue dragon", "dragon_nest");
 		TaskEntry blue = data.findTask(-1, "Blue dragons");
 		assertFalse(entry(blue, "dragon_nest").isNoMonster());
-		// Still unknown: no elf page's spawn spot is at or named like Prifddinas' gates
-		assertTrue(entry(data.findTask(-1, "Elves"), "prifddinas_north_gate").isNoMonster());
+		// The Guard page's "Prifddinas" spot has a pair of guards at each gate (generator SPOT_PLACES)
+		assertLivesAt("Elves", "Guard", "prifddinas_north_gate");
+		assertFalse(entry(data.findTask(-1, "Elves"), "prifddinas_north_gate").isNoMonster());
+		// Still unknown: no elf page's spawn spot is named like the market
+		assertTrue(entry(data.findTask(-1, "Elves"), "prifddinas_market_place").isNoMonster());
 	}
 
 	private static LocationEntry entry(TaskEntry t, String key)

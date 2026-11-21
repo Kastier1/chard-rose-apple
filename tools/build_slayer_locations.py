@@ -117,6 +117,9 @@ NOT_A_TASK_SPOT = {
     # https://oldschool.runescape.wiki/w/Mourner: the Arandar LocLine is "levels = 11", the version with "slayxp1 =
     # None" and "cat1 = None"; only the level 108 Mourners in the Mourner Tunnels count as elves
     ("Mourner", "Arandar"): "the level 11 Mourners, which give no Slayer XP and aren't elves for a task",
+    # Spawns no one can reach. https://oldschool.runescape.wiki/w/Isle_of_Serpents: "an inaccessible island ... It
+    # cannot be moored on."
+    ("Giant Rock Crab", "Isle of Serpents"): "an island players can't reach",
 }
 # A variant belongs to a place when one of its spawns is this close (tiles) to one of the place's points
 NEAR = 40
@@ -142,6 +145,14 @@ NOT_AT = {
     # Zogres and skogres live only at Jiggig and in its dungeon, and the Enclave guard only in Gu'Tanoth (their only
     # wiki spots); Gu'Tanoth, Jiggig, the Feldip Hills and west of Yanille are each other's neighbours
     ("Zogre", "gutanoth"), ("Skogre", "gutanoth"), ("Enclave guard", "jiggig"),
+    # Ogre and Ogre chieftain: no Jiggig spot on either page (the chieftain: Eastern Feldip Hills, Gu'Tanoth, Ogre
+    # Enclave; the Ogre: Feldip Hills, Gu'Tanoth, West of Yanille and others), and Slayer_task/Ogres puts only skogres
+    # and zogres at Jiggig. Their Gu'Tanoth (2505,3032; 2510,3044) and West of Yanille (2497,3089) spawns are within
+    # NEAR of Jiggig's one point (2467,3049).
+    ("Ogre", "jiggig"), ("Ogre chieftain", "jiggig"),
+    # Wolf: "Northern side of the Hailstorm Mountains" (wiki Wolf, level 64); White wolf: "The Proudspire" (wiki White
+    # wolf, level 38). The two spots are neighbours, each only the one monster's
+    ("Wolf", "wiki_the_proudspire"), ("White wolf", "wiki_northern_side_of_the_hailstorm_mountains"),
     # Poison Scorpion: only "Near North Brimhaven mine" and "Taverley Dungeon"; the Dwarven Mine spot it matched is
     # the Dwarves task's
     ("Poison Scorpion", "dwarven_mine"),
@@ -506,6 +517,8 @@ WIKI_SOURCE = "wiki"
 # A monster spread over more named spots than this gets one place for them all (Go picks the nearest)
 WIKI_MAX_SPOTS = 3
 WIKI_NOTE = "Spawn points from the OSRS Wiki."
+# The label ending of a monster's place for all its spots, past WIKI_MAX_SPOTS
+SEVERAL = " (several places)"
 # wiki_places' note (and label) for a several-places place's copy on Krystilia's list, which keeps only the
 # Wilderness spots (not bundled)
 WILD_NOTE = "_wildernessNote"
@@ -521,9 +534,44 @@ WIKI_ACCESS = {
     # The Guard dog page's own spot name says it: "Brimhaven, Black Arm Gang hideout (requires having started Heroes'
     # Quest)"
     "brimhavenblackarmganghideoutrequireshavingstartedheroesquest": {"questsStarted": ["HEROES_QUEST"]},
+    # https://oldschool.runescape.wiki/w/Prifddinas: "In order to enter the city, the quest Song of the Elves must be
+    # completed"; Slayer_task/Elves, Guards: "available after Song of the Elves"
+    "prifddinas": {"questsFinished": ["SONG_OF_THE_ELVES"]},
+    "prifddinasupperlevel": {"questsFinished": ["SONG_OF_THE_ELVES"]},
+    "prifddinascrwysdistrict": {"questsFinished": ["SONG_OF_THE_ELVES"]},
+    # https://oldschool.runescape.wiki/w/Piscatoris_Fishing_Colony: "Swan Song must be partially completed in order to
+    # enter the colony, though the area will be instanced until the quest is completed"; the skeleton mages live there
+    # after it
+    "piscatorisfishingcolony": {"questsFinished": ["SWAN_SONG"]},
+    # https://oldschool.runescape.wiki/w/Tonali_Cavern: "Accessing it requires completion of the The Final Dawn quest"
+    # (the guide's crypt_of_tonali carries the same gate)
+    "tonalicavern": {"questsFinished": ["THE_FINAL_DAWN"]},
+    "tonalicavernmoonchamber": {"questsFinished": ["THE_FINAL_DAWN"]},
+    "tonalicavernsouthernchamber": {"questsFinished": ["THE_FINAL_DAWN"]},
+    "tonalicaverncentralsection": {"questsFinished": ["THE_FINAL_DAWN"]},
+    "cryptoftonali": {"questsFinished": ["THE_FINAL_DAWN"]},
+    # https://oldschool.runescape.wiki/w/Melzar%27s_Maze: "To enter the building, players must obtain the Maze key ...
+    # during the quest" (Dragon Slayer I); the guide's melzars_maze carries the same gate
+    "melzarsmazebasement": {"questsStarted": ["DRAGON_SLAYER_I"]},
+    "melzarsmazebasementfloor": {"questsStarted": ["DRAGON_SLAYER_I"]},
+    # The Dire Wolf page's spot name says it: "Wolf Den (after completing Meat and Greet)"
+    "wolfdenaftercompletingmeatandgreet": {"questsFinished": ["MEAT_AND_GREET"]},
+    # Islands reached only by boat, each "{{SCP|Sailing|N}}" on its wiki page, not boostable: Charred_Island ("Docking
+    # here requires level 60 Sailing, unboosted"), Wintumber_Island ("requires 63 Sailing, unboosted, to moor on"),
+    # Tear_of_the_Soul ("Level 61 Sailing is required to moor at the island (not boostable)")
+    "charredisland": {"skills": {"SAILING": 60}},
+    "wintumberisland": {"skills": {"SAILING": 63}},
+    "tearofthesoul": {"skills": {"SAILING": 61}},
+}
+# A note for wiki locations whose Go point needs explaining (keyed like WIKI_ACCESS)
+WIKI_SPOT_NOTES = {
+    # https://oldschool.runescape.wiki/w/Mogre_(sea): "found in the Ardent Ocean ... Any boat with an adamant keel or
+    # better will not take any damage from mogres"; these LocLines are sea straits
+    "kharazistraitsouthofthekharazijungle": "Sea mogres, fought from a boat: the points are open water.",
+    "straitofkhazardsoutheastofportkhazard": "Sea mogres, fought from a boat: the points are open water.",
 }
 # A requirement the wiki puts in a spot's name, said by the place's requirements instead of its label
-SPOT_REQUIREMENT = re.compile(r"\s*\(requires [^)]*\)$", re.IGNORECASE)
+SPOT_REQUIREMENT = re.compile(r"\s*\((?:requires|after completing) [^)]*\)$", re.IGNORECASE)
 
 
 # God Wars Dungeon bodyguards: they only appear in their general's room and are killed as part of the boss fight, so
@@ -1128,10 +1176,19 @@ def beside_places(beside, anchors):
     return [key for key, pts in beside.items() if near(pts, anchors.get(key, []), NEAR)]
 
 
+def alike(a, b):
+    """Whether two wiki location names (or both none) can name one place: a name_keys form in common."""
+    if not a or not b:
+        return not a and not b
+    return bool(set(name_keys(a)) & set(name_keys(b)))
+
+
 def merge_close(spots):
     """Joins spots whose spawns are within NEAR tiles of each other, directly or through another spot: one room the
     wiki names two ways ("Godwars Dungeon, Armadyl bossroom" and "God Wars Dungeon (Armadyl boss room)"). The
-    biggest named spot's name wins. A monster's "several places" spot stays as it is. Keeps the first spot's key."""
+    biggest named spot's name wins. Only spots the wiki names alike join (a name form of name_keys in common): the
+    Wolf's "Northern side of the Hailstorm Mountains" and the White wolf's "The Proudspire" are two places, though
+    close. A monster's "several places" spot stays as it is. Keeps the first spot's key."""
     keys = list(spots)
     group = {k: k for k in keys}
 
@@ -1142,7 +1199,8 @@ def merge_close(spots):
 
     for i, a in enumerate(keys):
         for b in keys[i + 1:]:
-            if not spots[a]["spots"] and not spots[b]["spots"] and near(spots[a]["points"], spots[b]["points"], NEAR):
+            if (not spots[a]["spots"] and not spots[b]["spots"] and alike(spots[a]["location"], spots[b]["location"])
+                    and near(spots[a]["points"], spots[b]["points"], NEAR)):
                 ra, rb = root(a), root(b)
                 if ra != rb:
                     group[max(ra, rb, key=keys.index)] = min(ra, rb, key=keys.index)
@@ -1238,13 +1296,17 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
                 groups.append((loc, pts))
         several, several_wild = [], []
         if len(groups) > WIKI_MAX_SPOTS:
+            # A spot with its own access (WIKI_ACCESS) keeps its own place, so the pooled card stays ungated
+            gated = [(loc, pts) for loc, pts in groups if loc and WIKI_ACCESS.get(name_keys(loc)[0])]
+            groups = [g for g in groups if g not in gated]
             several = [loc for loc, _ in groups if loc]
             several_wild = [loc for loc, pts in groups if loc and any(in_wilderness(pt) for pt in pts)]
-            groups = [(None, [pt for _, pts in groups for pt in pts])]
+            groups = [(None, [pt for _, pts in groups for pt in pts])] + gated
         for loc, pts in groups:
             key = "wiki_" + slug(loc or name)
-            spot = spots.setdefault(key, {"location": loc, "monsters": [], "points": [], "spots": several,
-                                          "wildSpots": several_wild})
+            spot = spots.setdefault(key, {"location": loc, "monsters": [], "points": [],
+                                          "spots": several if not loc else [],
+                                          "wildSpots": several_wild if not loc else []})
             if name not in spot["monsters"]:
                 spot["monsters"].append(name)
             spot["points"] += [pt for pt in pts if pt not in spot["points"]]
@@ -1259,7 +1321,7 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
         elif loc:
             label = shown
         elif spot["spots"]:
-            label = f"{monsters[0]} (several places)"
+            label = monsters[0] + SEVERAL
         else:
             label = ", ".join(monsters)
         known = find_by_name(guide, loc) if loc else None
@@ -1278,6 +1340,9 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
                          "The data has no access details for these places.")
         else:
             note = WIKI_NOTE if known or access else WIKI_NOTE + " " + NO_ACCESS_NOTE
+            extra_note = WIKI_SPOT_NOTES.get(name_keys(loc)[0]) if loc else None
+            if extra_note:
+                note = f"{WIKI_NOTE} {extra_note}" + ("" if known or access else " " + NO_ACCESS_NOTE)
         unique, n = key, 2
         while unique in taken:
             unique, n = f"{key}_{n}", n + 1
@@ -1341,6 +1406,15 @@ def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joi
     # A boss's lair is for the boss alone; the others can also be found by the name the wiki gives a spawn spot
     listed = place_index([pl for pl in places if pl.get("source") != BOSS_SOURCE])
 
+    # A monster's "(several places)" card (wiki_places) is that monster's alone: its many spots would match others by
+    # distance to any one of them (the Entrana firebird, a Penguin by the Miscellania chickens), and Go would take
+    # them to the nearest chicken, not to their own spot. key -> the monster it is for
+    several_of = {pl["key"]: pl["label"][:-len(SEVERAL)] for pl in places
+                  if pl.get("source") == WIKI_SOURCE and pl["label"].endswith(SEVERAL)}
+
+    def own(name, keys):
+        return [k for k in keys if several_of.get(k, name) == name]
+
     # Points a place is known by (its own, and spots named like it), for the spots only named beside one
     anchors = {pl["key"]: list(pl["points"]) + list(pl["wildernessPoints"]) for pl in places}
     pending = []
@@ -1380,7 +1454,7 @@ def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joi
             "attackTypes": attack_types(s for v in versions for s in v.get("attack_style", [])),
             "superior": superior,
             "boss": boss,
-            "places": sorted(set(found)),
+            "places": sorted(set(own(name, found))),
         }
         for field in ("masters", "notMasters") if boss else ():
             if BOSSES[name].get(field):
@@ -1412,7 +1486,7 @@ def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joi
         out.append(variant)
     by_name_out = {v["name"]: v for v in out}
     for name, beside in pending:
-        extra = [k for k in beside_places(beside, anchors) if (name, k) not in NOT_AT]
+        extra = [k for k in own(name, beside_places(beside, anchors)) if (name, k) not in NOT_AT]
         if extra and name in by_name_out:
             by_name_out[name]["places"] = sorted(set(by_name_out[name]["places"]) | set(extra))
     out.sort(key=lambda v: (v["superior"], v["boss"], v["level"][0] if v["level"] else 0, v["name"]))
@@ -1638,6 +1712,17 @@ SPOT_PLACES = {
     ("Bears", "west_of_the_graveyard_of_shadows"): (
         "Grizzly bear", "North-west of the Ferox Enclave", None,
         "the task page's ten grizzly pins west of the Graveyard of Shadows are this spot's"),
+    # The Guard (Prifddinas) page's "Prifddinas" spot has a pair of guards at each of the city's four gates (the
+    # city's walls run about 3207-3321, 6023-6136): the pins Slayer_task/Elves shows at 3261,6026 and 3266,6026 are the
+    # south gate's
+    ("Elves", "prifddinas_south_gate"): (
+        "Guard", "Prifddinas", [[3261, 6026, 0], [3266, 6026, 0]], "the pair of guards at the city's south gate"),
+    ("Elves", "prifddinas_north_gate"): (
+        "Guard", "Prifddinas", [[3261, 6133, 0], [3266, 6133, 0]], "the pair of guards at the city's north gate"),
+    ("Elves", "prifddinas_west_gate"): (
+        "Guard", "Prifddinas", [[3210, 6077, 0], [3210, 6082, 0]], "the pair of guards at the city's west gate"),
+    ("Elves", "prifddinas_east_gate"): (
+        "Guard", "Prifddinas", [[3318, 6077, 0], [3318, 6082, 0]], "the pair of guards at the city's east gate"),
 }
 # Guide places linked to a monster by hand from pins of the wiki's Slayer task page that no monster page in
 # tools/data/wiki_monsters.json has (the monster pages lag the task page): (task, place key) -> (monster, points,
@@ -1779,14 +1864,6 @@ NO_MONSTER_PLACES = {
     ("Bears", "prifddinas_outside_the_city"): NONE_NAMED,
     ("Bears", "south_of_prifddinas_instanced"): NONE_NAMED + " (an instance)",
     ("Bears", "south_of_the_western_ruins"): NONE_NAMED,
-    ("Elves", "prifddinas_south_gate"): "the elf pages name only \"Prifddinas\" (the Guard page), not a gate, and the "
-                                        "guide row has no point",
-    ("Elves", "prifddinas_east_gate"): "the elf pages name only \"Prifddinas\" (the Guard page), not a gate, and the "
-                                       "guide row has no point",
-    ("Elves", "prifddinas_north_gate"): "the elf pages name only \"Prifddinas\" (the Guard page), not a gate, and the "
-                                        "guide row has no point",
-    ("Elves", "prifddinas_west_gate"): "the elf pages name only \"Prifddinas\" (the Guard page), not a gate, and the "
-                                       "guide row has no point",
     ("Elves", "prifddinas_market_place"): "the elf pages name only \"Prifddinas\" (the Guard page), not the market, "
                                           "and the guide row has no point",
     ("Elves", "mourner_headquarters_downstairs"): "the Mourner page names the \"Mourner Tunnels\", not the "
@@ -2150,7 +2227,9 @@ def stale_overrides(tasks, wiki):
         problems += [f"NOT_A_TASK_SPOT / {page} / {spot}: no such wiki spot" for page, spot in NOT_A_TASK_SPOT
                      if not any(loc == spot for loc, _ in spots.get(page, []))]
         locs = {name_keys(loc)[0] for groups in spots.values() for loc, _ in groups if loc}
-        problems += [f"WIKI_ACCESS / {key}: no wiki spot is named so" for key in WIKI_ACCESS if key not in locs]
+        problems += [f"{table} / {key}: no wiki spot is named so" for table, entries in
+                     (("WIKI_ACCESS", WIKI_ACCESS), ("WIKI_SPOT_NOTES", WIKI_SPOT_NOTES)) for key in entries
+                     if key not in locs]
     return problems
 
 
