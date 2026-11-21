@@ -524,7 +524,7 @@ public class SlayerPanel extends JPanel
 		}
 
 		String lastPlace = memory.lastPlace(key);
-		for (LocationOption location : locations)
+		for (LocationOption location : selectedFirst(locations, currentVariants, selectedVariant))
 		{
 			content.add(card(location, lastPlace != null && lastPlace.equals(location.getKey())));
 			content.add(Box.createVerticalStrut(4));
@@ -1570,6 +1570,27 @@ public class SlayerPanel extends JPanel
 	private static boolean notBlank(String s)
 	{
 		return s != null && !s.trim().isEmpty();
+	}
+
+	/**
+	 * The places that have the selected monster first, then the rest, each keeping its order: picking a monster in the
+	 * table brings its places to the top, which matters on tasks with many places (Skeletons). Only the cards move;
+	 * Go to nearest still picks from every place.
+	 */
+	static List<LocationOption> selectedFirst(List<LocationOption> locations, List<Variant> variants, String selected)
+	{
+		if (selected == null)
+		{
+			return locations;
+		}
+		List<LocationOption> first = new ArrayList<>();
+		List<LocationOption> rest = new ArrayList<>();
+		for (LocationOption location : locations)
+		{
+			(Variants.at(variants, location.getKey()).contains(selected) ? first : rest).add(location);
+		}
+		first.addAll(rest);
+		return first;
 	}
 
 	/** One place: its name and facts, and its Go button. {@code lastTime}: the place the player chose last time. */

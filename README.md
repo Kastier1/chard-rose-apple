@@ -148,6 +148,9 @@ A side panel (the enchanted gem icon) shows your current task, kills left, and e
   *Show Wilderness locations* is off) or "No place in the data yet". Long names go onto two lines, and the level and
   XP columns widen for wide ranges (the table shows XP ranges in whole numbers, "600-2.1k"; the card has the exact
   range).
+- Clicking a monster in the table shows its details and brings the places that have it to the top of the list,
+  with its name in orange on their cards. The other places follow in their usual order, and **Go to nearest** still
+  picks from all of them.
 - **Bosses** that count for the task (Vorkath on Blue dragons, K'ril Tsutsaroth and Skotizo on Greater demons,
   Cerberus on Hellhounds, Obor on Hill giants, Scurrius on Rats...) are rows of the table too, after the regular
   monsters, marked with a crown (the tooltip says "Boss"). Click one for its own card: level, hitpoints, XP, drops,

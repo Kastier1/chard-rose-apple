@@ -1036,6 +1036,70 @@ public class SlayerPanelCardsTest
 		});
 	}
 
+	/**
+	 * Asked for in game (Skeletons has many places): picking a monster brings the places that have it to the top. For
+	 * every task and listed monster, the cards that list the monster come first, the others keep their order after
+	 * them, and no card is lost or repeated.
+	 */
+	@Test
+	public void theSelectedMonstersPlacesComeFirst() throws Exception
+	{
+		Set<String> problems = new TreeSet<>();
+		int[] moved = {0};
+		inClient(() ->
+		{
+			Host host = new Host();
+			for (TaskEntry t : data.getTasks())
+			{
+				List<LocationOption> locations = LocationPicker.pick(t, 5, 0, true);
+				List<Variant> listed = Variants.listed(Variants.counting(t, 5, 0), locations);
+				if (listed.isEmpty())
+				{
+					continue;
+				}
+				host.show(t, 5, 50, locations);
+				List<String> before = null;
+				for (Variant v : listed)
+				{
+					host.panel.selectVariant(v.getName());
+					host.draw();
+					List<String> titles = new ArrayList<>();
+					List<Boolean> lists = new ArrayList<>();
+					for (JButton go : all(host.root, JButton.class, null))
+					{
+						if (!"Go".equals(go.getText()))
+						{
+							continue; // not a place card's button
+						}
+						Container card = go.getParent().getParent();
+						List<JLabel> line = all(card, JLabel.class, SlayerPanel.CARD_MONSTERS);
+						titles.add(texts(card).get(0));
+						lists.add(!line.isEmpty() && coloured(line.get(0).getText()).equals(v.getName()));
+					}
+					int firstOther = lists.indexOf(false);
+					if (firstOther >= 0 && lists.subList(firstOther, lists.size()).contains(true))
+					{
+						problems.add(t.getName() + " / " + v.getName() + ": a card with it after one without in " + titles);
+					}
+					List<String> sorted = new ArrayList<>(titles);
+					Collections.sort(sorted);
+					if (before != null && !before.equals(sorted))
+					{
+						problems.add(t.getName() + " / " + v.getName() + ": cards changed, not just moved: " + titles);
+					}
+					before = sorted;
+					if (firstOther > 0 && !locations.isEmpty()
+						&& !Variants.at(Variants.counting(t, 5, 0), locations.get(0).getKey()).contains(v.getName()))
+					{
+						moved[0]++;
+					}
+				}
+			}
+		});
+		assertTrue("the order changed somewhere", moved[0] > 20);
+		assertTrue(problems.size() + " problems:\n" + String.join("\n", problems), problems.isEmpty());
+	}
+
 	private static String cardLine(Host host, String placeStart)
 	{
 		for (JButton go : all(host.root, JButton.class, null))
