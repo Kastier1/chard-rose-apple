@@ -923,7 +923,9 @@ public class BundledDataTest
 			assertEquals("Tormented Demon", panel.getSelectedVariant());
 			assertTrue(containsText(panel, "Tormented Demon (Ancient Guthixian Temple)"));
 			assertTrue(containsText(panel, "Spawn points from the OSRS Wiki"));
-			buttons(panel, "Go").get(locations.indexOf(temple)).doClick(0);
+			// The cards are in the panel's order: the selected monster's places first
+			buttons(panel, "Go").get(SlayerPanel.selectedFirst(locations, t.getVariants(), "Tormented Demon")
+				.indexOf(temple)).doClick(0);
 			assertEquals("go " + temple.getLabel(), events.get(0));
 			buttons(panel, "Go to nearest").get(0).doClick(0);
 			assertEquals(LocationPicker.nearestTargets(locations), nearest.get(0));
@@ -1637,7 +1639,9 @@ public class BundledDataTest
 			}
 			LocationOption place = locations.get(index);
 			assertTrue(!containsText(panel, SlayerPanel.LAST_TIME));
-			buttons(panel, "Go").get(index).doClick(0);
+			// The cards are in the panel's order: the picked monster's places first
+			buttons(panel, "Go").get(SlayerPanel.selectedFirst(locations, t.getVariants(), picked).indexOf(place))
+				.doClick(0);
 			assertTrue(containsText(panel, SlayerPanel.LAST_TIME));
 			assertEquals(place.getKey(), panel.getMemory().lastPlace(PanelMemory.taskKey(t.getTaskId(), t.getName())));
 			assertEquals(picked, panel.getSelectedVariant());
