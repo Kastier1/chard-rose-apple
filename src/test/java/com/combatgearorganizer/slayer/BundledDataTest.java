@@ -1802,7 +1802,7 @@ public class BundledDataTest
 
 	/**
 	 * Lays the panel out at the sidebar's real width and checks that no wrapped label needs more room than it gets,
-	 * which would cut its text off on the right.
+	 * which would cut its text off on the right, and that no label shows a character its font lacks.
 	 */
 	@Test
 	public void noTextIsCutOffAtTheSidebarWidth() throws Exception
@@ -1836,7 +1836,7 @@ public class BundledDataTest
 				}
 			}
 		});
-		assertTrue(problems.size() + " labels cut off:\n" + String.join("\n", problems), problems.isEmpty());
+		assertTrue(problems.size() + " labels cut off or with a glyph their font lacks:\n" + String.join("\n", problems), problems.isEmpty());
 	}
 
 	private void drawAtSidebarWidth(Set<String> problems)
@@ -1865,6 +1865,7 @@ public class BundledDataTest
 							+ net.runelite.client.ui.PluginPanel.SCROLLBAR_WIDTH, 800);
 						layOut(host);
 						clipped(host, t.getName(), problems);
+						missingGlyphs(host, problems);
 					}
 				}
 			}
@@ -1931,6 +1932,79 @@ public class BundledDataTest
 			for (Component child : ((Container) c).getComponents())
 			{
 				clipped(child, task, problems);
+			}
+		}
+	}
+
+	/**
+	 * The client's RuneScape fonts as their files, by font name (the bold one shares the plain one's family). The registered fonts can't be asked: Java falls back
+	 * to another font for a character they lack, so they say they can show it, and the client then draws that fallback
+	 * glyph as a box over the next letter.
+	 */
+	private static final java.util.Map<String, java.awt.Font> RAW_FONTS = new java.util.HashMap<>();
+
+	static
+	{
+		for (String file : new String[]{"runescape.ttf", "runescape_small.ttf", "runescape_bold.ttf"})
+		{
+			try (java.io.InputStream in = net.runelite.client.ui.FontManager.class.getResourceAsStream(file))
+			{
+				java.awt.Font f = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, in);
+				RAW_FONTS.put(f.getFontName(), f);
+			}
+			catch (java.io.IOException | java.awt.FontFormatException | NullPointerException e)
+			{
+				throw new IllegalStateException("RuneLite font " + file, e);
+			}
+		}
+	}
+
+	@Test
+	public void theRawFontsLackTheBullet()
+	{
+		// What the glyph check relies on: the files say what the registered fonts won't
+		assertEquals(3, RAW_FONTS.size());
+		for (java.awt.Font f : RAW_FONTS.values())
+		{
+			assertFalse(f.getFontName(), f.canDisplay('\u2022'));
+			assertTrue(f.getFontName(), f.canDisplay('\u00bb'));
+		}
+		for (java.awt.Font f : new java.awt.Font[]{net.runelite.client.ui.FontManager.getRunescapeFont(),
+			net.runelite.client.ui.FontManager.getRunescapeSmallFont(), net.runelite.client.ui.FontManager.getRunescapeBoldFont()})
+		{
+			assertTrue(f.getFontName(), RAW_FONTS.containsKey(f.getFontName()));
+		}
+	}
+
+	/**
+	 * Every character a label or button shows must be in its font's file: the RuneScape fonts lack many symbols (a
+	 * bullet, arrows, curly quotes), and the client draws a missing one as a box that overlaps the next letter.
+	 */
+	private static void missingGlyphs(Component c, Set<String> problems)
+	{
+		if (!c.isVisible())
+		{
+			return;
+		}
+		String text = c instanceof JLabel ? ((JLabel) c).getText()
+			: c instanceof javax.swing.AbstractButton ? ((javax.swing.AbstractButton) c).getText() : null;
+		if (text != null && !text.isEmpty())
+		{
+			String shown = text.startsWith("<html>") ? text.replaceAll("<[^>]*>", "").replace("&lt;", "<")
+				.replace("&gt;", ">").replace("&amp;", "&") : text;
+			java.awt.Font raw = RAW_FONTS.get(c.getFont().getFontName());
+			int bad = raw == null ? -1 : raw.canDisplayUpTo(shown);
+			if (bad >= 0)
+			{
+				problems.add(String.format("U+%04X not in %s: %s", (int) shown.charAt(bad), raw.getFontName(),
+					shown.trim()));
+			}
+		}
+		if (c instanceof Container)
+		{
+			for (Component child : ((Container) c).getComponents())
+			{
+				missingGlyphs(child, problems);
 			}
 		}
 	}
