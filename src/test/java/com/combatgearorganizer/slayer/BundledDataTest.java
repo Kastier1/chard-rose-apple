@@ -79,23 +79,18 @@ public class BundledDataTest
 					problems.add(t.getName() + " / " + v.getName() + ": weakness " + v.getWeakness().getElement());
 				}
 			}
+			List<Object[]> needs = new ArrayList<>();
+			for (SlayerLocationData.Variant v : t.getVariants())
+			{
+				needs.add(new Object[]{v.getName(), v.getRequirements()});
+			}
 			for (SlayerLocationData.LocationEntry l : allLocations(t))
 			{
-				for (int[] p : l.getPoints())
-				{
-					if (p.length != 3)
-					{
-						problems.add(t.getName() + " / " + l.getKey() + ": point of length " + p.length);
-					}
-				}
-				for (int[] p : l.getWildernessPoints())
-				{
-					if (p.length != 3)
-					{
-						problems.add(t.getName() + " / " + l.getKey() + ": Wilderness point of length " + p.length);
-					}
-				}
-				SlayerLocationData.Requirements r = l.getRequirements();
+				needs.add(new Object[]{l.getKey(), l.getRequirements()});
+			}
+			for (Object[] n : needs)
+			{
+				SlayerLocationData.Requirements r = (SlayerLocationData.Requirements) n[1];
 				if (r == null)
 				{
 					continue;
@@ -110,7 +105,7 @@ public class BundledDataTest
 					}
 					catch (IllegalArgumentException e)
 					{
-						problems.add(t.getName() + " / " + l.getKey() + ": unknown quest " + q);
+						problems.add(t.getName() + " / " + n[0] + ": unknown quest " + q);
 					}
 				}
 				for (String s : r.getSkills().keySet())
@@ -121,7 +116,24 @@ public class BundledDataTest
 					}
 					catch (IllegalArgumentException e)
 					{
-						problems.add(t.getName() + " / " + l.getKey() + ": unknown skill " + s);
+						problems.add(t.getName() + " / " + n[0] + ": unknown skill " + s);
+					}
+				}
+			}
+			for (SlayerLocationData.LocationEntry l : allLocations(t))
+			{
+				for (int[] p : l.getPoints())
+				{
+					if (p.length != 3)
+					{
+						problems.add(t.getName() + " / " + l.getKey() + ": point of length " + p.length);
+					}
+				}
+				for (int[] p : l.getWildernessPoints())
+				{
+					if (p.length != 3)
+					{
+						problems.add(t.getName() + " / " + l.getKey() + ": Wilderness point of length " + p.length);
 					}
 				}
 			}
@@ -2389,5 +2401,198 @@ public class BundledDataTest
 			.noneMatch(l -> l.getLabel().contains("King Black Dragon")));
 		// The Lesser demons' place by the lair's entrance is a different place, and stays
 		assertNotNull(place(data.findTask(-1, "Lesser demons"), "king_black_dragon_lair"));
+	}
+
+	private static SlayerLocationData.Requirements needs(String task, String key)
+	{
+		SlayerLocationData.LocationEntry l = place(data.findTask(-1, task), key);
+		assertNotNull(task + " / " + key, l);
+		assertNotNull(task + " / " + key + " has no requirements", l.getRequirements());
+		return l.getRequirements();
+	}
+
+	/**
+	 * Review findings 5, 9 and 10: Slayer levels, quests and skills the guide rows lacked (generator PLACE_OVERRIDES,
+	 * VARIANT_REQUIREMENTS and SPLIT_PLACES), each checked on the OSRS Wiki.
+	 */
+	@Test
+	public void missingGatesFromTheWiki()
+	{
+		// Slayer levels of the only monsters there, boostable
+		SlayerLocationData.Requirements brutal = needs("Black dragons", "catacombs_of_kourend");
+		assertEquals(Integer.valueOf(77), brutal.getSkills().get("SLAYER"));
+		assertEquals(Collections.singletonList("SLAYER"), brutal.getBoostable());
+		SlayerLocationData.Requirements araxytes = needs("Spiders", "morytania_spider_cave");
+		assertEquals(Integer.valueOf(92), araxytes.getSkills().get("SLAYER"));
+		assertEquals(Collections.singletonList("SLAYER"), araxytes.getBoostable());
+		// Custodian stalkers share one den, so the levels are the monsters' own (and the den's note)
+		SlayerLocationData.TaskEntry stalkers = data.findTask(-1, "Custodian stalkers");
+		assertNull(Variants.byName(stalkers.getVariants(), "Juvenile custodian stalker").getRequirements());
+		assertEquals(Integer.valueOf(67), Variants.byName(stalkers.getVariants(), "Mature custodian stalker")
+			.getRequirements().getSkills().get("SLAYER"));
+		assertEquals(Integer.valueOf(76), Variants.byName(stalkers.getVariants(), "Elder custodian stalker")
+			.getRequirements().getSkills().get("SLAYER"));
+		assertNull(place(stalkers, "stalker_den").getRequirements().getSkills().get("SLAYER"));
+		assertTrue(place(stalkers, "stalker_den").getNote().contains("elder ones 76"));
+		// Vyrewatch Sentinels need Sins of the Father finished; Darkmeyer itself only started
+		SlayerLocationData.TaskEntry vampyres = data.findTask(-1, "Vampyres");
+		assertEquals(Collections.singletonList("SINS_OF_THE_FATHER"),
+			Variants.byName(vampyres.getVariants(), "Vyrewatch Sentinel").getRequirements().getQuestsFinished());
+		assertTrue(needs("Vampyres", "darkmeyer").getQuestsStarted().contains("SINS_OF_THE_FATHER"));
+		assertTrue(place(vampyres, "darkmeyer").getNote().contains("Sins of the Father"));
+		// Tarn's Lair needs Haunted Mine finished (not only started); the Abandoned Mine spot outside it doesn't
+		for (String task : new String[]{"Skeletons", "Terror dogs"})
+		{
+			SlayerLocationData.Requirements r = needs(task, "tarns_lair");
+			assertTrue(task, r.getQuestsFinished().contains("HAUNTED_MINE"));
+			assertFalse(task, r.getQuestsStarted().contains("HAUNTED_MINE"));
+		}
+		assertTrue(needs("Skeletons", "tarns_lair_abandoned_mine").getQuestsStarted().contains("HAUNTED_MINE"));
+		// The Ruins of Tapoyauik open after The Heart of Darkness; the frost crabs aren't marked post-quest
+		for (String task : new String[]{"Cave crawlers", "Jellies", "Ice warriors", "Lesser Nagua"})
+		{
+			assertEquals(task, Collections.singletonList("THE_HEART_OF_DARKNESS"),
+				needs(task, "ruins_of_tapoyauik").getQuestsFinished());
+		}
+		assertEquals(Collections.singletonList("THE_HEART_OF_DARKNESS"),
+			needs("Crabs", "ruins_of_tapoyauik").getQuestsStarted());
+		// Wyrmscraig: wyrmlings on the surface; adult wyrms and lava strykewyrms in the cavern (part of Fallen From
+		// Grace), and so are the mountain trolls
+		assertTrue(placesOf("Wyrms", "Wyrmling").contains("wyrmscraig"));
+		assertFalse(placesOf("Wyrms", "Wyrmling").contains("wyrmscraig_cavern"));
+		for (String wyrm : new String[]{"Wyrm", "Lava Strykewyrm"})
+		{
+			assertFalse(wyrm, placesOf("Wyrms", wyrm).contains("wyrmscraig"));
+			assertTrue(wyrm, placesOf("Wyrms", wyrm).contains("wyrmscraig_cavern"));
+		}
+		SlayerLocationData.Requirements cavern = needs("Wyrms", "wyrmscraig_cavern");
+		assertEquals(Collections.singletonList("FALLEN_FROM_GRACE"), cavern.getQuestsStarted());
+		assertEquals(Integer.valueOf(62), cavern.getSkills().get("SAILING"));
+		assertTrue(needs("Wyrms", "wyrmscraig").getQuestsStarted().isEmpty());
+		assertEquals(Collections.singletonList("FALLEN_FROM_GRACE"), needs("Trolls", "wyrmscraig").getQuestsStarted());
+		// Skills and quests elsewhere
+		assertEquals(Integer.valueOf(15), needs("Earth warriors", "edgeville_dungeon").getSkills().get("AGILITY"));
+		assertEquals(Collections.singletonList("COLD_WAR"), needs("Ice warriors", "wiki_iceberg").getQuestsStarted());
+		assertEquals(Collections.singletonList("RECIPE_FOR_DISASTER__PIRATE_PETE"),
+			needs("Crabs", "wiki_mogre_camp").getQuestsStarted());
+		assertTrue(place(data.findTask(-1, "Crabs"), "wiki_mogre_camp").getNote().contains("diving apparatus"));
+		for (String task : new String[]{"Skeletons", "Dogs"})
+		{
+			assertEquals(task, Collections.singletonList("DESERT_TREASURE_I"),
+				needs(task, "wiki_shadow_dungeon").getQuestsStarted());
+			assertTrue(task, place(data.findTask(-1, task), "wiki_shadow_dungeon").getNote().contains("ring of visibility"));
+		}
+		// Either-or needs are notes
+		assertTrue(place(data.findTask(-1, "Red dragons"), "brimhaven_dungeon").getNote().contains("34 Woodcutting"));
+		assertTrue(place(data.findTask(-1, "Blue dragons"), "taverley_dungeon").getNote().contains("dusty key"));
+		assertTrue(place(data.findTask(-1, "Blue dragons"), "taverley_dungeon").getNote().contains("70 Agility"));
+		// A quest that must be finished isn't also listed as started
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			for (SlayerLocationData.LocationEntry l : allLocations(t))
+			{
+				SlayerLocationData.Requirements r = l.getRequirements();
+				if (r != null)
+				{
+					for (String q : r.getQuestsFinished())
+					{
+						assertFalse(t.getName() + " / " + l.getKey() + ": " + q, r.getQuestsStarted().contains(q));
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Review findings 6, 7, 12 and 13 and the P items of its data audit: places whose Go did nothing because they had
+	 * no point, though the wiki has the spawns (SPOT_PLACES, PIN_PLACES), or a same-key twin on the other list has them.
+	 */
+	@Test
+	public void placesThatHadNoPointNowHaveThem()
+	{
+		String[][] filled = {
+			{"Moss giants", "wilderness_by_the_pond_reachable_using_a_canoe"}, {"Moss giants", "south_east_of_the_lava_maze"},
+			{"Green dragons", "south_west_of_the_bone_yard"}, {"Black knights", "south_of_silk_chasm"},
+			{"Mammoths", "west_of_the_chaos_temple"}, {"Bats", "graveyard_of_heroes"}, {"Bats", "karamja_volcano_dungeon"},
+			{"Bats", "deep_wilderness_west_of_mage_arena"}, {"Bats", "the_underground_pass_part_1"},
+			{"Bats", "the_underground_pass_part_2"},
+			{"Lesser demons", "cage_on_the_top_floor_of_kourend_castle"},
+			{"Lesser demons", "cage_on_the_top_floor_of_wizards_tower"},
+			{"Lesser demons", "councillor_hughes_house_in_kingstown"}, {"Lesser demons", "lava_maze"},
+			{"Lesser demons", "demonic_ruins"}, {"Zombies", "ruins_east_wilderness"},
+			{"Bears", "fremennik_province_woods_outside_of_rellekka"}, {"Bears", "great_kourend_north_of_lands_end"},
+			{"Bears", "great_kourend_farming_guild"}, {"Bears", "west_of_lletya"},
+			{"Bears", "west_of_the_graveyard_of_shadows"}, {"Bears", "south_east_of_dark_warriors_fortress"},
+		};
+		for (String[] f : filled)
+		{
+			for (SlayerLocationData.LocationEntry l : allLocations(data.findTask(-1, f[0])))
+			{
+				if (l.getKey().equals(f[1]))
+				{
+					assertFalse(f[0] + " / " + f[1] + " has no point",
+						l.getPoints().isEmpty() && l.getWildernessPoints().isEmpty());
+					assertFalse(f[0] + " / " + f[1], l.isNoMonster());
+				}
+			}
+			assertNotNull(f[0] + " / " + f[1], place(data.findTask(-1, f[0]), f[1]));
+		}
+		// Places in the Wilderness are only shown with the Wilderness setting on
+		assertTrue(hasPointNear(place(data.findTask(-1, "Moss giants"), "wilderness_by_the_pond_reachable_using_a_canoe"),
+			3143, 3815));
+		assertTrue(place(data.findTask(-1, "Moss giants"), "wilderness_by_the_pond_reachable_using_a_canoe").getPoints().isEmpty());
+		assertTrue(place(data.findTask(-1, "Lesser demons"), "lava_maze").getPoints().isEmpty());
+		// The spots went to the listed place instead of a wiki copy of it
+		assertNull(place(data.findTask(-1, "Black knights"), "wiki_north_east_of_bone_yard_wilderness"));
+		assertNull(place(data.findTask(-1, "Mammoths"), "wiki_south_east_of_ferox_enclave"));
+		assertNull(place(data.findTask(-1, "Green dragons"), "wiki_east_of_the_bone_yard_hunter_area"));
+		assertNull(place(data.findTask(-1, "Bears"), "wiki_east_of_the_farming_guild"));
+		// ...the rest of a spot split by hand keeps its own place (the Bat page's other Great Kourend spawns)
+		assertTrue(hasPointNear(place(data.findTask(-1, "Bats"), "wiki_bat"), 1709, 3709));
+		assertFalse(hasPointNear(place(data.findTask(-1, "Bats"), "wiki_bat"), 1482, 3565));
+		assertTrue(placesOf("Bats", "Bat").contains("graveyard_of_heroes"));
+		// The wiki's name: the green dragons' cluster is east of the Bone Yard Hunter area, south-east of the Bone Yard
+		assertEquals("East of the Bone Yard Hunter area",
+			place(data.findTask(-1, "Green dragons"), "south_west_of_the_bone_yard").getLabel());
+		// Callisto's Den is Callisto's lair, not a bear place
+		assertNull(place(data.findTask(-1, "Bears"), "demonic_ruins"));
+		assertNotNull(place(data.findTask(-1, "Bears"), "boss_callistos_den"));
+		// No place without a point whose twin on the other list has one
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			for (SlayerLocationData.LocationEntry l : allLocations(t))
+			{
+				if (l.getPoints().isEmpty() && l.getWildernessPoints().isEmpty() && !l.isBossLair())
+				{
+					for (SlayerLocationData.LocationEntry twin : allLocations(t))
+					{
+						assertFalse(t.getName() + " / " + l.getKey(), twin.getKey().equals(l.getKey())
+							&& !twin.getWildernessPoints().isEmpty());
+					}
+				}
+			}
+		}
+	}
+
+	/** Review findings 36 and 37: every superior names a monster of its task, exactly as the task names it. */
+	@Test
+	public void superiorsNameAMonsterOfTheirTask()
+	{
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			assertTrue(t.getName() + " has no regular monster", t.getVariants().stream().anyMatch(SlayerLocationData.Variant::isRegular));
+			for (SlayerLocationData.Variant v : t.getVariants())
+			{
+				if (v.getSuperiorOf() != null)
+				{
+					assertTrue(t.getName() + " / " + v.getName() + ": " + v.getSuperiorOf(),
+						t.getVariants().stream().anyMatch(b -> b.getName().equals(v.getSuperiorOf())));
+				}
+			}
+		}
+		assertEquals("Elder custodian stalker", Variants.byName(data.findTask(-1, "Custodian stalkers").getVariants(),
+			"Ancient Custodian").getSuperiorOf());
+		assertEquals("Lava Strykewyrm", Variants.byName(data.findTask(-1, "Wyrms").getVariants(), "Magma strykewyrm")
+			.getSuperiorOf());
 	}
 }

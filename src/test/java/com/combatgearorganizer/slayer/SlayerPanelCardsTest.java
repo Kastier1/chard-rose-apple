@@ -529,8 +529,10 @@ public class SlayerPanelCardsTest
 		assertTrue(entry(data.findTask(-1, "Monkeys"), "north_east_karamja_instanced").getPoints().isEmpty());
 		// Nor where the guide says the entrance can't be pathed to (Waterfall Dungeon)
 		assertTrue(entry(data.findTask(-1, "Fire giants"), "waterfall_dungeon").getPoints().isEmpty());
-		// Only a word match ("Kingstown - Councillor Hughes' house"): linked, but no points borrowed
-		assertTrue(entry(data.findTask(-1, "Lesser demons"), "councillor_hughes_house_in_kingstown").getPoints().isEmpty());
+		// Only a word match ("Kingstown - Councillor Hughes' house") borrows no points by itself; this one takes the
+		// spot's by hand (the generator's SPOT_PLACES)
+		assertPointsFrom("Lesser demons", "councillor_hughes_house_in_kingstown", 1680, 3678);
+		assertTrue(entry(data.findTask(-1, "Bats"), "mount_karuulm_north_side").getPoints().isEmpty());
 	}
 
 	private static void assertPointsFrom(String task, String key, int x, int y)

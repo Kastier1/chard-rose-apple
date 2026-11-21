@@ -47,17 +47,21 @@ def access_note(access):
 
 
 def requirements(*accesses):
-    """Merges the source's access blocks into one {questsFinished, questsStarted, skills, diaries} dict (all required)."""
-    finished, started, skills, diaries = [], [], {}, []
+    """Merges the source's access blocks into one {questsFinished, questsStarted, skills, boostable, diaries} dict (all
+    required)."""
+    finished, started, skills, diaries, boostable = [], [], {}, [], []
     for access in accesses:
         for a in (access if isinstance(access, list) else [access]) if access else []:
             finished += [q for q in a.get("questsFinished", []) if q not in finished]
             started += [q for q in a.get("questsStarted", []) if q not in started]
             diaries += [d for d in a.get("diaries", []) if d not in diaries]
+            boostable += [s for s in a.get("boostable", []) if s not in boostable]
             for skill, level in a.get("skills", {}).items():
                 skills[skill] = max(level, skills.get(skill, 0))
+    # A quest that must be finished needn't also be listed as started
+    started = [q for q in started if q not in finished]
     out = {k: v for k, v in (("questsFinished", finished), ("questsStarted", started), ("skills", skills),
-                             ("diaries", diaries)) if v}
+                             ("boostable", [s for s in boostable if s in skills]), ("diaries", diaries)) if v}
     return out or None
 
 
@@ -1162,17 +1166,25 @@ def merge_close(spots):
 EXTRA_SPOT_MIN = 2
 
 
+def spot_points(task_name, name, loc, pts):
+    """The points of a monster's wiki spot that SPOT_PLACES gives a listed place of the task (all of them when an
+    entry names no points)."""
+    out = []
+    for (task, _), (monster, spot, points, _) in SPOT_PLACES.items():
+        if task == task_name and (monster, spot) == (name, loc):
+            out += pts if points is None else points
+    return out
+
+
 def extra_spot(task_name, name, loc, pts, places, listed, all_points):
     """Whether a spawn spot of a monster that matched a listed place gets a wiki place too: it's named (not a quest,
-    instance or unreachable spot: NOT_A_GO_SPOT), has EXTRA_SPOT_MIN spawns (one underground), isn't near a listed place (places_of),
-    isn't a listed place's spot by hand (SPOT_PLACES) and isn't named like one (own_places, beside ones included:
-    those are only checked by distance later)."""
+    instance or unreachable spot: NOT_A_GO_SPOT), has EXTRA_SPOT_MIN spawns (one underground), isn't near a listed place
+    (places_of) and isn't named like one (own_places, beside ones included: those are only checked by distance later). The points
+    of a listed place's spot by hand (SPOT_PLACES, spot_points) are left out before this."""
     underground = all(pt[1] >= UNDERGROUND_OFFSET for pt in pts)
     if not loc or NOT_A_GO_SPOT.search(loc) or len(pts) < (1 if underground else EXTRA_SPOT_MIN):
         return False
     if places_of(name, pts, (), places, all_points):
-        return False
-    if any(task == task_name and (monster, spot) == (name, loc) for (task, _), (monster, spot, *_) in SPOT_PLACES.items()):
         return False
     beside = set()
     return not own_places(listed, loc, beside) and not beside
@@ -1211,7 +1223,10 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
                        or any(find_by_name(unbossed[0], loc) for loc, _ in spawn_groups(pages, wiki) if loc))
         groups = []
         for loc, pts in spawn_groups(pages, wiki):
-            if matched and not extra_spot(task_name, name, loc, pts, places, listed, all_points):
+            # A listed place's spot by hand (SPOT_PLACES) is that place's, not a place of its own: all of the spot, or
+            # the points the entry names
+            pts = [pt for pt in pts if pt not in spot_points(task_name, name, loc, pts)]
+            if not pts or matched and not extra_spot(task_name, name, loc, pts, places, listed, all_points):
                 continue
             pts = [pt for pt in pts if in_wilderness(pt) or not wilderness_only]
             # Only the same name joins: a place with more words ("Harmony Island Church") keeps its own spawn
@@ -1516,7 +1531,8 @@ NO_MONSTER_WHY = "noMonsterWhy"
 # Guide places linked to a monster by hand, from a wiki spawn spot that names them neither the same nor close enough
 # for own_places, with the points of that spot the place stands for (all of them when None). Each is checked against
 # tools/data/wiki_monsters.json (the spot must be on the monster's pages, with these points), and the place takes the
-# points when it has none, so Go can path there. (task, place key) -> (monster, wiki spot, points or None, evidence).
+# points when it has none, so Go can path there; the points it stands for make no wiki place of their own (spot_points).
+# (task, place key) -> (monster, wiki spot, points or None, evidence).
 # The Dark Altar points are split by side of the altar (about 1712,3883): west towards the CIS fairy ring (about
 # 1639,3868), south towards the Blood Altar (about 1716,3827), east towards the Soul Altar (about 1815,3856).
 SPOT_PLACES = {
@@ -1559,7 +1575,199 @@ SPOT_PLACES = {
                                                       [3106, 3567, 0], [3106, 3570, 0]],
         "wiki Southern_Wilderness_mine (the \"Skeleton mine\", about 3105,3569) \"is filled with several aggressive "
         "level 22 and 25 Skeletons\"; these are the Skeleton page's \"Wilderness, north of Edgeville\" spawns there"),
+    # Moss giants: the Moss giant page's only Wilderness spot is "Wilderness Pond" (3139-3147, 3805-3826), south-east
+    # of the Lava Maze; the normal list calls it the pond reachable by canoe, Krystilia's south-east of the Lava Maze
+    ("Moss giants", "wilderness_by_the_pond_reachable_using_a_canoe"): (
+        "Moss giant", "Wilderness Pond", None, "the Moss giant page's only Wilderness spot, by the pond"),
+    ("Moss giants", "south_east_of_the_lava_maze"): (
+        "Moss giant", "Wilderness Pond", None,
+        "the Moss giant page's \"Wilderness Pond\" spawns are south-east of the Lava Maze (about 3060,3850)"),
+    # https://oldschool.runescape.wiki/w/Slayer_task/Green_dragons lists four Wilderness clusters: west of the Dark
+    # Warriors' Fortress, north of the Graveyard of Shadows, south of the Lava Maze, and "South of Venenatis" (the
+    # 11 dragons "East of the Bone Yard Hunter area", the largest). Krystilia's list has the first three under their own
+    # names, so its "South-west of the Bone Yard" is the fourth; PLACE_OVERRIDES gives it the wiki's name
+    ("Green dragons", "south_west_of_the_bone_yard"): (
+        "Green dragon", "East of the Bone Yard Hunter area", None,
+        "the only Wilderness surface cluster of the task page that the list has under no other name"),
+    # The Silk Chasm's entrance is at 3320,3798; the Black Knight page's "North-east of Bone Yard (Wilderness)" spawns
+    # (3308-3317, 3765-3773) are just south of it
+    ("Black knights", "south_of_silk_chasm"): (
+        "Black Knight", "North-east of Bone Yard (Wilderness)", None,
+        "the Black Knight spawns just south of the Silk Chasm entrance"),
+    # The Mammoth page's only spot (3159-3173, 3587-3599) is west of the Wilderness Chaos Temple (about 3236,3635)
+    ("Mammoths", "west_of_the_chaos_temple"): (
+        "Mammoth", "South-east of Ferox Enclave", None, "the Mammoth page's only spot, west of the Chaos Temple"),
+    # The Graveyard of Heroes is in Shayzien (about 1485,3565); these are the Bat page's "Great Kourend" spawns there
+    ("Bats", "graveyard_of_heroes"): (
+        "Bat", "Great Kourend", [[1480, 3559, 0], [1482, 3570, 0], [1490, 3557, 0]],
+        "the Bat page's Great Kourend spawns at the Graveyard of Heroes"),
+    # The Karamja Volcano dungeon is the Crandor and Karamja Dungeon under the volcano
+    ("Bats", "karamja_volcano_dungeon"): (
+        "Giant bat", "Crandor and Karamja Dungeon", None,
+        "the Giant bat page's spawns in the dungeon under the Karamja volcano"),
+    ("Bats", "deep_wilderness_west_of_mage_arena"): (
+        "Giant bat", "West of Mage Arena", None, "the Giant bat page's \"West of Mage Arena\" spawns"),
+    ("Bats", "the_underground_pass_part_1"): (
+        "Giant bat", "Underground Pass (Part 1)", None, "the Giant bat page's \"Underground Pass (Part 1)\" spawns"),
+    ("Bats", "the_underground_pass_part_2"): (
+        "Giant bat", "Underground Pass (Part 2)", None, "the Giant bat page's \"Underground Pass (Part 2)\" spawns"),
+    # The three cages the Lesser demon page names "<town> - <where>", one demon each, upstairs
+    ("Lesser demons", "cage_on_the_top_floor_of_kourend_castle"): (
+        "Lesser demon", "Kourend Castle - Cage on the top floor", None, "the Lesser demon page's spot of that name"),
+    ("Lesser demons", "cage_on_the_top_floor_of_wizards_tower"): (
+        "Lesser demon", "Wizards' Tower - Cage on the top floor", None, "the Lesser demon page's spot of that name"),
+    ("Lesser demons", "councillor_hughes_house_in_kingstown"): (
+        "Lesser demon", "Kingstown - Councillor Hughes' house", None, "the Lesser demon page's spot of that name"),
+    # The normal list's Lava Maze is the Lesser demon page's Lava Maze spot (Krystilia's list calls it the muddy chest)
+    ("Lesser demons", "lava_maze"): (
+        "Lesser demon", "Wilderness - by the muddy chest in the Lava Maze", None,
+        "the Lesser demon page's only Lava Maze spot"),
+    # https://oldschool.runescape.wiki/w/Slayer_task/Bears location table: the bear cub pins of "Fremennik Province -
+    # woods outside of Rellekka" and "Great Kourend - north of Land's End" are the Bear Cub page's spots of those names;
+    # its "Great Kourend - Farming Guild" black bear pins (1319,3710 and 1322,3713) are the Black bear page's "East of
+    # the Farming Guild"; its "West of Lletya" grizzly pin (2293,3156) is in the Grizzly bear page's "Isafdar"; its
+    # "West of the Graveyard of Shadows" pins are the Grizzly bear page's "North-west of the Ferox Enclave"
+    ("Bears", "fremennik_province_woods_outside_of_rellekka"): (
+        "Bear Cub", "Woods outside of Rellekka", None, "the task page's bear cub pins there"),
+    ("Bears", "great_kourend_north_of_lands_end"): (
+        "Bear Cub", "North of Land's End", None, "the task page's bear cub pins there"),
+    ("Bears", "great_kourend_farming_guild"): (
+        "Black bear", "East of the Farming Guild", None, "the task page's black bear pins for the Farming Guild"),
+    ("Bears", "west_of_lletya"): (
+        "Grizzly bear", "Isafdar", [[2293, 3156, 0]], "the task page's grizzly bear pin west of Lletya"),
+    ("Bears", "west_of_the_graveyard_of_shadows"): (
+        "Grizzly bear", "North-west of the Ferox Enclave", None,
+        "the task page's ten grizzly pins west of the Graveyard of Shadows are this spot's"),
 }
+# Guide places linked to a monster by hand from pins of the wiki's Slayer task page that no monster page in
+# tools/data/wiki_monsters.json has (the monster pages lag the task page): (task, place key) -> (monster, points,
+# evidence). The place gets the points.
+PIN_PLACES = {
+    # https://oldschool.runescape.wiki/w/Slayer_task/Bears: "South-east of Dark Warriors' Fortress", three grizzly
+    # pins, "This location is in the Wilderness."
+    ("Bears", "south_east_of_dark_warriors_fortress"): (
+        "Grizzly bear", [[3075, 3608, 0], [3078, 3601, 0], [3083, 3597, 0]],
+        "the task page's three grizzly bear pins there"),
+}
+# Guide places that are no place for the task's monsters, left out: (task, place key) -> evidence
+DROP_PLACES = {
+    # https://oldschool.runescape.wiki/w/Slayer_task/Bears: "South of the Demonic Ruins (Callisto's Den)", its only pin
+    # "Callisto's Den Entrance"; Callisto has his lair (boss_callistos_den), and no bear page has a spawn there
+    ("Bears", "demonic_ruins"): "the way into Callisto's Den, which is Callisto's lair (boss_callistos_den)",
+}
+# https://oldschool.runescape.wiki/w/Ruins_of_Tapoyauik: "after completion of which the ruins become populated ... Cave
+# crawler, post-quest ... Ice warrior, post-quest ... Frost nagua ... only on bottom floor post-quest"; the chilled
+# jellies are by the lift platform, used "after completion of The Heart of Darkness". (The frost crabs aren't marked
+# post-quest, so the Crabs place keeps the guide's gate.)
+HEART_OF_DARKNESS = {"requirements": {"questsFinished": ["THE_HEART_OF_DARKNESS"]}}
+SHADOW_DUNGEON = {
+    # https://oldschool.runescape.wiki/w/Shadow_Dungeon: "the dungeon used during Desert Treasure I ... To be able to
+    # see the ladder, players are required to wear the ring of visibility or the ring of shadows"
+    "requirements": {"questsStarted": ["DESERT_TREASURE_I"]},
+    "note": "Wear a ring of visibility (from Desert Treasure I) or a ring of shadows to see the ladder, east of "
+            "Baxtorian Falls.",
+}
+# Gates, notes and names the guide rows lack, each checked on the OSRS Wiki: (task, place key) -> {"requirements":
+# added to the place's, "note": said after the place's note, "label": the place's name instead}. A key may be a wiki
+# place's (wiki_...). Slayer levels are boostable (https://oldschool.runescape.wiki/w/Temporary_skill_boost/Slayer:
+# "Players can boost the Slayer skill in order to be able to kill higher-level Slayer monsters").
+PLACE_OVERRIDES = {
+    # https://oldschool.runescape.wiki/w/Brutal_black_dragon: "slaylvl = 77"; they are the task's only monster there
+    ("Black dragons", "catacombs_of_kourend"): {
+        "requirements": {"skills": {"SLAYER": 77}, "boostable": ["SLAYER"]},
+        "note": "The brutal black dragons need 77 Slayer (boosts count).",
+    },
+    # https://oldschool.runescape.wiki/w/Araxyte: "slaylvl = 92"; the cave's only spiders are araxytes
+    ("Spiders", "morytania_spider_cave"): {
+        "requirements": {"skills": {"SLAYER": 92}, "boostable": ["SLAYER"]},
+        "note": "The araxytes need 92 Slayer (boosts count).",
+    },
+    # https://oldschool.runescape.wiki/w/Tarn%27s_Lair: "The Haunted Mine quest is required to access Tarn's Lair"
+    # (the Abandoned Mine spot, tarns_lair_abandoned_mine, is outside the lair and keeps the guide's gate)
+    ("Skeletons", "tarns_lair"): {"requirements": {"questsFinished": ["HAUNTED_MINE"]}},
+    ("Terror dogs", "tarns_lair"): {"requirements": {"questsFinished": ["HAUNTED_MINE"]}},
+    ("Cave crawlers", "ruins_of_tapoyauik"): HEART_OF_DARKNESS,
+    ("Jellies", "ruins_of_tapoyauik"): HEART_OF_DARKNESS,
+    ("Ice warriors", "ruins_of_tapoyauik"): HEART_OF_DARKNESS,
+    ("Lesser Nagua", "ruins_of_tapoyauik"): HEART_OF_DARKNESS,
+    # https://oldschool.runescape.wiki/w/Slayer_task/Wyrms: "Before partially completing Fallen From Grace, only the
+    # wyrmlings on the island's surface are accessible" (the adults and strykewyrms get a cavern place: SPLIT_PLACES)
+    ("Wyrms", "wyrmscraig"): {"note": "Only the wyrmlings are on the surface."},
+    # https://oldschool.runescape.wiki/w/Wyrmscraig_Cavern: "accessible after partial completion of Fallen From
+    # Grace"; this place's mountain trolls are the wiki's "Wyrmscraig Cavern" spot (PLACE_ALIASES)
+    ("Trolls", "wyrmscraig"): {
+        "requirements": {"questsStarted": ["FALLEN_FROM_GRACE"]},
+        "note": "The mountain trolls are in the Wyrmscraig Cavern, open after part of Fallen From Grace.",
+    },
+    # https://oldschool.runescape.wiki/w/Earth_warrior: "This area can only be accessed via the monkey bars, requiring
+    # level 15 Agility"
+    ("Earth warriors", "edgeville_dungeon"): {"requirements": {"skills": {"AGILITY": 15}}},
+    # https://oldschool.runescape.wiki/w/Vyrewatch_Sentinel: "can be fought after completing the Sins of the Father
+    # quest" (the other vampyres of Darkmeyer are there during the quest; VARIANT_REQUIREMENTS)
+    ("Vampyres", "darkmeyer"): {"note": "Vyrewatch Sentinels only after Sins of the Father is finished."},
+    # Mature_custodian_stalker "slaylvl = 67", Elder_custodian_stalker "slaylvl = 76" (Juvenile 54, the task's own
+    # level); VARIANT_REQUIREMENTS
+    ("Custodian stalkers", "stalker_den"): {
+        "note": "Mature custodian stalkers need 67 Slayer and elder ones 76 (boosts count).",
+    },
+    # https://oldschool.runescape.wiki/w/Iceberg: "It can only be accessed by those who have gone halfway through Cold
+    # War. Players can travel back to the iceberg after the quest is completed by talking to Larry on the dock
+    # north-east of Rellekka"; the Icelord page's only spot is "Iceberg"
+    ("Ice warriors", "wiki_iceberg"): {
+        "requirements": {"questsStarted": ["COLD_WAR"]},
+        "note": "Needs part of Cold War. Larry's boat from the dock north-east of Rellekka.",
+    },
+    # https://oldschool.runescape.wiki/w/Mogre_Camp: "an underwater area accessed during and after saving Pirate Pete
+    # for Recipe for Disaster ... the player must equip a fishbowl helmet and a diving apparatus, or a medallion of the
+    # deep, and weigh less than 28 kilograms, and speak to Murphy at Port Khazard"
+    ("Crabs", "wiki_mogre_camp"): {
+        "requirements": {"questsStarted": ["RECIPE_FOR_DISASTER__PIRATE_PETE"]},
+        "note": "Underwater, from the Pirate Pete part of Recipe for Disaster: wear a fishbowl helmet and diving "
+                "apparatus (or a medallion of the deep), weigh under 28 kg, and talk to Murphy at Port Khazard.",
+    },
+    ("Skeletons", "wiki_shadow_dungeon"): SHADOW_DUNGEON,
+    ("Dogs", "wiki_shadow_dungeon"): SHADOW_DUNGEON,
+    # https://oldschool.runescape.wiki/w/Slayer_task/Red_dragons: "Brimhaven Dungeon requires at least 30 Agility";
+    # https://oldschool.runescape.wiki/w/Brimhaven_Dungeon: "To get further in the dungeon (Black Demons and beyond),
+    # you will need at least a Woodcutting level of 34"
+    ("Red dragons", "brimhaven_dungeon"): {
+        "note": "The red dragons are past the black demons: 34 Woodcutting for the vines, or 30 Agility for the "
+                "shortcuts.",
+    },
+    # https://oldschool.runescape.wiki/w/Slayer_task/Blue_dragons: "Taverley Dungeon requires a dusty key or level 70
+    # Agility to access"; Taverley_Dungeon: "Obstacle pipe between the entrance and blue dragons, requires 70 Agility"
+    ("Blue dragons", "taverley_dungeon"): {
+        "note": "Needs a dusty key (from Velrak in the dungeon) or 70 Agility for the pipe shortcut.",
+    },
+    # The wiki's name for the cluster (SPOT_PLACES): it is south-east of the Bone Yard, not south-west
+    ("Green dragons", "south_west_of_the_bone_yard"): {"label": "East of the Bone Yard Hunter area"},
+}
+# A monster that needs more than its place does, on the variant (the place's note says it too): (task, monster) ->
+# requirements
+VARIANT_REQUIREMENTS = {
+    ("Custodian stalkers", "Mature custodian stalker"): {"skills": {"SLAYER": 67}, "boostable": ["SLAYER"]},
+    ("Custodian stalkers", "Elder custodian stalker"): {"skills": {"SLAYER": 76}, "boostable": ["SLAYER"]},
+    ("Vampyres", "Vyrewatch Sentinel"): {"questsFinished": ["SINS_OF_THE_FATHER"]},
+}
+# A place split in two by which monsters are where: (task, place key) -> the new place's key, label, the monsters that
+# move to it, what it needs beyond the place, and its note
+SPLIT_PLACES = {
+    # https://oldschool.runescape.wiki/w/Slayer_task/Wyrms: "completing the required portions of the quest unlocks
+    # access to the Wyrmscraig Cavern, where adult wyrms and Lava Strykewyrms can be found"; Wyrmscraig_Cavern: "A
+    # Slayer ring can teleport to the cavern, after completion of Fallen From Grace"
+    ("Wyrms", "wyrmscraig"): {
+        "key": "wyrmscraig_cavern",
+        "label": "Wyrmscraig Cavern",
+        "monsters": ["Wyrm", "Lava Strykewyrm"],
+        "requirements": {"questsStarted": ["FALLEN_FROM_GRACE"]},
+        "note": "Under Wyrmscraig, open after part of Fallen From Grace; a slayer ring teleports there once the quest "
+                "is done.",
+    },
+}
+# Where the wiki's superior_of names a monster that isn't one of the task's (any case):
+# https://oldschool.runescape.wiki/w/Ancient_Custodian: "a chance of spawning upon the death of an elder Custodian
+# stalker"
+SUPERIOR_OF = {"Ancient Custodian": "Elder custodian stalker"}
 
 # Guide places no monster of the task lives at, as far as the bundled wiki data knows, with the evidence (reviewed by
 # hand). link_unmatched marks only these NO_MONSTER; any other unmatched place, or one of these that matches, fails
@@ -1567,21 +1775,9 @@ SPOT_PLACES = {
 # point to match by distance, and no task monster's wiki page has a spawn spot named like it or near it.
 NONE_NAMED = "no task monster's wiki page has a spawn spot named like it, and the guide row has no point"
 NO_MONSTER_PLACES = {
-    ("Bears", "demonic_ruins"): "the Demonic Ruins are the way into Callisto's Den (boss_callistos_den, where "
-                                "Callisto is listed); the grizzly bears it matched by distance are in the Escape "
-                                "Caves, which have a place of their own",
-    ("Bats", "graveyard_of_heroes"): NONE_NAMED,
-    ("Bats", "karamja_volcano_dungeon"): NONE_NAMED + " (the bat pages' Karamja spawns are \"Crandor and Karamja "
-                                         "Dungeon\", which is another place on the list)",
-    ("Bears", "great_kourend_farming_guild"): "the Black bear page's \"East of the Farming Guild\" is beside it, "
-                                             "not named as it, and the guide row has no point",
     ("Bears", "north_east_of_tyras_camp_instanced"): NONE_NAMED + " (an instance)",
     ("Bears", "prifddinas_outside_the_city"): NONE_NAMED,
     ("Bears", "south_of_prifddinas_instanced"): NONE_NAMED + " (an instance)",
-    ("Bears", "south_east_of_dark_warriors_fortress"): "the Grizzly bear page's Dark Warriors' Fortress spawns are "
-                                                      "north-west of it, and the guide row has no point",
-    ("Bears", "west_of_lletya"): NONE_NAMED,
-    ("Bears", "west_of_the_graveyard_of_shadows"): NONE_NAMED,
     ("Bears", "south_of_the_western_ruins"): NONE_NAMED,
     ("Elves", "prifddinas_south_gate"): "the elf pages name only \"Prifddinas\" (the Guard page), not a gate, and the "
                                         "guide row has no point",
@@ -1596,7 +1792,6 @@ NO_MONSTER_PLACES = {
     ("Elves", "mourner_headquarters_downstairs"): "the Mourner page names the \"Mourner Tunnels\", not the "
                                                   "headquarters, and the guide row has no point",
     ("Elves", "tower_of_voices"): NONE_NAMED,
-    ("Moss giants", "south_east_of_the_lava_maze"): NONE_NAMED + " in the Wilderness",
     ("Scorpions", "stonecutter_outpost_temple_east_of_colossal_wyrm_remains"): (
         "the Scorpion page's \"South-west of Stonecutter Outpost\" is another spot, and the guide row has no point"),
     ("Scorpions", "scorpion_pit_cave"): "the cave's scorpions are Scorpia's offspring, which are only listed at "
@@ -1614,10 +1809,12 @@ NO_MONSTER_PLACES = {
 
 
 def link_spot_places(task_name, places, variants, wiki, unroutable):
-    """Links the SPOT_PLACES of this task to their monster and gives an empty place the spot's points. Fails on an
-    entry whose monster, spot or points aren't in the wiki data, or whose place is linked already. Changes places and
-    variants in place."""
-    by_key = {pl["key"]: pl for pl in places}
+    """Links the SPOT_PLACES of this task to their monster and gives an empty place the spot's points (on both lists
+    when the key is on both). Fails on an entry whose monster, spot or points aren't in the wiki data, or whose place
+    is linked already and has points. Changes places and variants in place."""
+    by_key = {}
+    for pl in places:
+        by_key.setdefault(pl["key"], []).append(pl)
     by_name = {v["name"]: v for v in variants}
     for (task, key), (monster, spot, points, _) in SPOT_PLACES.items():
         if task != task_name or key not in by_key:
@@ -1625,18 +1822,108 @@ def link_spot_places(task_name, places, variants, wiki, unroutable):
         v = by_name.get(monster)
         if not v:
             raise SystemExit(f"SPOT_PLACES {task} / {key}: no monster {monster!r} on the task")
-        if any(key in x["places"] for x in variants):
-            raise SystemExit(f"SPOT_PLACES {task} / {key}: already linked; remove the entry")
+        empty = [pl for pl in by_key[key] if not pl["points"] and not pl["wildernessPoints"] and key not in unroutable]
+        # A place that is linked already and has its points needs no entry
+        if any(key in x["places"] for x in variants) and not empty:
+            raise SystemExit(f"SPOT_PLACES {task} / {key}: already linked, with points; remove the entry")
         pages = {x["page_name"] for x in task_monsters(task_name, wiki).get(monster, [])}
         found = [pt for loc, pts in spawn_groups(pages, wiki) if loc == spot for pt in pts]
         if not found or points and any(pt not in found for pt in points):
             raise SystemExit(f"SPOT_PLACES {task} / {key}: {monster}'s wiki spot {spot!r} doesn't have those points")
         v["places"] = sorted(set(v["places"]) | {key})
-        pl = by_key[key]
-        if not pl["points"] and not pl["wildernessPoints"] and key not in unroutable:
-            pts = sorted(points or found)
-            pl["points"] = [pt for pt in pts if not in_wilderness(pt)]
-            pl["wildernessPoints"] = [pt for pt in pts if in_wilderness(pt)]
+        give_points(empty, points or found)
+
+
+def give_points(places, pts):
+    """Sets each place's points and wildernessPoints from pts. Changes places in place."""
+    pts = sorted(pts)
+    for pl in places:
+        pl["points"] = [pt for pt in pts if not in_wilderness(pt)]
+        pl["wildernessPoints"] = [pt for pt in pts if in_wilderness(pt)]
+
+
+def link_pin_places(task_name, places, variants):
+    """Links the PIN_PLACES of this task to their monster and gives the place the pins. Fails on an entry whose monster
+    isn't on the task, or whose place has points or a monster already. Changes places and variants in place."""
+    by_name = {v["name"]: v for v in variants}
+    for (task, key), (monster, points, _) in PIN_PLACES.items():
+        here = [pl for pl in places if pl["key"] == key]
+        if task != task_name or not here:
+            continue
+        v = by_name.get(monster)
+        if not v:
+            raise SystemExit(f"PIN_PLACES {task} / {key}: no monster {monster!r} on the task")
+        if any(key in x["places"] for x in variants) or any(pl["points"] or pl["wildernessPoints"] for pl in here):
+            raise SystemExit(f"PIN_PLACES {task} / {key}: the place has a monster or points already; remove the entry")
+        v["places"] = sorted(set(v["places"]) | {key})
+        give_points(here, points)
+
+
+def copy_twin_points(entries, wild_entries, unroutable):
+    """Gives a place with no point the points of its same-key twin on the other list (Krystilia's "Eastern Ruins" and
+    the normal list's "Ruins (east) (Wilderness)"); her list only takes the Wilderness points. Changes the places in
+    place."""
+    for here, there, wild_only in ((wild_entries, entries, True), (entries, wild_entries, False)):
+        for pl in here:
+            if pl["points"] or pl["wildernessPoints"] or pl["key"] in unroutable or pl.get("source") == BOSS_SOURCE:
+                continue
+            twin = next((t for t in there if t["key"] == pl["key"] and (t["wildernessPoints"] or not wild_only and
+                                                                        t["points"])), None)
+            if twin:
+                pl["wildernessPoints"] = list(twin["wildernessPoints"])
+                pl["points"] = [] if wild_only else list(twin["points"])
+
+
+def split_places(task_name, entries, variants):
+    """Makes the SPLIT_PLACES of this task: a copy of the place, right after it, with the named monsters moved to it.
+    Fails on a monster that isn't at the place. Returns the new entries list; changes variants in place."""
+    out = []
+    for pl in entries:
+        out.append(pl)
+        split = SPLIT_PLACES.get((task_name, pl["key"]))
+        if not split:
+            continue
+        new = dict(pl, key=split["key"], label=split["label"], points=list(pl["points"]),
+                   wildernessPoints=list(pl["wildernessPoints"]),
+                   requirements=requirements(pl.get("requirements"), split.get("requirements")))
+        new["note"] = split.get("note") or pl.get("note")
+        new = {k: v for k, v in new.items() if v is not None}
+        for name in split["monsters"]:
+            v = next((x for x in variants if x["name"] == name), None)
+            if not v or pl["key"] not in v["places"]:
+                raise SystemExit(f"SPLIT_PLACES {task_name} / {pl['key']}: {name!r} isn't at the place")
+            v["places"] = sorted((set(v["places"]) - {pl["key"]}) | {split["key"]})
+        out.append(new)
+    return out
+
+
+def apply_place_overrides(task_name, places):
+    """Adds each PLACE_OVERRIDES entry of this task to its places (both lists): requirements merged, the note said
+    after the place's own, the label replaced. Changes places in place."""
+    for pl in places:
+        o = PLACE_OVERRIDES.get((task_name, pl["key"]))
+        if not o:
+            continue
+        req = requirements(pl.get("requirements"), o.get("requirements"))
+        if req:
+            pl["requirements"] = req
+        if o.get("note"):
+            pl["note"] = " ".join(n for n in (pl.get("note"), o["note"]) if n)
+        if o.get("label"):
+            pl["label"] = o["label"]
+
+
+def variant_fixes(task_name, variants):
+    """VARIANT_REQUIREMENTS and SUPERIOR_OF, and a superior's base named as the task names it (the wiki's "Lava
+    strykewyrm" is the task's "Lava Strykewyrm"). Changes variants in place."""
+    names = {v["name"].lower(): v["name"] for v in variants}
+    for v in variants:
+        req = VARIANT_REQUIREMENTS.get((task_name, v["name"]))
+        if req:
+            v["requirements"] = requirements(req)
+        if v.get("superiorOf"):
+            base = SUPERIOR_OF.get(v["name"], v["superiorOf"])
+            v["superiorOf"] = names.get(base.lower(), base)
 
 
 def link_unmatched(task_name, places, variants):
@@ -1703,10 +1990,31 @@ def fill_from_spawns(task_name, places, variants, wiki, wilderness_list, unrouta
     return filled
 
 
-def validate(tasks):
-    """Fail the build on values the plugin can't show, instead of breaking the panel in game."""
+def validate(tasks, wiki=None, all_points=None):
+    """Fail the build on values the plugin can't show, instead of breaking the panel in game, and on override entries
+    that no longer do anything (a task, place or monster they name is gone)."""
     problems = []
     for t in tasks:
+        regular = [v for v in t.get("variants", []) if not v["superior"] and not v["boss"]]
+        if not regular:
+            problems.append(f'{t["name"]}: no regular monster')
+        names = {v["name"] for v in t.get("variants", [])}
+        for v in t.get("variants", []):
+            if v.get("superiorOf") and v["superiorOf"] not in names:
+                problems.append(f'{t["name"]} / {v["name"]}: superiorOf {v["superiorOf"]!r} is not a monster of the '
+                                f'task; add it to SUPERIOR_OF')
+        lists = {"locations": t["locations"], "wildernessLocations": t["wildernessLocations"]}
+        for here, there in (("locations", "wildernessLocations"), ("wildernessLocations", "locations")):
+            for pl in lists[here]:
+                if pl["points"] or pl["wildernessPoints"] or pl.get("source") == BOSS_SOURCE:
+                    continue
+                if any(tw["key"] == pl["key"] and (tw["wildernessPoints"] or here == "locations" and tw["points"])
+                       for tw in lists[there]):
+                    problems.append(f'{t["name"]} / {pl["key"]}: no point, but its twin on the other list has some')
+                # A place with no point shows with the Wilderness setting off; one in the Wilderness mustn't
+                known = (all_points or {}).get(pl["key"], [])
+                if here == "locations" and known and all(in_wilderness(pt) for pt in known) and not pl.get(NO_MONSTER):
+                    problems.append(f'{t["name"]} / {pl["key"]}: no point, though the place is in the Wilderness')
         for v in t.get("variants", []):
             w = v.get("weakness")
             if w and w["element"] not in ELEMENTS:
@@ -1778,8 +2086,72 @@ def validate(tasks):
     for name, lair_id in AT_LAIR.items():
         if lair_id not in BOSS_LAIRS:
             problems.append(f"AT_LAIR / {name}: no lair {lair_id!r}")
+    problems += stale_overrides(tasks, wiki)
     if problems:
         raise SystemExit("Invalid data:\n  " + "\n  ".join(problems))
+
+
+def stale_overrides(tasks, wiki):
+    """Override entries that name a task, place or monster the data doesn't have (so they do nothing)."""
+    problems = []
+    by_task = {t["name"]: t for t in tasks}
+    keys = {t["name"]: {pl["key"] for pl in t["locations"] + t["wildernessLocations"]} for t in tasks}
+    monsters = {t["name"]: {v["name"] for v in t["variants"]} for t in tasks}
+    every_key = set().union(*keys.values())
+    for table, entries in (("PLACE_OVERRIDES", PLACE_OVERRIDES), ("PIN_PLACES", PIN_PLACES),
+                           ("SPAWNS_OVER_ENTRANCE", SPAWNS_OVER_ENTRANCE)):
+        problems += [f"{table} / {task} / {key}: no such place on the task" for task, key in entries
+                     if key not in keys.get(task, ())]
+    problems += [f"NO_MONSTER_PLACES / {task} / {key}: no such place on the task" for task, key in NO_MONSTER_PLACES
+                 if task in keys and key not in keys[task]]
+    for (task, key), split in SPLIT_PLACES.items():
+        if split["key"] not in keys.get(task, ()):
+            problems.append(f"SPLIT_PLACES / {task} / {key}: no such place on the task")
+    for (task, key) in DROP_PLACES:
+        if task not in by_task:
+            problems.append(f"DROP_PLACES / {task}: no such task")
+        elif key in keys[task]:
+            problems.append(f"DROP_PLACES / {task} / {key}: still on the task")
+    for table, entries in (("VARIANT_REQUIREMENTS", VARIANT_REQUIREMENTS),):
+        problems += [f"{table} / {task} / {name}: no such monster on the task" for task, name in entries
+                     if name not in monsters.get(task, ())]
+    for (task, key), (name, *_) in PIN_PLACES.items():
+        if name not in monsters.get(task, ()):
+            problems.append(f"PIN_PLACES / {task} / {key}: no monster {name!r} on the task")
+    for name, base in SUPERIOR_OF.items():
+        if not any(v["name"] == name and v.get("superiorOf") == base for t in tasks for v in t["variants"]):
+            problems.append(f"SUPERIOR_OF / {name}: no such superior with base {base!r}")
+    # A guide place a boss lair replaces is matched (and needs its NOT_AT) before it goes
+    replaced = {lair["replaces"] for lair in BOSS_LAIRS.values() if lair.get("replaces")}
+    for name, key in NOT_AT:
+        if not any(name in monsters[t] and (key in keys[t] or key in replaced) for t in by_task):
+            problems.append(f"NOT_AT / {name} / {key}: no task has both")
+    for table, entries in (("PLACE_ALIASES", PLACE_ALIASES), ("PLACE_NOTES", PLACE_NOTES),
+                           ("NEAR_UNDERGROUND_WIDE", NEAR_UNDERGROUND_WIDE)):
+        problems += [f"{table} / {key}: no such place" for key in entries if key not in every_key]
+    for task, entries in (("CATEGORY_ALIASES", CATEGORY_ALIASES), ("PRAYER_REWRITES", PRAYER_REWRITES),
+                          ("INFO_ALIASES", INFO_ALIASES)):
+        problems += [f"{task} / {name}: no such task" for name in entries
+                     if name not in {n.lower() for n in by_task}]
+    for (task, key), o in PLACE_OVERRIDES.items():
+        req = o.get("requirements") or {}
+        if "SLAYER" in req.get("skills", {}) and "SLAYER" not in req.get("boostable", []):
+            problems.append(f"PLACE_OVERRIDES / {task} / {key}: a monster's Slayer level is boostable")
+        unknown = set(o) - {"requirements", "note", "label"}
+        if unknown:
+            problems.append(f"PLACE_OVERRIDES / {task} / {key}: unknown fields {sorted(unknown)}")
+    if wiki:
+        names = {m["name"] for m in wiki["monsters"]}
+        # (Not GWD_MINIONS: a safety net for bodyguards the wiki may put in a task's category, mostly not there now)
+        for table, entries in (("ONE_TIME_FIGHTS", ONE_TIME_FIGHTS), ("BOSS_FIGHT_MINIONS", BOSS_FIGHT_MINIONS),
+                               ("AT_LAIR", AT_LAIR), ("SUPERIOR_OF", SUPERIOR_OF)):
+            problems += [f"{table} / {name}: no such wiki monster" for name in entries if name not in names]
+        spots = wiki.get("spawn_locations", {})
+        problems += [f"NOT_A_TASK_SPOT / {page} / {spot}: no such wiki spot" for page, spot in NOT_A_TASK_SPOT
+                     if not any(loc == spot for loc, _ in spots.get(page, []))]
+        locs = {name_keys(loc)[0] for groups in spots.values() for loc, _ in groups if loc}
+        problems += [f"WIKI_ACCESS / {key}: no wiki spot is named so" for key in WIKI_ACCESS if key not in locs]
+    return problems
 
 
 def main(src):
@@ -1827,6 +2199,12 @@ def main(src):
                 "note": " ".join(notes) or None,
                 "requirements": requirements(loc.get("access"), per_task.get("access")),
             }, p.get("entranceRoutable", loc.get("entranceRoutable"))))
+        # Guide places that are no place for the task's monsters (DROP_PLACES)
+        for key in [k for task, k in DROP_PLACES if task == t["task"]]:
+            if not any(pl["key"] == key for pl in entries + wild_entries):
+                raise SystemExit(f'DROP_PLACES {t["task"]} / {key}: no such place on the task')
+            entries = [pl for pl in entries if pl["key"] != key]
+            wild_entries = [pl for pl in wild_entries if pl["key"] != key]
         # Monsters that live away from every listed place get places of their own, from their wiki spawns. Spawns in
         # the Wilderness stay in wildernessPoints (shown with the Wilderness setting), and go on Krystilia's list
         # too when she gives the task; a task only she gives gets only those.
@@ -1864,9 +2242,15 @@ def main(src):
                 wild_entries = [pl for pl in wild_entries if pl["key"] != gone]
         unroutable = {key for key, loc in locations.items() if loc.get("entranceRoutable") is False}
         link_spot_places(t["task"], entries + wild_entries, variants, wiki, unroutable)
+        link_pin_places(t["task"], entries + wild_entries, variants)
         link_unmatched(t["task"], entries + wild_entries, variants)
         fill_from_spawns(t["task"], entries, variants, wiki, krystilia_only, unroutable)
         fill_from_spawns(t["task"], wild_entries, variants, wiki, True, unroutable)
+        copy_twin_points(entries, wild_entries, unroutable)
+        entries = split_places(t["task"], entries, variants)
+        wild_entries = split_places(t["task"], wild_entries, variants)
+        apply_place_overrides(t["task"], entries + wild_entries)
+        variant_fixes(t["task"], variants)
         tasks.append({
             "taskId": tid,
             "name": t["task"],
@@ -1884,7 +2268,7 @@ def main(src):
                  "(CC BY-NC-SA 3.0). Points are [x, y, plane].",
         "tasks": tasks,
     }
-    validate(tasks)
+    validate(tasks, wiki, all_points)
     OUT.write_text(json.dumps(out, separators=(",", ":")))
     every = [l for t in tasks for l in t["locations"] + t["wildernessLocations"]]
     routable = sum(1 for l in every if l["points"] or l["wildernessPoints"])
