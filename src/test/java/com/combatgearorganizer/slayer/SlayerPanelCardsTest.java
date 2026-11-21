@@ -430,7 +430,7 @@ public class SlayerPanelCardsTest
 	@Test
 	public void aSpotIsNotLinkedToAPlaceOnlyNamedBesideIt()
 	{
-		assertNotAt("Trolls", "Dad", "tunnel_between_troll_arena_and_trollheim");
+		// (Dad is no longer a task monster at all: a quest fight, ONE_TIME_FIGHTS)
 		assertNotAt("Trolls", "Troll spectator", "tunnel_between_troll_arena_and_trollheim");
 		assertLivesAt("Trolls", "Mountain troll", "tunnel_between_troll_arena_and_trollheim");
 		// A place named beside a spot still matches when another monster's spot of that name is right there (the
@@ -500,8 +500,11 @@ public class SlayerPanelCardsTest
 		assertLivesAt("Blue dragons", "Baby blue dragon", "dragon_nest");
 		TaskEntry blue = data.findTask(-1, "Blue dragons");
 		assertFalse(entry(blue, "dragon_nest").isNoMonster());
-		// Still unknown: no elf page's spawn spot is at or named like Prifddinas' gates
-		assertTrue(entry(data.findTask(-1, "Elves"), "prifddinas_north_gate").isNoMonster());
+		// The Guard page's "Prifddinas" spot has a pair of guards at each gate (generator SPOT_PLACES)
+		assertLivesAt("Elves", "Guard", "prifddinas_north_gate");
+		assertFalse(entry(data.findTask(-1, "Elves"), "prifddinas_north_gate").isNoMonster());
+		// Still unknown: no elf page's spawn spot is named like the market
+		assertTrue(entry(data.findTask(-1, "Elves"), "prifddinas_market_place").isNoMonster());
 	}
 
 	private static LocationEntry entry(TaskEntry t, String key)
@@ -529,8 +532,10 @@ public class SlayerPanelCardsTest
 		assertTrue(entry(data.findTask(-1, "Monkeys"), "north_east_karamja_instanced").getPoints().isEmpty());
 		// Nor where the guide says the entrance can't be pathed to (Waterfall Dungeon)
 		assertTrue(entry(data.findTask(-1, "Fire giants"), "waterfall_dungeon").getPoints().isEmpty());
-		// Only a word match ("Kingstown - Councillor Hughes' house"): linked, but no points borrowed
-		assertTrue(entry(data.findTask(-1, "Lesser demons"), "councillor_hughes_house_in_kingstown").getPoints().isEmpty());
+		// Only a word match ("Kingstown - Councillor Hughes' house") borrows no points by itself; this one takes the
+		// spot's by hand (the generator's SPOT_PLACES)
+		assertPointsFrom("Lesser demons", "councillor_hughes_house_in_kingstown", 1680, 3678);
+		assertTrue(entry(data.findTask(-1, "Bats"), "mount_karuulm_north_side").getPoints().isEmpty());
 	}
 
 	private static void assertPointsFrom(String task, String key, int x, int y)

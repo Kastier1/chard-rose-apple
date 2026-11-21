@@ -68,6 +68,11 @@ public class SlayerLocationData
 		private List<String> masters = Collections.emptyList();
 		/** For a boss: masters (SlayerMasters names) whose task it doesn't count for. */
 		private List<String> notMasters = Collections.emptyList();
+		/**
+		 * What this monster needs beyond its places' requirements (a higher Slayer level than the task's, or a quest
+		 * finished where the others only need it started). Null when nothing more. Its places' notes say it too.
+		 */
+		private Requirements requirements;
 
 		public boolean isRegular()
 		{
