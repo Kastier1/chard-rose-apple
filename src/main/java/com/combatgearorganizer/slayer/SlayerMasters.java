@@ -12,6 +12,20 @@ public final class SlayerMasters
 	{
 	}
 
+	/** The master's id for a name such as "konar" (any case); 0 if it isn't a master. */
+	public static int idForName(String name)
+	{
+		for (int id = 1; id <= 10; id++)
+		{
+			String n = name(id);
+			if (n != null && n.equalsIgnoreCase(name.trim()))
+			{
+				return id;
+			}
+		}
+		return 0;
+	}
+
 	public static String name(int id)
 	{
 		switch (id)

@@ -120,5 +120,8 @@ public class TaskTagsTest
 	{
 		assertEquals("Short note", SlayerPanel.preview("Short note"));
 		assertEquals("Food or stat restore...", SlayerPanel.preview("Food or stat restore if the gaze lowers Strength."));
+		// A long drawer title leaves less room for the preview
+		assertEquals("Food or stat...", SlayerPanel.preview("Food or stat restore if the gaze lowers Strength.", 15));
+		assertEquals("Food or stat restore...", SlayerPanel.preview("Food or stat restore if the gaze lowers Strength.", 40));
 	}
 }

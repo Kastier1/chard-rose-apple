@@ -1,6 +1,13 @@
 package com.combatgearorganizer.slayer;
 
 import com.combatgearorganizer.CombatGearOrganizerConfig;
+import com.combatgearorganizer.EquipmentBonuses;
+import com.combatgearorganizer.GearSlot;
+import com.combatgearorganizer.ItemValueMode;
+import com.combatgearorganizer.ItemValues;
+import com.combatgearorganizer.dps.GearPiece;
+import com.combatgearorganizer.dps.Levels;
+import com.combatgearorganizer.dps.OwnedGear;
 import com.google.gson.Gson;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -10,27 +17,51 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import javax.swing.SwingUtilities;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
-import net.runelite.api.events.ChatMessage;
-import net.runelite.api.events.ScriptPreFired;
+import net.runelite.api.Item;
+import net.runelite.api.ItemComposition;
+import net.runelite.api.ItemContainer;
+import net.runelite.api.NPC;
+import net.runelite.api.Player;
 import net.runelite.api.Quest;
 import net.runelite.api.QuestState;
 import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.ScriptPreFired;
+import net.runelite.api.events.StatChanged;
+import net.runelite.api.events.WidgetLoaded;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.chat.ChatColorType;
+import net.runelite.client.chat.ChatMessageBuilder;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
+import net.runelite.client.config.ConfigManager;
+import net.runelite.client.events.NpcLootReceived;
+import net.runelite.client.events.PluginMessage;
+import net.runelite.client.game.ItemEquipmentStats;
+import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.ItemStats;
+import net.runelite.client.game.ItemStack;
 import net.runelite.client.plugins.slayer.SlayerPluginService;
-import net.runelite.client.ui.ClientToolbar;
-import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPoint;
 import net.runelite.client.ui.overlay.worldmap.WorldMapPointManager;
 import net.runelite.client.util.ImageUtil;
@@ -47,15 +78,24 @@ public class SlayerHelper
 	private static final String MAP_MARKER_NAME = "Slayer location";
 	/** SLAYER_TARGET value for a boss task; the boss itself is in another varbit. */
 	private static final int BOSS_TASK_ID = 98;
+	/** Item definitions to read per tick while matching drop names to items. The game has about 30,000. */
+	private static final int ITEM_SCAN_BATCH = 2500;
+	/**
+	 * Task progress is saved per account in its own config group, so saving after every kill doesn't reach the
+	 * plugin's settings-changed handling.
+	 */
+	static final String PROGRESS_GROUP = "combatgearorganizerprogress";
+	static final String PROGRESS_KEY = "task";
+	/** What the panel remembers (open drawers, picked monsters, last places), in the same group. */
+	static final String PANEL_KEY = "panel";
+	/** The game message for a superior spawning, as in the core Slayer plugin. */
+	static final String SUPERIOR_MESSAGE = "A superior foe has appeared...";
 
 	@Inject
 	private Client client;
 
 	@Inject
 	private ClientThread clientThread;
-
-	@Inject
-	private ClientToolbar clientToolbar;
 
 	@Inject
 	private WorldMapPointManager worldMapPointManager;
@@ -78,55 +118,199 @@ public class SlayerHelper
 	@Inject
 	private CollectionLog collectionLog;
 
+	@Inject
+	private ChatMessageManager chatMessageManager;
+
+	@Inject
+	private ItemManager itemManager;
+
+	@Inject
+	private ItemValues itemValues;
+
+	@Inject
+	private ConfigManager configManager;
+
+	@Inject
+	private BankGear bankGear;
+
 	private SlayerLocationData data;
 	private volatile SlayerPanel panel;
-	private NavigationButton navButton;
 	private BufferedImage markerImage;
 	private SlayerTaskState lastState = SlayerTaskState.NONE;
+	/** Which task the route is for, so starting or stopping a preview leaves the real task's route alone. */
+	private final RouteOwner routeOwner = new RouteOwner();
+	/** A task the player asked to look at instead of their real one; null normally. */
+	private volatile SlayerTaskState preview;
+	/** The kill count a preview shows. */
+	private static final int PREVIEW_AMOUNT = 100;
+	/** Carry items last sent to the panel; null to send the next ones whatever they are. */
+	private Set<CarryItem> lastCarried;
 	private SlayerLocationData.TaskEntry lastTask;
+	/** The places last drawn for {@link #lastTask}, so a kill only updates the count while they stay the same. */
+	private List<LocationOption> lastLocations = Collections.emptyList();
+	/** Boosted levels of the skills some place can be boosted for: a boost opens or closes a place. */
+	private BoostWatch boostWatch = new BoostWatch(Collections.<String>emptySet());
+	/** When the places' "Needs ..." lines are checked again (after a login, before the server sent the quests). */
+	private final RequirementRecheck requirementRecheck = new RequirementRecheck();
 	private boolean lastShortestPathAvailable;
 	private int lastClogVersion = -1;
+	private ItemNameResolver itemNames;
+	private boolean lastItemNamesDone;
+	private final TaskProgressTracker progress = new TaskProgressTracker();
+	/** The account (RS profile key) the progress in memory belongs to; null until loaded. */
+	private String progressProfile;
+	private boolean progressDirty;
+	private int progressVersion;
+	private int lastProgressVersion = -1;
+	private ItemValueMode lastValueMode;
+	/** Slayer XP at the last StatChanged; -1 until the first one after login, which only sets the starting point. */
+	private int lastSlayerXp = -1;
+	/** The route the panel's route line shows. Client thread. */
+	private Route route = Route.NONE;
+	/** The places marked on the world map, while {@link #route} is a world map route. */
+	private List<WorldPoint> mapTargets = Collections.emptyList();
+	/** Redraw the whole panel on the next refresh, e.g. after it showed the logged-out text. */
+	private boolean needsRedraw;
+	/** The gear and levels the panel's "Best with what you have" rows were last worked out from. Client thread. */
+	private OwnedGear ownedGear = OwnedGear.NONE;
+	private int lastGearVersion = -1;
+	private Levels lastLevels;
+	/** Item id to what the DPS maths needs about it; empty optional for items that can't be worn. Client thread. */
+	private final Map<Integer, Optional<GearPiece>> pieces = new HashMap<>();
 
 	public void start()
 	{
 		data = loadData();
+		boostWatch = new BoostWatch(BoostWatch.boostableSkills(data));
 		List<String> dropNames = new ArrayList<>();
+		List<String> itemNamesWanted = new ArrayList<>();
 		for (SlayerLocationData.TaskEntry t : data.getTasks())
 		{
 			for (SlayerLocationData.Variant v : t.getVariants())
 			{
 				v.getDrops().forEach(d -> dropNames.add(d.getItem()));
+				itemNamesWanted.addAll(v.getAlwaysDrops());
 			}
 		}
+		itemNamesWanted.addAll(dropNames);
 		collectionLog.watch(dropNames);
 		lastClogVersion = -1;
+		itemNames = new ItemNameResolver(itemNamesWanted);
+		lastItemNamesDone = false;
 		BufferedImage icon = ImageUtil.loadImageResource(SlayerHelper.class, "slayer_icon.png");
 		markerImage = ImageUtil.resizeImage(icon, 24, 21);
-		panel = new SlayerPanel(icons, this::go, this::goNearest, this::clearPath);
-		navButton = NavigationButton.builder()
-			.tooltip("Slayer task")
-			.icon(ImageUtil.resizeImage(icon, 18, 16))
-			.priority(7)
-			.panel(panel)
-			.build();
-		clientToolbar.addNavigation(navButton);
+		panel = new SlayerPanel(icons, this::go, this::goNearest, this::cancelRoute, this::saveMemory);
 		lastState = SlayerTaskState.NONE;
-		clientThread.invokeLater(() -> refresh(true));
+		routeOwner.reset();
+		clientThread.invokeLater(() ->
+		{
+			// On the client thread, so a save queued by stop() just before still goes to the right account
+			progressProfile = null;
+			route = Route.NONE;
+			// Started while logged in: no StatChanged comes until the next XP drop, so take the XP now or that
+			// drop would only set the starting point
+			lastSlayerXp = client.getGameState() == GameState.LOGGED_IN ? client.getSkillExperience(Skill.SLAYER) : -1;
+			lastCarried = null;
+			updateCarried();
+			lastGearVersion = -1;
+			ownedGear = OwnedGear.NONE;
+			refresh(true);
+		});
+	}
+
+	/** Call when the bank, inventory or worn equipment changes, on the client thread. */
+	public void onItemContainerChanged(ItemContainerChanged event)
+	{
+		if (event.getContainerId() == InventoryID.BANK && event.getItemContainer() != null)
+		{
+			bankGear.onBank(event.getItemContainer().getItems());
+		}
+		if (event.getContainerId() == InventoryID.INV || event.getContainerId() == InventoryID.WORN)
+		{
+			updateCarried();
+		}
+	}
+
+	/** Tells the panel which carry items (bonecrusher, herb sack...) the player has, when that changes. */
+	private void updateCarried()
+	{
+		final SlayerPanel p = panel;
+		if (p == null)
+		{
+			return;
+		}
+		List<Integer> ids = new ArrayList<>();
+		List<Item[]> containers = new ArrayList<>();
+		for (int container : new int[]{InventoryID.INV, InventoryID.WORN})
+		{
+			ItemContainer items = client.getItemContainer(container);
+			if (items != null)
+			{
+				containers.add(items.getItems());
+				for (Item item : items.getItems())
+				{
+					ids.add(item.getId());
+				}
+			}
+		}
+		bankGear.onCarried(containers);
+		Set<CarryItem> now = CarryItem.carried(ids);
+		if (!now.equals(lastCarried))
+		{
+			lastCarried = now;
+			SwingUtilities.invokeLater(() -> p.updateCarried(now));
+		}
 	}
 
 	public void stop()
 	{
-		clientToolbar.removeNavigation(navButton);
-		clearPath();
+		clientThread.invokeLater(() ->
+		{
+			// No time to ask Shortest Path whose path it is, so leave the path but never our Wilderness override
+			shortestPath.release();
+			removeMapMarkers();
+			collectionLog.flush();
+			bankGear.flush();
+			saveProgress();
+		});
 		panel = null;
-		navButton = null;
+		preview = null;
+	}
+
+	/** The Slayer section for the side panel; null while stopped. The plugin puts it in its one panel. */
+	public SlayerPanel getPanel()
+	{
+		return panel;
 	}
 
 	/** Call every game tick on the client thread. Cheap when nothing changed. */
 	public void onGameTick()
 	{
-		collectionLog.flush();
+		collectionLog.onGameTick();
+		bankGear.onGameTick();
+		scanItemNames();
+		Player player = client.getLocalPlayer();
+		WorldPoint at = player != null ? player.getWorldLocation() : null;
+		shortestPath.onGameTick(at);
+		updateRoute(at);
 		refresh(false);
+		if (progress.onTick() && config.taskSummaryChat() && progress.getProgress() != null)
+		{
+			chatMessageManager.queue(QueuedMessage.builder()
+				.type(ChatMessageType.GAMEMESSAGE)
+				.runeLiteFormattedMessage(new ChatMessageBuilder()
+					.append(ChatColorType.HIGHLIGHT)
+					.append("[Slayer] " + progress.getProgress().summary(itemValues.mode()) + ".")
+					.build())
+				.build());
+		}
+		saveProgress();
+	}
+
+	/** Call for every PluginMessage, on the thread it was posted on. */
+	public void onPluginMessage(PluginMessage event)
+	{
+		shortestPath.onPluginMessage(event);
 	}
 
 	public void onScriptPreFired(ScriptPreFired event)
@@ -137,6 +321,121 @@ public class SlayerHelper
 	public void onChatMessage(ChatMessage event)
 	{
 		collectionLog.onChatMessage(event);
+		if ((event.getType() == ChatMessageType.GAMEMESSAGE || event.getType() == ChatMessageType.SPAM)
+			&& event.getMessage().contains(SUPERIOR_MESSAGE) && progress.addSuperior())
+		{
+			progressChanged();
+		}
+	}
+
+	/** Slayer XP gained counts towards the task. */
+	public void onStatChanged(StatChanged event)
+	{
+		if (event.getSkill() != Skill.SLAYER)
+		{
+			return;
+		}
+		int xp = event.getXp();
+		if (lastSlayerXp >= 0 && xp > lastSlayerXp && progress.addXp(xp - lastSlayerXp))
+		{
+			progressChanged();
+		}
+		lastSlayerXp = xp;
+	}
+
+	/** Loot from a task monster adds to the task's loot value. Client thread. */
+	public void onNpcLootReceived(NpcLootReceived event)
+	{
+		TaskProgress p = progress.getProgress();
+		NPC npc = event.getNpc();
+		if (!progress.isCounting() || p == null || npc == null || !isTaskMonster(npc, p))
+		{
+			return;
+		}
+		long ge = 0;
+		long ha = 0;
+		for (ItemStack item : event.getItems())
+		{
+			ge += itemValues.value(ItemValueMode.GRAND_EXCHANGE, item.getId()) * item.getQuantity();
+			ha += itemValues.value(ItemValueMode.HIGH_ALCHEMY, item.getId()) * item.getQuantity();
+		}
+		if (progress.addLoot(ge, ha))
+		{
+			progressChanged();
+		}
+	}
+
+	private boolean isTaskMonster(NPC npc, TaskProgress p)
+	{
+		SlayerLocationData.TaskEntry task = data.findTask(p.getTaskId(), p.getTaskName());
+		List<String> names = new ArrayList<>();
+		List<String> notCounting = Collections.emptyList();
+		if (task != null)
+		{
+			// Only the bosses that count for this master: a King Black Dragon kill on Krystilia's task isn't task loot,
+			// though the Slayer plugin's targets and the task name both match him
+			SlayerTaskState real = readTask();
+			Variants.counting(task, real.getMasterId(), real.getKonarAreaId()).forEach(v -> names.add(v.getName()));
+			notCounting = Variants.notCounting(task, real.getMasterId(), real.getKonarAreaId());
+		}
+		if (TaskMonsters.isAny(npc.getName(), notCounting))
+		{
+			return false;
+		}
+		List<NPC> targets = slayerPluginService.getTargets();
+		if (targets != null && targets.contains(npc))
+		{
+			return true;
+		}
+		// The Slayer plugin drops an NPC from its targets when it despawns, which can be before its loot shows
+		String taskName = p.getTaskName() != null ? p.getTaskName() : task != null ? task.getName() : null;
+		return TaskMonsters.matches(npc.getName(), taskName, names, notCounting);
+	}
+
+	public void onWidgetLoaded(WidgetLoaded event)
+	{
+		if (event.getGroupId() == InterfaceID.MENU || event.getGroupId() == InterfaceID.MENU_NEW)
+		{
+			// The Adventure Log, possibly someone else's in their house
+			collectionLog.onAdventureLogOpened();
+		}
+	}
+
+	public void onGameStateChanged(GameStateChanged event)
+	{
+		collectionLog.onGameStateChanged(event.getGameState());
+		switch (event.getGameState())
+		{
+			case LOGGED_IN:
+				// Also fires after every loading screen; the clock only restarts if it was stopped
+				progress.onLogin(System.currentTimeMillis());
+				requirementRecheck.onLogin();
+				break;
+			case LOGIN_SCREEN:
+			case HOPPING:
+			case CONNECTION_LOST:
+				saveProgress();
+				progress.onLogout();
+				if (event.getGameState() == GameState.LOGIN_SCREEN)
+				{
+					bankGear.onLogout();
+				}
+				lastSlayerXp = -1;
+				if (event.getGameState() == GameState.LOGIN_SCREEN)
+				{
+					// The next login may be another account; load its own progress then
+					progressProfile = null;
+					needsRedraw = true;
+					final SlayerPanel p = panel;
+					if (p != null)
+					{
+						SwingUtilities.invokeLater(p::showLoggedOut);
+					}
+				}
+				break;
+			default:
+				break;
+		}
 	}
 
 	/** Call when the plugin's config changes, or when a plugin (such as Shortest Path) is turned on or off. */
@@ -154,42 +453,488 @@ public class SlayerHelper
 			return;
 		}
 
-		SlayerTaskState state = readTask();
+		SlayerTaskState real = readTask();
+		// Progress always follows the real task, even while the panel shows a preview
+		updateProgress(real);
+		if (routeOwner.realTask(real))
+		{
+			endTaskRoute();
+		}
+		final SlayerTaskState shownPreview = preview;
+		SlayerTaskState state = shownPreview != null ? shownPreview : real;
+		ItemValueMode valueMode = itemValues.mode();
 		boolean spAvailable = shortestPath.isAvailable();
+		if (!spAvailable && route.getKind() == Route.Kind.SHORTEST_PATH)
+		{
+			// Shortest Path was turned off mid-route
+			setRoute(Route.NONE);
+		}
 		collectionLog.ensureLoaded();
 		int clogVersion = collectionLog.getVersion();
-		if (!force && state.equals(lastState) && spAvailable == lastShortestPathAvailable && clogVersion == lastClogVersion)
+		boolean namesDone = itemNames.isDone();
+		// A new bank list, gear put on or taken off, or a level gained changes the "Best with what you have" rows
+		boolean gearChanged = updateGear();
+		force |= needsRedraw || gearChanged;
+		needsRedraw = false;
+		// Drinking a boost (or it wearing off) changes nothing else watched here, but can open or close a place
+		if (boostWatch.changed(boostedLevels()) && !force && lastTask != null && state.sameTaskAs(lastState)
+			&& BoostWatch.placesChanged(pickLocations(lastTask, state), lastLocations))
 		{
+			force = true;
+		}
+		final SlayerLocationData.TaskEntry shownTask = lastTask;
+		if (requirementRecheck.needsRedraw(force, shownTask != null && state.sameTaskAs(lastState),
+			() -> pickLocations(shownTask, state), lastLocations))
+		{
+			force = true;
+		}
+		if (!force && state.equals(lastState) && spAvailable == lastShortestPathAvailable && clogVersion == lastClogVersion
+			&& namesDone == lastItemNamesDone && progressVersion == lastProgressVersion && valueMode == lastValueMode)
+		{
+			return;
+		}
+		// A kill (or new XP, a superior, loot) on the task already shown only changes the count and progress lines
+		boolean countOnly = !force && state.hasTask() && state.sameTaskAs(lastState) && lastTask != null
+			&& spAvailable == lastShortestPathAvailable && clogVersion == lastClogVersion && namesDone == lastItemNamesDone
+			&& valueMode == lastValueMode;
+		if (countOnly)
+		{
+			// A level gained or a quest finished since the last draw changes what the place cards say
+			countOnly = sameRequirements(pickLocations(lastTask, state), lastLocations);
+		}
+		lastProgressVersion = progressVersion;
+		lastValueMode = valueMode;
+		TaskProgress tp = shownPreview == null ? progress.getProgress() : null;
+		if (countOnly)
+		{
+			lastState = state;
+			TaskProgress.View view = tp != null && !tp.isDone() ? tp.view(state.getRemaining(), valueMode) : null;
+			SwingUtilities.invokeLater(() -> p.updateCount(state, view));
 			return;
 		}
 		lastShortestPathAvailable = spAvailable;
 		lastClogVersion = clogVersion;
+		lastItemNamesDone = namesDone;
 		CollectionLog.Snapshot clog = collectionLog.snapshot();
 
 		boolean taskEnded = lastState.hasTask() && !state.hasTask();
-		boolean taskChanged = state.getTaskId() != lastState.getTaskId() || !Objects.equals(state.getName(), lastState.getName());
+		boolean taskChanged = RouteOwner.isOtherTask(state, lastState);
 		lastState = state;
-		if (taskEnded || (taskChanged && lastTask != null))
+		if ((taskEnded || (taskChanged && lastTask != null)) && routeOwner.shownTaskChanged())
 		{
-			clearPath();
+			// The preview the route was for changed or stopped. A route for the real task ends above, with that task.
+			endTaskRoute();
 		}
 
 		if (!state.hasTask())
 		{
 			lastTask = null;
-			SwingUtilities.invokeLater(p::showNoTask);
+			String summary = tp != null && tp.isDone() ? tp.summary(valueMode) : null;
+			SwingUtilities.invokeLater(() -> p.showNoTask(summary));
 			return;
 		}
 
 		SlayerLocationData.TaskEntry task = data.findTask(state.getTaskId(), state.getName());
 		lastTask = task;
-		List<LocationOption> locations = task == null
-			? Collections.emptyList()
-			: LocationPicker.pick(task, state.getMasterId(), state.getKonarAreaId(), config.showWildernessLocations(),
-				this::missingRequirements);
+		List<LocationOption> locations = task == null ? Collections.<LocationOption>emptyList() : pickLocations(task, state);
+		lastLocations = locations;
 		SlayerLocationData.TaskInfo info = task != null ? task.getInfo() : null;
-		List<SlayerLocationData.Variant> variants = task != null ? task.getVariants() : Collections.emptyList();
-		SwingUtilities.invokeLater(() -> p.showTask(state, info, variants, locations, task != null, spAvailable, clog));
+		// The bosses that don't count for this master (or outside Konar's area) aren't listed
+		List<SlayerLocationData.Variant> variants = task != null
+			? Variants.counting(task, state.getMasterId(), state.getKonarAreaId()) : Collections.emptyList();
+		DropItems items = dropItems(variants);
+		TaskProgress.View view = tp != null && !tp.isDone() ? tp.view(state.getRemaining(), valueMode) : null;
+		boolean compact = config.compactPanel();
+		final OwnedGear gear = ownedGear;
+		SwingUtilities.invokeLater(() ->
+		{
+			p.setCompact(compact);
+			p.setGear(gear);
+			p.setPreview(shownPreview != null, this::stopPreview);
+			p.showTask(state, info, variants, locations, task != null, spAvailable, clog, items, view);
+		});
+	}
+
+	/**
+	 * Shows a task in the panel as if the player had it, to look it up or try the panel out. Changes nothing in the
+	 * game: the real task, its progress and the route memory are left alone. Client thread.
+	 *
+	 * @param query  the task's name, or the start of it ("abyssal" finds Abyssal demons)
+	 * @param master a slayer master's name, or null for Duradel
+	 * @return what to tell the player
+	 */
+	public String previewTask(String query, String master)
+	{
+		if (data == null)
+		{
+			return "The slayer panel isn't running.";
+		}
+		SlayerLocationData.TaskEntry task = findByName(data, query);
+		if (task == null)
+		{
+			return "No slayer task or monster called \"" + query + "\". Try the task's name as a master gives it, e.g. \"abyssal demons\".";
+		}
+		int masterId = master != null ? SlayerMasters.idForName(master) : 0;
+		if (master != null && masterId == 0)
+		{
+			return "\"" + master + "\" isn't a slayer master.";
+		}
+		if (masterId == 0)
+		{
+			// Krystilia-only tasks only make sense from her
+			masterId = task.getLocations().isEmpty() && !task.getWildernessLocations().isEmpty()
+				? SlayerMasters.KRYSTILIA : 5;
+		}
+		preview = new SlayerTaskState(task.getTaskId(), task.getName(), PREVIEW_AMOUNT, PREVIEW_AMOUNT, masterId, 0, null);
+		needsRedraw = true;
+		refresh(true);
+		return "Previewing " + task.getName() + " from " + SlayerMasters.name(masterId)
+			+ " in the slayer panel. Type ::slayertask off, or click Stop, to go back to your task.";
+	}
+
+	/** Back to the real task. Safe from any thread. */
+	public void stopPreview()
+	{
+		clientThread.invokeLater(() ->
+		{
+			if (preview != null)
+			{
+				preview = null;
+				needsRedraw = true;
+				refresh(true);
+			}
+		});
+	}
+
+	public boolean isPreviewing()
+	{
+		return preview != null;
+	}
+
+	/**
+	 * Exact task name first, then a task name starting with the query, then one containing it, then a task with a
+	 * monster of that name. Case doesn't matter.
+	 */
+	static SlayerLocationData.TaskEntry findByName(SlayerLocationData data, String query)
+	{
+		String q = query.trim().toLowerCase(java.util.Locale.ROOT);
+		if (q.isEmpty())
+		{
+			return null;
+		}
+		SlayerLocationData.TaskEntry starts = null;
+		SlayerLocationData.TaskEntry contains = null;
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			String n = t.getName().toLowerCase(java.util.Locale.ROOT);
+			if (n.equals(q))
+			{
+				return t;
+			}
+			if (starts == null && n.startsWith(q))
+			{
+				starts = t;
+			}
+			if (contains == null && n.contains(q))
+			{
+				contains = t;
+			}
+		}
+		if (starts != null || contains != null)
+		{
+			return starts != null ? starts : contains;
+		}
+		// A monster's name finds its task ("sulphur nagua" finds Lesser Nagua)
+		for (SlayerLocationData.TaskEntry t : data.getTasks())
+		{
+			for (SlayerLocationData.Variant v : t.getVariants())
+			{
+				if (v.getName().toLowerCase(java.util.Locale.ROOT).contains(q))
+				{
+					return t;
+				}
+			}
+		}
+		return null;
+	}
+
+	/** The task's places for this master, with what the player still needs for each. Client thread. */
+	private List<LocationOption> pickLocations(SlayerLocationData.TaskEntry task, SlayerTaskState state)
+	{
+		return LocationPicker.pick(task, state.getMasterId(), state.getKonarAreaId(), config.showWildernessLocations(),
+			this::missingRequirements);
+	}
+
+	/** Whether the places are the same and each still needs the same things. */
+	static boolean sameRequirements(List<LocationOption> a, List<LocationOption> b)
+	{
+		if (a.size() != b.size())
+		{
+			return false;
+		}
+		for (int i = 0; i < a.size(); i++)
+		{
+			if (!Objects.equals(a.get(i).getKey(), b.get(i).getKey())
+				|| !a.get(i).getMissingRequirements().equals(b.get(i).getMissingRequirements()))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Feeds this tick's count to the progress tracker, loading the account's saved progress first. Client thread. */
+	private void updateProgress(SlayerTaskState state)
+	{
+		if (!loadProgress())
+		{
+			return;
+		}
+		String name = state.hasTask() && !isPlaceholderName(state) ? state.getName() : null;
+		TaskProgressTracker.Change change = progress.onCount(state.getTaskId(), name, state.hasTask() ? state.getRemaining() : 0,
+			state.getInitial(), System.currentTimeMillis());
+		if (change != TaskProgressTracker.Change.NONE)
+		{
+			progressChanged();
+		}
+	}
+
+	private static boolean isPlaceholderName(SlayerTaskState state)
+	{
+		return "Boss task".equals(state.getName()) || ("Task #" + state.getTaskId()).equals(state.getName());
+	}
+
+	/** Loads the saved progress when the account changes. False while no account is known. Client thread. */
+	private boolean loadProgress()
+	{
+		String profile = configManager.getRSProfileKey();
+		if (profile == null)
+		{
+			return false;
+		}
+		if (profile.equals(progressProfile))
+		{
+			return true;
+		}
+		TaskProgress saved = null;
+		String json = configManager.getRSProfileConfiguration(PROGRESS_GROUP, PROGRESS_KEY);
+		if (json != null && !json.isEmpty())
+		{
+			try
+			{
+				saved = gson.fromJson(json, TaskProgress.class);
+			}
+			catch (RuntimeException e)
+			{
+				log.debug("Couldn't read saved task progress", e);
+			}
+		}
+		progressProfile = profile;
+		progressDirty = false;
+		progress.load(saved, client.getGameState() == GameState.LOGGED_IN, System.currentTimeMillis());
+		progressVersion++;
+		loadMemory(profile);
+		return true;
+	}
+
+	/** Hands the panel this account's open drawers, picked monsters and last places. Client thread. */
+	private void loadMemory(String profile)
+	{
+		PanelMemory memory = PanelMemory.fromJson(gson, configManager.getRSProfileConfiguration(PROGRESS_GROUP, PANEL_KEY));
+		memory.setProfile(profile);
+		final SlayerPanel p = panel;
+		if (p != null)
+		{
+			SwingUtilities.invokeLater(() -> p.setMemory(memory));
+		}
+	}
+
+	/** The panel's memory changed: save it to the account it belongs to. Called on the Swing thread. */
+	private void saveMemory(PanelMemory memory)
+	{
+		String profile = memory.getProfile();
+		if (profile == null)
+		{
+			// Not loaded for an account yet; the account's own memory replaces it on login
+			return;
+		}
+		String json = memory.toJson(gson);
+		clientThread.invokeLater(() ->
+		{
+			if (profile.equals(configManager.getRSProfileKey()))
+			{
+				configManager.setRSProfileConfiguration(PROGRESS_GROUP, PANEL_KEY, json);
+			}
+		});
+	}
+
+	/** Ends the route line when the player arrives or our path is gone. Client thread. */
+	private void updateRoute(WorldPoint player)
+	{
+		if (route.getKind() == Route.Kind.SHORTEST_PATH && !shortestPath.isRouteActive())
+		{
+			// Arrived, or another path replaced ours
+			setRoute(Route.NONE);
+		}
+		else if (route.getKind() == Route.Kind.WORLD_MAP && ShortestPathBridge.near(mapTargets, player))
+		{
+			removeMapMarkers();
+			setRoute(Route.NONE);
+		}
+	}
+
+	/** The task the route is for changed or ended. Client thread. */
+	private void endTaskRoute()
+	{
+		// Only clears the path if it is still the one we set; either way it no longer belongs to a task
+		shortestPath.clearIfOurs();
+		routeOwner.ended();
+		removeMapMarkers();
+		setRoute(Route.NONE);
+	}
+
+	/** Client thread. */
+	private void setRoute(Route r)
+	{
+		if (r.getKind() == Route.Kind.NONE && !shortestPath.isPathShown())
+		{
+			// Our path is gone. On arrival it stays shown, and still belongs to the task (or preview) it was for, so
+			// that one changing still clears it.
+			routeOwner.ended();
+		}
+		if (r.equals(route))
+		{
+			return;
+		}
+		route = r;
+		if (r.getKind() != Route.Kind.WORLD_MAP)
+		{
+			mapTargets = Collections.emptyList();
+		}
+		final SlayerPanel p = panel;
+		if (p != null)
+		{
+			SwingUtilities.invokeLater(() -> p.showRoute(r));
+		}
+	}
+
+	private void progressChanged()
+	{
+		progressDirty = true;
+		progressVersion++;
+	}
+
+	/** Saves the progress to the account it belongs to, if it changed. Client thread. */
+	private void saveProgress()
+	{
+		if (!progressDirty || progressProfile == null || !progressProfile.equals(configManager.getRSProfileKey()))
+		{
+			return;
+		}
+		progressDirty = false;
+		TaskProgress p = progress.getProgress();
+		if (p == null)
+		{
+			configManager.unsetRSProfileConfiguration(PROGRESS_GROUP, PROGRESS_KEY);
+		}
+		else
+		{
+			configManager.setRSProfileConfiguration(PROGRESS_GROUP, PROGRESS_KEY, gson.toJson(p));
+		}
+	}
+
+	/**
+	 * Works out the player's wearable items and real levels again when either changed since the last time. Client
+	 * thread. Returns whether they changed.
+	 */
+	private boolean updateGear()
+	{
+		bankGear.ensureLoaded();
+		Levels levels = Levels.of(client.getRealSkillLevel(Skill.ATTACK), client.getRealSkillLevel(Skill.STRENGTH),
+			client.getRealSkillLevel(Skill.RANGED), client.getRealSkillLevel(Skill.MAGIC));
+		int version = bankGear.getVersion();
+		if (version == lastGearVersion && levels.equals(lastLevels))
+		{
+			return false;
+		}
+		lastGearVersion = version;
+		lastLevels = levels;
+		List<GearPiece> owned = new ArrayList<>();
+		for (int id : bankGear.owned())
+		{
+			pieces.computeIfAbsent(id, this::gearPiece).ifPresent(owned::add);
+		}
+		ownedGear = new OwnedGear(bankGear.isBankSeen(), Collections.unmodifiableList(owned), levels);
+		return true;
+	}
+
+	/** What the DPS maths needs about an item; empty if it can't be worn. Client thread. */
+	private Optional<GearPiece> gearPiece(int itemId)
+	{
+		try
+		{
+			ItemStats stats = itemManager.getItemStats(itemId);
+			if (stats == null || !stats.isEquipable() || stats.getEquipment() == null)
+			{
+				return Optional.empty();
+			}
+			ItemEquipmentStats e = stats.getEquipment();
+			String name = itemManager.getItemComposition(itemId).getName();
+			return Optional.of(new GearPiece(itemId, name, GearSlot.fromEquipmentIndex(e.getSlot()),
+				e.isTwoHanded(), EquipmentBonuses.of(e)));
+		}
+		catch (RuntimeException e)
+		{
+			log.debug("Couldn't read item {}", itemId, e);
+			return Optional.empty();
+		}
+	}
+
+	/** Reads the next batch of item definitions to match drop names to items. Client thread only. */
+	private void scanItemNames()
+	{
+		if (itemNames == null || itemNames.isDone() || client.getGameState() != GameState.LOGGED_IN)
+		{
+			return;
+		}
+		itemNames.step(client.getItemCount(), ITEM_SCAN_BATCH, id ->
+		{
+			try
+			{
+				ItemComposition c = itemManager.getItemComposition(id);
+				return new ItemNameResolver.Candidate(c.getName(), c.getNote() != -1, c.getPlaceholderTemplateId() != -1,
+					c.isTradeable());
+			}
+			catch (RuntimeException e)
+			{
+				log.debug("Couldn't read item {}", id, e);
+				return null;
+			}
+		});
+	}
+
+	/** Item ids and values for the task's drops, with the current "Item value" setting. Client thread only. */
+	private DropItems dropItems(List<SlayerLocationData.Variant> variants)
+	{
+		ItemValueMode mode = itemValues.mode();
+		Map<String, DropItems.Item> items = new HashMap<>();
+		for (SlayerLocationData.Variant v : variants)
+		{
+			List<String> names = new ArrayList<>(v.getAlwaysDrops());
+			v.getDrops().forEach(d -> names.add(d.getItem()));
+			for (String name : names)
+			{
+				String key = CollectionLog.key(name);
+				int id = itemNames.idOf(name);
+				if (id < 0 || items.containsKey(key))
+				{
+					continue;
+				}
+				boolean tradeable = itemManager.getItemComposition(id).isTradeable();
+				items.put(key, new DropItems.Item(id, itemValues.value(mode, id), tradeable));
+			}
+		}
+		return new DropItems(Collections.unmodifiableMap(items), mode);
 	}
 
 	private SlayerTaskState readTask()
@@ -231,15 +976,16 @@ public class SlayerHelper
 
 	private void go(LocationOption location)
 	{
-		route(Collections.singletonList(location));
+		route(Collections.singletonList(location), location.getLabel());
 	}
 
 	private void goNearest(List<LocationOption> locations)
 	{
-		route(locations);
+		route(locations, locations.size() == 1 ? locations.get(0).getLabel() : null);
 	}
 
-	private void route(List<LocationOption> locations)
+	/** {@code place}: the place's name for the route line, or null for the nearest of several. */
+	private void route(List<LocationOption> locations, String place)
 	{
 		List<int[]> targets = new ArrayList<>();
 		// Only lift the player's "avoid Wilderness" setting when every place is in the Wilderness. With a mix,
@@ -260,16 +1006,52 @@ public class SlayerHelper
 		{
 			if (shortestPath.isAvailable())
 			{
+				// The route line shows one route: drop markers left from before Shortest Path was turned on
+				removeMapMarkers();
 				shortestPath.path(targets, allowWilderness);
+				setRoute(Route.shortestPath(place));
+				routeOwner.started(preview != null);
+				if (allowWilderness)
+				{
+					chatMessageManager.queue(QueuedMessage.builder()
+						.type(ChatMessageType.GAMEMESSAGE)
+						.runeLiteFormattedMessage(new ChatMessageBuilder()
+							.append(ChatColorType.HIGHLIGHT)
+							.append("[Slayer] This route goes into the Wilderness, where other players can attack you. ")
+							.append(ChatColorType.NORMAL)
+							.append("Shortest Path may route through the Wilderness until you arrive.")
+							.build())
+						.build());
+				}
 			}
 			else
 			{
 				markOnWorldMap(targets);
+				List<WorldPoint> points = new ArrayList<>();
+				targets.forEach(t -> points.add(new WorldPoint(t[0], t[1], t[2])));
+				setRoute(Route.worldMap(place));
+				mapTargets = points;
+				routeOwner.started(preview != null);
 			}
 		});
 	}
 
-	/** Must run on the client thread: reads quest states and skill levels. */
+	/** The boosted level of each skill {@link #boostWatch} watches. Client thread. */
+	private Map<String, Integer> boostedLevels()
+	{
+		Map<String, Integer> levels = new HashMap<>();
+		for (String name : boostWatch.getSkills())
+		{
+			Skill skill = skill(name);
+			if (skill != null)
+			{
+				levels.put(name, client.getBoostedSkillLevel(skill));
+			}
+		}
+		return levels;
+	}
+
+	/** Must run on the client thread: reads quest states, skill levels and diary varbits. */
 	private List<String> missingRequirements(SlayerLocationData.Requirements r)
 	{
 		List<String> missing = new ArrayList<>();
@@ -292,9 +1074,26 @@ public class SlayerHelper
 		for (Map.Entry<String, Integer> e : r.getSkills().entrySet())
 		{
 			Skill skill = skill(e.getKey());
-			if (skill != null && client.getRealSkillLevel(skill) < e.getValue())
+			if (skill == null)
 			{
-				missing.add(e.getValue() + " " + skill.getName());
+				continue;
+			}
+			boolean boostable = r.getBoostable().contains(e.getKey());
+			if (!RequirementChecker.meets(client.getRealSkillLevel(skill), client.getBoostedSkillLevel(skill), e.getValue(), boostable))
+			{
+				missing.add(RequirementChecker.skillText(e.getValue(), skill.getName(), boostable));
+			}
+		}
+		for (String d : r.getDiaries())
+		{
+			Integer varbit = Diaries.VARBITS.get(d);
+			if (varbit == null)
+			{
+				log.debug("Unknown diary {} in slayer data", d);
+			}
+			else if (client.getVarbitValue(varbit) != 1)
+			{
+				missing.add(Diaries.text(d));
 			}
 		}
 		return missing;
@@ -343,13 +1142,24 @@ public class SlayerHelper
 		}
 	}
 
-	private void clearPath()
+	/** The player pressed Cancel (or Remove) on the route line. */
+	private void cancelRoute()
 	{
 		clientThread.invokeLater(() ->
 		{
-			shortestPath.clear();
-			worldMapPointManager.removeIf(p -> MAP_MARKER_NAME.equals(p.getName()));
+			if (route.getKind() == Route.Kind.SHORTEST_PATH)
+			{
+				// Only offered while our route is active, so this clears our own path
+				shortestPath.clear();
+			}
+			removeMapMarkers();
+			setRoute(Route.NONE);
 		});
+	}
+
+	private void removeMapMarkers()
+	{
+		worldMapPointManager.removeIf(p -> MAP_MARKER_NAME.equals(p.getName()));
 	}
 
 	private SlayerLocationData loadData()

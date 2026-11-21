@@ -1,28 +1,34 @@
 package com.combatgearorganizer.slayer;
 
+import com.combatgearorganizer.ItemValueMode;
+import com.combatgearorganizer.ItemValues;
+import com.combatgearorganizer.dps.OwnedGear;
+import com.combatgearorganizer.slayer.SlayerLocationData.Variant;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.FontMetrics;
 import java.awt.FlowLayout;
 import java.awt.Graphics2D;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
-import com.combatgearorganizer.slayer.SlayerLocationData.Variant;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Locale;
-import java.util.Objects;
-import java.util.function.Predicate;
-import java.util.HashSet;
+import java.util.EnumSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -33,28 +39,97 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
+import lombok.Value;
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
-import net.runelite.client.ui.PluginPanel;
 
 /**
- * Side panel showing the current slayer task and where to do it. Only touch it on the Swing thread.
+ * The Slayer section of the side panel: the current slayer task and where to do it. Only touch it on the Swing
+ * thread.
  */
-public class SlayerPanel extends PluginPanel
+@Slf4j
+public class SlayerPanel extends JPanel
 {
 	private static final Color WILDERNESS_COLOR = new Color(230, 80, 60);
 	private static final Color RECOMMENDED_COLOR = new Color(110, 200, 90);
 	/** Text widths in px, so labels wrap inside the 225px panel. */
 	private static final int FULL_TEXT_WIDTH = 165;
-	private static final int CARD_TEXT_WIDTH = 135;
+	private static final int CARD_TEXT_WIDTH = 115;
+	/**
+	 * The route line shares its row with the Cancel button. Swing draws an HTML label about 1.3 times wider than its
+	 * CSS width, so this keeps "On route to Catacombs of Kourend" wrapping instead of being cut off.
+	 */
+	private static final int ROUTE_TEXT_WIDTH = 105;
 	private static final int INFO_TEXT_WIDTH = 140;
 	private static final int PREVIEW_LENGTH = 22;
+	/** Characters a drawer header fits on one line, its title and the note's preview together. */
+	private static final int PREVIEW_ROOM = 28;
 	private static final int CAPTION_WIDTH = 46;
+	/**
+	 * A monster table row's inner width at the sidebar's width with the scroll bar showing: PluginPanel.PANEL_WIDTH less
+	 * the card's and the row's borders, and a pixel or two the layout keeps. BundledDataTest.noTextIsCutOffAtTheSidebarWidth
+	 * checks every cell fits.
+	 */
+	static final int TABLE_ROW_WIDTH = 200;
+	/** The monster table's number columns: at least this wide, wider when a level or XP range needs it. */
+	private static final int LEVEL_COLUMN = 34;
+	private static final int XP_COLUMN = 38;
+	private static final int TOTAL_COLUMN = 40;
+	/**
+	 * Empty pixels at least between a number and whatever is to its left (the name, or the column before). The
+	 * numbers are right-aligned, so each column is its widest value plus this.
+	 */
+	static final int COLUMN_GAP = 6;
+	/** {@link java.awt.Component#getName()} of a monster table row, so tests can find the rows. */
+	static final String TABLE_ROW = "monsterTableRow";
+	/** {@link java.awt.Component#getName()} of a place card's monster line. */
+	static final String CARD_MONSTERS = "cardMonsters";
+	/** On a place card when the data can't say which of the task's monsters lives there. */
+	static final String NO_MONSTER_HERE = "Which monster lives here isn't in the data";
+	/** On a place card whose Go is greyed out: the data has no map point to path to. */
+	static final String NO_MAP_POINT = "No map point yet, so Go can't path here";
+	/** Tooltip of a card's monster line when it names the monster shown above. */
+	static final String SELECTED_MONSTER_TIP = "The monster in orange is the one shown above";
+	/** Pixels between the wrapped lines of a card's monster line, and under it: the small font's lines touch. */
+	static final int MONSTER_LINE_GAP = 1;
+	/** Room the crown or star after a monster's name takes: the icon and its gap. */
+	private static final int NAME_ICON_ROOM = 13;
+	/** The task's Go to nearest button's tooltip: it never picks a boss lair or a place the player can't get into. */
+	static final String NEAREST_TIP = "Path to whichever of the places below is quickest to reach. Leaves out boss "
+		+ "lairs, and places you can't get into yet while another will do.";
+	/** Under Go to nearest when every place it can pick needs something the player lacks or the client hasn't sent. */
+	static final String NEAREST_GATED = "Every place it can pick needs something you may not have yet.";
+	/** Under a greyed-out Go to nearest when no place it may pick has a map point. */
+	static final String NEAREST_NO_POINT = "None of the places below has a map point it can use.";
+	/** {@link java.awt.Component#getName()} of the line under Go to nearest that says why it's greyed or gated. */
+	static final String NEAREST_REASON = "nearestReason";
+	/** {@link java.awt.Component#getName()} of a place card's "Needs ..." line (missing requirements). */
+	static final String CARD_NEEDS = "cardNeeds";
+	/** Under a boss's Found at, since Go to nearest (right under the card) never goes to its lair. */
+	static final String BOSS_GO_HINT = "Go to nearest skips boss lairs: use Go on the lair's card below.";
+	/** Long tooltips wrap at this width instead of running across the screen. */
+	private static final int TOOLTIP_WIDTH = 250;
 	private static final Color WEAKNESS_COLOR = new Color(255, 200, 90);
+	private static final Color MISSING_TEXT_COLOR = new Color(255, 152, 31);
+	private static final Color LAST_TIME_COLOR = new Color(140, 190, 255);
+
+	/** The empty and waiting states: a title and one short sentence each. */
+	static final String LOGGED_OUT = "Log in to see your task.";
+	static final String NO_TASK_TITLE = "No task";
+	static final String NO_TASK = "Get one from any slayer master.";
+	static final String NO_SHORTEST_PATH = "Without Shortest Path, Go marks the place on your world map.";
+	static final String NO_DATA = "No places for this task in the data yet.";
+	static final String NO_DATA_BOSS = "No places for boss tasks in the data yet.";
+	static final String NO_WILDERNESS_PLACES = "No Wilderness places for this task in the data yet.";
+	static final String ALL_IN_WILDERNESS = "Every place for this task is in the Wilderness; turn on \"Show Wilderness locations\" to see them.";
+	static final String LAST_TIME = "Last time";
+	static final String BEST_GEAR = "Best with what you have";
 
 	private final Consumer<LocationOption> onGo;
 	private final Consumer<List<LocationOption>> onGoNearest;
-	private final Runnable onClear;
+	private final Runnable onCancelRoute;
+	private final Consumer<PanelMemory> onMemoryChanged;
 
 	private static final ImageIcon ARROW_CLOSED = arrowIcon(false);
 	private static final ImageIcon ARROW_OPEN = arrowIcon(true);
@@ -65,60 +140,291 @@ public class SlayerPanel extends PluginPanel
 		"\\b(crush|stab|slash|\\w*bane|weapons?)\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
 	private static final Color SUPERIOR_COLOR = new Color(255, 120, 60);
 	private static final ImageIcon SUPERIOR_STAR = starIcon();
+	private static final Color BOSS_COLOR = new Color(255, 200, 90);
+	/** Marks a boss's row in the monster table: a crown, so it reads without colour too. */
+	static final ImageIcon BOSS_CROWN = crownIcon();
+	/** Item pictures per row: five 36px slots fit the card. */
+	private static final int GRID_COLUMNS = 5;
 
 	private final JPanel content = new JPanel();
 	private final SlayerIcons icons;
-	/** Drawer titles the player has opened; kept while the plugin runs. */
-	private final Set<String> openDrawers = new HashSet<>();
-	/** Last task shown, so a drawer click can redraw it. */
-	private Runnable lastShow;
-	/** The variant the player is looking at, by name, and which task it belongs to. */
+	/** Open drawers, the monster picked per task and the last place per task, for this account. */
+	private PanelMemory memory = new PanelMemory();
+	/** Only the header, progress, route line and places. */
+	private boolean compact;
+	private boolean previewing;
+	private Runnable onStopPreview;
+	/** The player's wearable items and levels, for the "Best with what you have" rows. */
+	private OwnedGear gear = OwnedGear.NONE;
+	/** The rows worked out for {@link #gear}, per monster, so redraws (a drawer opened, a kill) don't redo them. */
+	private final Map<Variant, List<GearUp.Row>> gearRows = new IdentityHashMap<>();
+	/** Carry items the player has with them, for the ticks in the Carry row. */
+	private Set<CarryItem> carried = EnumSet.noneOf(CarryItem.class);
+	private Route route = Route.NONE;
+	/** Holds the route line, so it can change without redrawing the panel. */
+	private final JPanel routeSlot = new JPanel(new BorderLayout());
+
+	/** The task shown, so a click or a kill can redraw it. */
+	private boolean showingTask;
+	private SlayerTaskState shownTask;
+	private SlayerLocationData.TaskInfo shownInfo;
+	private List<LocationOption> shownLocations = Collections.emptyList();
+	private boolean shownHasData;
+	private boolean shownShortestPath;
+	private TaskProgress.View shownProgress;
+
+	/** The variant the player is looking at, by name, and the task (see {@link PanelMemory#taskKey}) it belongs to. */
 	private String selectedVariant;
-	private int variantTaskId = -1;
-	private String variantTaskName;
+	private String variantTaskKey;
 	private List<Variant> currentVariants = Collections.emptyList();
 	private CollectionLog.Snapshot currentClog = CollectionLog.Snapshot.EMPTY;
+	private DropItems currentItems = DropItems.EMPTY;
+
+	/** What a kill changes, kept so a kill can update them without redrawing the panel. */
+	private JLabel countLabel;
+	private final JPanel progressBox = new JPanel();
+	private final List<VariantTotal> variantTotals = new ArrayList<>();
+	private JLabel xpChip;
+	private Variant xpChipVariant;
+
+	/** A "Task" cell of the variant table: XP for the kills left. */
+	@Value
+	private static class VariantTotal
+	{
+		JLabel label;
+		Variant variant;
+	}
 
 	public SlayerPanel(SlayerIcons icons, Consumer<LocationOption> onGo, Consumer<List<LocationOption>> onGoNearest,
-		Runnable onClear)
+		Runnable onCancelRoute)
+	{
+		this(icons, onGo, onGoNearest, onCancelRoute, m -> { });
+	}
+
+	/**
+	 * @param onCancelRoute   the player pressed Cancel (or Remove) on the route line
+	 * @param onMemoryChanged the player opened or closed a drawer, picked a monster or pressed Go; called on the
+	 *                        Swing thread with the memory to save
+	 */
+	public SlayerPanel(SlayerIcons icons, Consumer<LocationOption> onGo, Consumer<List<LocationOption>> onGoNearest,
+		Runnable onCancelRoute, Consumer<PanelMemory> onMemoryChanged)
 	{
 		this.icons = icons;
 		this.onGo = onGo;
 		this.onGoNearest = onGoNearest;
-		this.onClear = onClear;
+		this.onCancelRoute = onCancelRoute;
+		this.onMemoryChanged = onMemoryChanged;
 
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 		content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 		content.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		add(content, BorderLayout.NORTH);
-		showNoTask();
+		progressBox.setLayout(new BoxLayout(progressBox, BoxLayout.Y_AXIS));
+		progressBox.setOpaque(false);
+		progressBox.setAlignmentX(LEFT_ALIGNMENT);
+		routeSlot.setOpaque(false);
+		routeSlot.setAlignmentX(LEFT_ALIGNMENT);
+		routeSlot.setBorder(new EmptyBorder(0, 0, 8, 0));
+		showLoggedOut();
+	}
+
+	/** Use this account's memory (open drawers, picked monsters, last places) from now on. */
+	public void setMemory(PanelMemory memory)
+	{
+		this.memory = memory != null ? memory : new PanelMemory();
+		// Read the picked monster for the shown task again
+		variantTaskKey = null;
+		redraw();
+	}
+
+	PanelMemory getMemory()
+	{
+		return memory;
+	}
+
+	/** The player's gear for the "Best with what you have" rows. Takes effect on the next {@link #showTask}. */
+	public void setGear(OwnedGear gear)
+	{
+		OwnedGear next = gear != null ? gear : OwnedGear.NONE;
+		if (next != this.gear)
+		{
+			gearRows.clear();
+		}
+		this.gear = next;
+	}
+
+	/** Takes effect on the next {@link #showTask}. */
+	public void setCompact(boolean compact)
+	{
+		this.compact = compact;
+	}
+
+	/**
+	 * Whether the task shown is a preview the player asked for rather than their real task. A preview gets a banner
+	 * with a Stop button, and doesn't change what the panel remembers about real tasks.
+	 */
+	public void setPreview(boolean previewing, Runnable onStop)
+	{
+		this.previewing = previewing;
+		this.onStopPreview = onStop;
+	}
+
+	boolean isPreviewing()
+	{
+		return previewing;
+	}
+
+	private JPanel previewBanner()
+	{
+		JPanel row = new JPanel(new BorderLayout(6, 0));
+		row.setAlignmentX(LEFT_ALIGNMENT);
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.setBorder(new EmptyBorder(4, 6, 4, 4));
+		row.add(wrapped("Preview, not your current task. Your real task and its route carry on; Stop to go back.", ColorScheme.BRAND_ORANGE,
+			FontManager.getRunescapeSmallFont(), ROUTE_TEXT_WIDTH), BorderLayout.CENTER);
+		JButton stop = new JButton("Stop");
+		stop.setToolTipText("Go back to your current task");
+		stop.addActionListener(e ->
+		{
+			if (onStopPreview != null)
+			{
+				onStopPreview.run();
+			}
+		});
+		row.add(stop, BorderLayout.EAST);
+		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
+		return row;
+	}
+
+	/** Shows, changes or hides the route line, without redrawing the rest of the panel. */
+	public void showRoute(Route route)
+	{
+		this.route = route != null ? route : Route.NONE;
+		fillRoute();
+		refresh();
+	}
+
+	Route getRoute()
+	{
+		return route;
+	}
+
+	/** Not logged in, so no task to read. */
+	public void showLoggedOut()
+	{
+		showMessage("Slayer task", null, LOGGED_OUT);
 	}
 
 	public void showNoTask()
 	{
-		lastShow = null;
+		showNoTask(null);
+	}
+
+	/** No task; {@code summary} is how the last task went, or null. */
+	public void showNoTask(String summary)
+	{
+		showMessage(NO_TASK_TITLE, summary != null ? summary + "." : null, NO_TASK);
+	}
+
+	private void showMessage(String heading, String summary, String text)
+	{
+		showingTask = false;
 		content.removeAll();
-		content.add(title("Slayer task"));
+		content.add(title(heading));
 		content.add(Box.createVerticalStrut(8));
-		content.add(wrapped("No task right now. Get one from a slayer master, or check your enchanted gem.", ColorScheme.LIGHT_GRAY_COLOR));
+		if (summary != null)
+		{
+			content.add(wrapped(summary, RECOMMENDED_COLOR));
+			content.add(Box.createVerticalStrut(6));
+		}
+		content.add(notice(text, ColorScheme.LIGHT_GRAY_COLOR));
 		refresh();
 	}
 
-	public void showTask(SlayerTaskState task, SlayerLocationData.TaskInfo info, List<Variant> variants,
-		List<LocationOption> locations, boolean hasData, boolean shortestPathAvailable, CollectionLog.Snapshot clog)
+	/** One short sentence for an empty or waiting state, the same way everywhere. */
+	private static JLabel notice(String text, Color color)
 	{
-		lastShow = () -> showTask(task, info, variants, locations, hasData, shortestPathAvailable, clog);
-		currentClog = clog;
+		JLabel label = wrapped(text, color);
+		label.setBorder(new EmptyBorder(0, 0, 6, 0));
+		return label;
+	}
 
-		// Keep the player's chosen variant while the task lasts; pick a sensible one for a new task
-		if (task.getTaskId() != variantTaskId || !Objects.equals(task.getName(), variantTaskName))
-		{
-			variantTaskId = task.getTaskId();
-			variantTaskName = task.getName();
-			selectedVariant = null;
-		}
+	public void showTask(SlayerTaskState task, SlayerLocationData.TaskInfo info, List<Variant> variants,
+		List<LocationOption> locations, boolean hasData, boolean shortestPathAvailable, CollectionLog.Snapshot clog,
+		DropItems items)
+	{
+		showTask(task, info, variants, locations, hasData, shortestPathAvailable, clog, items, null);
+	}
+
+	/** As above, with how the task is going under the kill count; {@code progress} may be null. */
+	public void showTask(SlayerTaskState task, SlayerLocationData.TaskInfo info, List<Variant> variants,
+		List<LocationOption> locations, boolean hasData, boolean shortestPathAvailable, CollectionLog.Snapshot clog,
+		DropItems items, TaskProgress.View progress)
+	{
+		showingTask = true;
+		shownTask = task;
+		shownInfo = info;
 		currentVariants = variants;
+		shownLocations = locations;
+		shownHasData = hasData;
+		shownShortestPath = shortestPathAvailable;
+		currentClog = clog;
+		currentItems = items != null ? items : DropItems.EMPTY;
+		shownProgress = progress;
+		drawTask();
+	}
+
+	/**
+	 * A kill or new progress on the task already shown: updates the count, the progress and the XP for the kills left,
+	 * without redrawing the rest of the panel. Ignored if it is another task.
+	 */
+	public void updateCount(SlayerTaskState task, TaskProgress.View progress)
+	{
+		if (!showingTask || !task.sameTaskAs(shownTask))
+		{
+			log.debug("Count update for a task that isn't shown: {}", task);
+			return;
+		}
+		shownTask = task;
+		shownProgress = progress;
+		int left = task.getRemaining();
+		countLabel.setText(countText(task));
+		fillProgress();
+		for (VariantTotal t : variantTotals)
+		{
+			t.getLabel().setText(Variants.xpTotalShort(t.getVariant().getXp(), left));
+		}
+		if (xpChip != null)
+		{
+			xpChip.setText(chipHtml(xpHtml(xpChipVariant, left)));
+		}
+		refresh();
+	}
+
+	private static String countText(SlayerTaskState task)
+	{
+		return task.getInitial() > 0
+			? task.getRemaining() + " of " + task.getInitial() + " left"
+			: task.getRemaining() + " left";
+	}
+
+	private void drawTask()
+	{
+		SlayerTaskState task = shownTask;
+		SlayerLocationData.TaskInfo info = shownInfo;
+		List<Variant> variants = currentVariants;
+		List<LocationOption> locations = shownLocations;
+		boolean hasData = shownHasData;
+		boolean shortestPathAvailable = shownShortestPath;
+
+		// Keep the player's chosen variant for this task, even across relogs; pick a sensible one otherwise
+		String key = PanelMemory.taskKey(task.getTaskId(), task.getName());
+		if (!key.equals(variantTaskKey))
+		{
+			variantTaskKey = key;
+			selectedVariant = memory.monster(key);
+		}
 		Variant selected = Variants.byName(Variants.listed(variants, locations), selectedVariant);
 		if (selected == null)
 		{
@@ -127,12 +433,19 @@ public class SlayerPanel extends PluginPanel
 		selectedVariant = selected == null ? null : selected.getName();
 
 		content.removeAll();
+		variantTotals.clear();
+		xpChip = null;
+		xpChipVariant = null;
 		content.add(title(task.getName()));
+		if (previewing)
+		{
+			content.add(previewBanner());
+		}
 
-		String count = task.getInitial() > 0
-			? task.getRemaining() + " of " + task.getInitial() + " left"
-			: task.getRemaining() + " left";
-		content.add(line(count, ColorScheme.LIGHT_GRAY_COLOR));
+		countLabel = line(countText(task), ColorScheme.LIGHT_GRAY_COLOR);
+		content.add(countLabel);
+		fillProgress();
+		content.add(progressBox);
 
 		String master = SlayerMasters.name(task.getMasterId());
 		if (task.getKonarArea() != null)
@@ -144,70 +457,154 @@ public class SlayerPanel extends PluginPanel
 			content.add(line("From " + master, ColorScheme.LIGHT_GRAY_COLOR));
 		}
 		content.add(Box.createVerticalStrut(8));
+		fillRoute();
+		content.add(routeSlot);
 
 		boolean variantWeaknesses = Variants.regular(variants).stream().anyMatch(v -> v.getWeakness() != null);
-		if (info != null || selected != null)
+		if (!compact && (info != null || selected != null))
 		{
-			content.add(taskCard(info, !variantWeaknesses, variants, selected, locations, task.getRemaining()));
-			content.add(Box.createVerticalStrut(8));
+			try
+			{
+				content.add(taskCard(info, !variantWeaknesses, variants, selected, locations, task.getRemaining()));
+				content.add(Box.createVerticalStrut(8));
+			}
+			catch (RuntimeException e)
+			{
+				// One bad record must not take the location list and Go buttons down with it
+				log.warn("Couldn't show the details for {} ({})", task.getName(), selectedVariant, e);
+				content.add(wrapped("Couldn't show the details for this monster.", ColorScheme.LIGHT_GRAY_COLOR));
+				content.add(Box.createVerticalStrut(8));
+			}
 		}
 
 		if (!hasData)
 		{
-			content.add(wrapped(task.getTaskId() == 98
-				? "Boss tasks don't have location data yet."
-				: "No location data for this task yet.", ColorScheme.LIGHT_GRAY_COLOR));
+			content.add(notice(task.getTaskId() == 98 ? NO_DATA_BOSS : NO_DATA, ColorScheme.LIGHT_GRAY_COLOR));
 			refresh();
 			return;
 		}
 
 		if (!shortestPathAvailable)
 		{
-			content.add(wrapped("Install or turn on the Shortest Path plugin to get directions. Until then, Go marks the place on your world map.",
-				ColorScheme.BRAND_ORANGE));
-			content.add(Box.createVerticalStrut(6));
+			JLabel sp = notice(NO_SHORTEST_PATH, ColorScheme.BRAND_ORANGE);
+			sp.setToolTipText("Install or turn on the Shortest Path plugin from the Plugin Hub to get directions");
+			content.add(sp);
 		}
 
-		List<LocationOption> routable = new ArrayList<>();
-		// "Nearest" leaves out places the player can't get into yet
-		locations.stream().filter(l -> l.isRoutable() && l.isAccessible()).forEach(routable::add);
+		// "Nearest" leaves out boss lairs, places the player can't get into while another will do, and the wiki-spawn
+		// places while a guide place will do
+		List<LocationOption> routable = LocationPicker.nearestTargets(locations);
 
-		JPanel actions = new JPanel(new GridLayout(1, 2, 4, 0));
+		JPanel actions = new JPanel(new BorderLayout());
 		actions.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		JButton nearest = new JButton("Go to nearest");
 		nearest.setEnabled(routable.size() > 0);
-		nearest.setToolTipText("Path to whichever of these places is quickest to reach");
+		nearest.setToolTipText(NEAREST_TIP);
 		nearest.addActionListener(e -> onGoNearest.accept(routable));
-		JButton clear = new JButton("Clear path");
-		clear.addActionListener(e -> onClear.run());
-		actions.add(nearest);
-		actions.add(clear);
+		actions.add(nearest, BorderLayout.CENTER);
 		actions.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
 		actions.setAlignmentX(LEFT_ALIGNMENT);
 		content.add(actions);
+		String why = nearestReason(locations, routable);
+		if (why != null)
+		{
+			// Said on the panel, not only in the tooltip: why it's greyed out, or that its places may be shut to you
+			JLabel reason = wrapped(why, routable.isEmpty() ? ColorScheme.LIGHT_GRAY_COLOR : ColorScheme.BRAND_ORANGE,
+				FontManager.getRunescapeSmallFont(), FULL_TEXT_WIDTH);
+			reason.setName(NEAREST_REASON);
+			reason.setBorder(new EmptyBorder(2, 0, 0, 0));
+			content.add(reason);
+		}
 		content.add(Box.createVerticalStrut(8));
 
-		if (locations.isEmpty() && task.getMasterId() == SlayerMasters.KRYSTILIA)
+		if (locations.isEmpty())
 		{
-			content.add(wrapped("No Wilderness places in the data for this task yet.", ColorScheme.LIGHT_GRAY_COLOR));
-		}
-		else if (locations.isEmpty())
-		{
-			content.add(wrapped("All places for this task are in the Wilderness. Turn on \"Show Wilderness locations\" in the plugin settings to see them.",
+			content.add(notice(task.getMasterId() == SlayerMasters.KRYSTILIA ? NO_WILDERNESS_PLACES : ALL_IN_WILDERNESS,
 				ColorScheme.LIGHT_GRAY_COLOR));
 		}
 
-		for (LocationOption location : locations)
+		String lastPlace = memory.lastPlace(key);
+		for (LocationOption location : selectedFirst(locations, currentVariants, selectedVariant))
 		{
-			content.add(card(location));
+			content.add(card(location, lastPlace != null && lastPlace.equals(location.getKey())));
 			content.add(Box.createVerticalStrut(4));
 		}
 		refresh();
 	}
 
+	/** The route line: where Go is taking the player, with a button to stop. Hidden when there is no route. */
+	private void fillRoute()
+	{
+		routeSlot.removeAll();
+		routeSlot.setVisible(route.isShown());
+		if (!route.isShown())
+		{
+			return;
+		}
+		JPanel row = new JPanel(new BorderLayout(6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.setBorder(new EmptyBorder(5, 8, 5, 6));
+		row.add(wrapped(route.text(), RECOMMENDED_COLOR, FontManager.getRunescapeSmallFont(), ROUTE_TEXT_WIDTH),
+			BorderLayout.CENTER);
+		JButton stop = new JButton(route.buttonText());
+		stop.setMargin(new java.awt.Insets(0, 4, 0, 4));
+		stop.setToolTipText(route.buttonTooltip());
+		stop.addActionListener(e -> onCancelRoute.run());
+		JPanel stopWrap = new JPanel(new BorderLayout());
+		stopWrap.setOpaque(false);
+		stopWrap.add(stop, BorderLayout.NORTH);
+		row.add(stopWrap, BorderLayout.EAST);
+		routeSlot.add(row, BorderLayout.CENTER);
+		routeSlot.setMaximumSize(new Dimension(Integer.MAX_VALUE, routeSlot.getPreferredSize().height));
+	}
+
+	/** The progress lines under the kill count; only the kill rate line in compact mode. */
+	private void fillProgress()
+	{
+		progressBox.removeAll();
+		if (shownProgress != null)
+		{
+			addProgress(progressBox, shownProgress, compact);
+		}
+	}
+
+	/** Kill rate, time left, XP, superiors and loot so far, under the kill count. */
+	private static void addProgress(JPanel content, TaskProgress.View progress, boolean rateOnly)
+	{
+		String rate = progress.rateText();
+		content.add(wrapped(rate != null ? rate : "Kill rate shows after your next kill",
+			rate != null ? ColorScheme.LIGHT_GRAY_COLOR : ColorScheme.MEDIUM_GRAY_COLOR));
+		if (rateOnly)
+		{
+			return;
+		}
+		if (progress.getXp() > 0)
+		{
+			content.add(line(String.format(Locale.ENGLISH, "%,d slayer XP this task", progress.getXp()), ColorScheme.LIGHT_GRAY_COLOR));
+		}
+		if (progress.getSuperiors() > 0)
+		{
+			content.add(line(progress.getSuperiors() + (progress.getSuperiors() == 1 ? " superior" : " superiors") + " this task",
+				SUPERIOR_COLOR));
+		}
+		if (progress.getLoot() > 0)
+		{
+			ItemValueMode mode = progress.getMode() != null ? progress.getMode() : ItemValueMode.GRAND_EXCHANGE;
+			JLabel loot = line("Loot: " + ItemValues.format(progress.getLoot()) + " (" + mode.getLabel() + ")",
+				ColorScheme.LIGHT_GRAY_COLOR);
+			loot.setToolTipText("What task monsters dropped for you this task. Change \"Item value\" in the plugin settings to switch between GE and high alch.");
+			content.add(loot);
+		}
+		if (progress.getTrackedFrom() >= 0)
+		{
+			content.add(line("Counted from " + progress.getTrackedFrom() + " left", ColorScheme.MEDIUM_GRAY_COLOR));
+		}
+	}
+
 	/**
-	 * Everything about the task in one card: the monster table, how to fight it (task-wide), the selected monster's
-	 * facts, the longer notes as drawers, then superiors and bosses. Either half may be missing.
+	 * Everything about the task in one card: the monster table (bosses last), how to fight it (task-wide), the selected
+	 * monster's facts, the longer notes as drawers, then superiors not shown with their monster. Either half may be
+	 * missing.
 	 */
 	private JPanel taskCard(SlayerLocationData.TaskInfo info, boolean showTaskWeakness, List<Variant> variants,
 		Variant selected, List<LocationOption> locations, int left)
@@ -222,17 +619,19 @@ public class SlayerPanel extends PluginPanel
 		{
 			addVariantTable(card, variants, selected, locations, left);
 		}
-		if (info != null)
+		// The task-wide "Attack" (and its weaknesses) is about the regular monsters; a boss's card has its own facts
+		if (info != null && !isBoss(selected))
 		{
-			card.add(chips(info, TaskTags.from(info), showTaskWeakness));
+			card.add(chips(info, TaskTags.from(info), showTaskWeakness, showsPrayer(info, selected)));
 		}
 		if (selected != null)
 		{
 			addVariantDetails(card, selected, locations, left);
 		}
-		if (info != null)
+		if (info != null && !isBoss(selected))
 		{
-			// With a monster selected, its own drops replace the task-wide drop notes
+			// With a monster selected, its own drops replace the task-wide drop notes. The task's notes (weakness, how
+			// they attack, what to bring) are about its regular monsters, so a boss's card leaves them out
 			addInfoDrawers(card, info, selected);
 		}
 		if (selected != null)
@@ -242,22 +641,87 @@ public class SlayerPanel extends PluginPanel
 		return card;
 	}
 
-	/** The task's monsters as a clickable table: level, XP each, XP for the kills left. */
+	private static boolean isBoss(Variant v)
+	{
+		return v != null && v.isBoss();
+	}
+
+	/**
+	 * The task's monsters as a clickable table: level, XP each, XP for the kills left. The level and XP columns widen
+	 * to fit the widest range in this table; a name that doesn't fit what's left goes onto more lines.
+	 */
 	private void addVariantTable(JPanel card, List<Variant> variants, Variant selected, List<LocationOption> locations, int left)
 	{
-		card.add(variantRow("Monster", null, "Lvl", "XP", "Task", ColorScheme.MEDIUM_GRAY_COLOR, false, null));
-		for (Variant v : Variants.listed(variants, locations))
+		List<Variant> listed = Variants.listed(variants, locations);
+		FontMetrics fm = TABLE_METRICS.get();
+		// Each number column fits its widest value (the header too) plus a gap, so neighbours never touch:
+		// "172-188" and "157-200" side by side used to read "172-188157-200"
+		int levelWidth = Math.max(LEVEL_COLUMN, fm.stringWidth("Lvl") + COLUMN_GAP);
+		int xpWidth = Math.max(XP_COLUMN, fm.stringWidth("XP") + COLUMN_GAP);
+		int totalWidth = Math.max(TOTAL_COLUMN, fm.stringWidth("Task") + COLUMN_GAP);
+		for (Variant v : listed)
+		{
+			levelWidth = Math.max(levelWidth, fm.stringWidth(Variants.range(v.getLevel())) + COLUMN_GAP);
+			xpWidth = Math.max(xpWidth, fm.stringWidth(Variants.xpEachShort(v.getXp())) + COLUMN_GAP);
+			totalWidth = Math.max(totalWidth, fm.stringWidth(Variants.xpTotalShort(v.getXp(), left)) + COLUMN_GAP);
+		}
+		int[] widths = {levelWidth, xpWidth, totalWidth};
+		card.add(variantRow("Monster", null, false, "Lvl", "XP", "Task", ColorScheme.MEDIUM_GRAY_COLOR, false, null, null,
+			widths));
+		for (Variant v : listed)
 		{
 			boolean on = v == selected;
-			card.add(variantRow(v.getName(), superiorTip(variants, v), Variants.range(v.getLevel()), Variants.xpEach(v.getXp()),
-				Variants.xpTotalShort(v.getXp(), left), on ? Color.WHITE : ColorScheme.LIGHT_GRAY_COLOR, on,
-				on ? null : () ->
-				{
-					selectedVariant = v.getName();
-					redraw();
-				}));
+			card.add(variantRow(v.getName(), superiorTip(variants, v), v.isBoss(), Variants.range(v.getLevel()),
+				Variants.xpEachShort(v.getXp()), Variants.xpTotalShort(v.getXp(), left),
+				on ? Color.WHITE : ColorScheme.LIGHT_GRAY_COLOR, on,
+				on ? null : () -> pickVariant(v.getName()),
+				totalCell -> variantTotals.add(new VariantTotal(totalCell, v)), widths));
 		}
 		card.add(Box.createVerticalStrut(6));
+	}
+
+	/** The monster table's font metrics (the RuneScape small font), for sizing its columns. */
+	private static final java.util.function.Supplier<FontMetrics> TABLE_METRICS =
+		() -> new JLabel().getFontMetrics(FontManager.getRunescapeSmallFont());
+
+	/**
+	 * A name split into lines that each fit in {@code room} px, at spaces where it can, else mid-word. One line when it
+	 * fits.
+	 */
+	static List<String> wrapName(String name, FontMetrics fm, int room)
+	{
+		List<String> lines = new ArrayList<>();
+		String line = "";
+		for (String word : name.split(" "))
+		{
+			String joined = line.isEmpty() ? word : line + " " + word;
+			if (fm.stringWidth(joined) <= room)
+			{
+				line = joined;
+				continue;
+			}
+			if (!line.isEmpty())
+			{
+				lines.add(line);
+			}
+			line = word;
+			// A word too long for a line of its own is split where it has to be
+			while (fm.stringWidth(line) > room && line.length() > 1)
+			{
+				int cut = line.length() - 1;
+				while (cut > 1 && fm.stringWidth(line.substring(0, cut)) > room)
+				{
+					cut--;
+				}
+				lines.add(line.substring(0, cut));
+				line = line.substring(cut);
+			}
+		}
+		if (!line.isEmpty())
+		{
+			lines.add(line);
+		}
+		return lines;
 	}
 
 	/** The selected monster's own facts, under the task-wide attack and prayer rows. */
@@ -270,24 +734,33 @@ public class SlayerPanel extends PluginPanel
 		{
 			JPanel hits = iconRow();
 			String tip = "Attacks with " + String.join(", ", selected.getAttackTypes());
-			for (int i = 0; i < selected.getAttackTypes().size(); i++)
+			int shown = 0;
+			for (String type : selected.getAttackTypes())
 			{
-				if (i > 0)
+				TaskTags.Style style = TaskTags.styleOf(type);
+				if (style == null)
+				{
+					// Data we don't have an icon for; skip it rather than break the panel
+					continue;
+				}
+				if (shown++ > 0)
 				{
 					hits.add(chipText("+", ColorScheme.MEDIUM_GRAY_COLOR, tip));
 				}
-				TaskTags.Style style = TaskTags.Style.valueOf(selected.getAttackTypes().get(i).toUpperCase(Locale.ROOT));
 				JLabel icon = chipIcon(tip);
 				icons.setStyle(icon, style);
 				hits.add(icon);
 			}
-			card.add(factRow("Hits with", hits));
+			if (shown > 0)
+			{
+				card.add(factRow("Hits with", hits));
+			}
 		}
 
-		if (selected.getWeakness() != null)
+		TaskTags.Element element = selected.getWeakness() != null ? TaskTags.elementOf(selected.getWeakness().getElement()) : null;
+		if (element != null)
 		{
 			JPanel weak = iconRow();
-			TaskTags.Element element = TaskTags.Element.valueOf(selected.getWeakness().getElement().toUpperCase(Locale.ROOT));
 			String tip = "Weak to " + selected.getWeakness().getElement() + " spells";
 			JLabel icon = chipIcon(tip);
 			icons.setElement(icon, element);
@@ -299,9 +772,9 @@ public class SlayerPanel extends PluginPanel
 			card.add(factRow("Weak to", weak));
 		}
 
-		card.add(factRow("XP", textChip("<font color='#ffc85a'>" + Variants.xpEach(selected.getXp()) + "</font> each · "
-			+ "<font color='#ffc85a'>" + Variants.xpTotal(selected.getXp(), left) + "</font> for " + left + " left",
-			ColorScheme.LIGHT_GRAY_COLOR)));
+		xpChip = textChip(xpHtml(selected, left), ColorScheme.LIGHT_GRAY_COLOR);
+		xpChipVariant = selected;
+		card.add(factRow("XP", xpChip));
 
 		List<Variant> superiors = Variants.superiorsOf(currentVariants, selected);
 		if (!superiors.isEmpty())
@@ -318,25 +791,126 @@ public class SlayerPanel extends PluginPanel
 			sup.add(Box.createHorizontalStrut(4));
 			sup.add(textChip(String.join(", ", parts), ColorScheme.LIGHT_GRAY_COLOR));
 			card.add(factRow("Superior", sup));
+			for (Variant s : superiors)
+			{
+				addNotableDrops(card, currentVariants, s);
+			}
 		}
 
 		addDrops(card, selected);
+		addCarry(card, selected, locations);
+		addBestGear(card, selected);
 
+		List<String> found = Variants.foundAt(selected, locations);
+		boolean placed = Variants.isAtAny(selected, locations);
 		List<String> where = new ArrayList<>();
-		for (LocationOption l : locations)
+		for (String label : found)
 		{
-			if (selected.getPlaces().contains(l.getKey()))
-			{
-				where.add(escape(l.getLabel()));
-			}
+			where.add(escape(label));
 		}
-		card.add(factRow("Found at", textChip(where.isEmpty() ? "Not matched to a listed place" : String.join(", ", where),
-			where.isEmpty() ? ColorScheme.MEDIUM_GRAY_COLOR : ColorScheme.LIGHT_GRAY_COLOR)));
+		String foundAt = String.join(", ", where);
+		if (selected.isBoss() && placed)
+		{
+			// The task's Go to nearest sits right under this card but never picks a lair. Only when the lair's card is
+			// listed (a hidden Wilderness lair has none to press)
+			foundAt += "<br><i>" + BOSS_GO_HINT + "</i>";
+		}
+		card.add(factRow("Found at", textChip(foundAt,
+			placed ? ColorScheme.LIGHT_GRAY_COLOR : ColorScheme.MEDIUM_GRAY_COLOR)));
 	}
 
 	/**
-	 * The selected monster's rare drops, rarest first, then what it always drops. Drops missing from the player's
-	 * collection log are orange.
+	 * Protection, prayer and storage items worth an inventory slot for the selected monster (dragonfire protection,
+	 * bonecrusher, herb sack...), ticked
+	 * when the player is already carrying them. Hover one for why.
+	 */
+	private void addCarry(JPanel card, Variant selected, List<LocationOption> locations)
+	{
+		// A boss is fought at its lair alone, so its lair says whether this trip is in the Wilderness
+		List<LocationOption> trip = selected.isBoss()
+			? locations.stream().filter(l -> selected.getPlaces().contains(l.getKey())).collect(Collectors.toList())
+			: locations;
+		boolean wildernessOnly = !trip.isEmpty() && trip.stream().allMatch(LocationOption::isWilderness);
+		List<CarryItem.Suggestion> suggestions = CarryItem.suggest(selected.getCarry(), wildernessOnly);
+		if (suggestions.isEmpty())
+		{
+			return;
+		}
+		List<JComponent> slots = new ArrayList<>();
+		int missing = 0;
+		for (CarryItem.Suggestion s : suggestions)
+		{
+			boolean have = carried.contains(s.getItem());
+			missing += have ? 0 : 1;
+			String tip = "<html>" + escape(s.getTooltip()).replace("\n", "<br>") + "<br>" + (have ? "You have one with you" : "Not in your inventory or worn") + "</html>";
+			CarrySlot slot = new CarrySlot(s.getItem(), have, tip);
+			icons.setItem(slot, s.getItem().getIconId(), 1);
+			slots.add(slot);
+		}
+		card.add(factRow("Carry", textChip(missing == 0 ? "All with you" : missing + " worth bringing",
+			missing == 0 ? RECOMMENDED_COLOR : ColorScheme.LIGHT_GRAY_COLOR)));
+		card.add(dropGrid(slots));
+	}
+
+	/**
+	 * "Best with what you have": the player's best weapon per style for the selected monster, by expected DPS, with the
+	 * runner-ups and the assumptions in the tooltip. Left out when the data has no defence stats for the monster.
+	 */
+	private void addBestGear(JPanel card, Variant selected)
+	{
+		if (selected.getCombat() == null)
+		{
+			return;
+		}
+		JLabel heading = new JLabel(BEST_GEAR);
+		heading.setFont(FontManager.getRunescapeSmallFont());
+		heading.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		heading.setAlignmentX(LEFT_ALIGNMENT);
+		heading.setBorder(new EmptyBorder(4, 0, 1, 0));
+		heading.setToolTipText(wrappedTooltip(GearUp.ASSUMPTIONS));
+		card.add(heading);
+		if (!gear.isBankSeen())
+		{
+			card.add(factRow("", textChip(escape(GearUp.OPEN_BANK), ColorScheme.MEDIUM_GRAY_COLOR)));
+			return;
+		}
+		List<GearUp.Row> rows = gearRows.computeIfAbsent(selected, v -> GearUp.rows(gear, v));
+		if (rows.isEmpty())
+		{
+			card.add(factRow("", textChip(escape(GearUp.NO_WEAPONS), ColorScheme.MEDIUM_GRAY_COLOR)));
+			return;
+		}
+		for (GearUp.Row row : rows)
+		{
+			String html = row.isUsable() ? "<font color='#ffffff'>" + escape(row.getText()) + "</font>"
+				: escape(row.getText());
+			if (row.getNext() != null)
+			{
+				html += "<br><font color='#a0a0a0'>" + escape(row.getNext()) + "</font>";
+			}
+			JLabel text = textChip(html, row.isUsable() ? Color.WHITE : ColorScheme.MEDIUM_GRAY_COLOR);
+			text.setToolTipText(wrappedTooltip(row.getTooltip()));
+			card.add(factRow(row.getStyle().getDisplayName(), text));
+		}
+	}
+
+	/** The carry items the player has in their inventory or worn. Redraws the monster card when that changes. */
+	public void updateCarried(Set<CarryItem> now)
+	{
+		if (now.equals(carried))
+		{
+			return;
+		}
+		carried = EnumSet.copyOf(now.isEmpty() ? EnumSet.noneOf(CarryItem.class) : now);
+		if (showingTask && !compact)
+		{
+			redraw();
+		}
+	}
+
+	/**
+	 * The selected monster's rare drops, rarest first, then what it always drops, as a grid of item pictures. Hover
+	 * one for its rate, collection log status and value. Drops that couldn't be matched to an item are listed as text.
 	 */
 	private void addDrops(JPanel card, Variant selected)
 	{
@@ -344,34 +918,172 @@ public class SlayerPanel extends PluginPanel
 		{
 			return;
 		}
+		List<JComponent> slots = new ArrayList<>();
 		StringBuilder html = new StringBuilder();
-		boolean anyMissing = false;
+		int missing = 0;
+		boolean anyClog = false;
 		for (SlayerLocationData.Drop d : selected.getDrops())
 		{
 			CollectionLog.Status status = currentClog.status(d.getItem(), d.isClog());
-			anyMissing |= status == CollectionLog.Status.MISSING;
+			anyClog |= d.isClog();
+			if (status == CollectionLog.Status.MISSING)
+			{
+				missing++;
+			}
+			DropItems.Item item = currentItems.get(d.getItem());
+			if (item != null)
+			{
+				slots.add(dropSlot(item, d.getQuantity(), status, dropTooltip(d, null, status, item, currentItems.getMode(),
+					currentClog.isSynced())));
+				continue;
+			}
+			// No item to show: the old text line, with the log status spelled out as well as coloured
 			String color = status == CollectionLog.Status.MISSING ? "#ff981f"
 				: status == CollectionLog.Status.LOGGED ? "#9a9a9a" : "#c8c8c8";
 			String rate = d.getOnTask() != null ? d.getOnTask() + " on task" : d.getRarity();
 			html.append("<font color='").append(color).append("'>").append(escape(d.getItem())).append("</font> ")
-				.append("<font color='#8a8a8a'>").append(escape(rate)).append("</font><br>");
+				.append("<font color='#8a8a8a'>").append(escape(rate))
+				.append(status == CollectionLog.Status.MISSING ? ", not logged" : "").append("</font><br>");
 		}
-		if (!selected.getAlwaysDrops().isEmpty())
+		List<String> alwaysText = new ArrayList<>();
+		for (String always : selected.getAlwaysDrops())
 		{
-			html.append("<font color='#8a8a8a'>Always: ").append(escape(String.join(", ", selected.getAlwaysDrops())))
-				.append("</font>");
+			DropItems.Item item = currentItems.get(always);
+			if (item != null)
+			{
+				slots.add(dropSlot(item, null, CollectionLog.Status.UNKNOWN,
+					alwaysTooltip(always, item, currentItems.getMode())));
+			}
+			else
+			{
+				alwaysText.add(always);
+			}
 		}
-		JLabel drops = textChip(html.toString(), ColorScheme.LIGHT_GRAY_COLOR);
-		drops.setToolTipText(!currentClog.isSynced()
-			? "Open your collection log and search it to highlight drops you haven't logged"
-			: anyMissing ? "Orange: not in your collection log yet" : null);
-		card.add(factRow("Drops", drops));
+		if (!alwaysText.isEmpty())
+		{
+			html.append("<font color='#8a8a8a'>Always: ").append(escape(String.join(", ", alwaysText))).append("</font>");
+		}
 
-		if (!currentClog.isSynced() && selected.getDrops().stream().anyMatch(SlayerLocationData.Drop::isClog))
+		String summary = slots.isEmpty() ? null
+			: currentClog.isSynced() && anyClog
+				? (missing == 0 ? "All logged" : missing + " not logged yet")
+				: "Hover for rate and value";
+		if (summary != null)
 		{
-			card.add(factRow("", textChip("Open your collection log and search it once to highlight drops you're missing.",
+			JLabel head = textChip(escape(summary), missing > 0 ? MISSING_TEXT_COLOR : ColorScheme.LIGHT_GRAY_COLOR);
+			head.setToolTipText(missing > 0 ? "Faded with a dashed outline: not in your collection log yet" : null);
+			card.add(factRow("Drops", head));
+			card.add(dropGrid(slots));
+		}
+		if (html.length() > 0)
+		{
+			JLabel drops = textChip(html.toString(), ColorScheme.LIGHT_GRAY_COLOR);
+			drops.setToolTipText(!currentClog.isSynced()
+				? "Open your collection log and search it to highlight drops you haven't logged"
+				: missing > 0 ? "Orange: not in your collection log yet" : null);
+			card.add(factRow(summary == null ? "Drops" : "", drops));
+		}
+
+		if (!currentClog.isSynced() && anyClog)
+		{
+			card.add(factRow("", textChip("Open your collection log and search it once to mark drops you're missing.",
 				ColorScheme.MEDIUM_GRAY_COLOR)));
 		}
+	}
+
+	/** A superior's notable drops as a row of item pictures, when any of them match an item. */
+	private void addNotableDrops(JPanel card, List<Variant> variants, Variant v)
+	{
+		List<JComponent> slots = new ArrayList<>();
+		for (SlayerLocationData.Drop d : Variants.notableDrops(variants, v))
+		{
+			DropItems.Item item = currentItems.get(d.getItem());
+			if (item == null)
+			{
+				continue;
+			}
+			CollectionLog.Status status = currentClog.status(d.getItem(), d.isClog());
+			slots.add(dropSlot(item, d.getQuantity(), status, dropTooltip(d, v.getName(), status, item,
+				currentItems.getMode(), currentClog.isSynced())));
+			if (slots.size() == GRID_COLUMNS)
+			{
+				break;
+			}
+		}
+		if (!slots.isEmpty())
+		{
+			card.add(dropGrid(slots));
+		}
+	}
+
+	private DropSlot dropSlot(DropItems.Item item, int[] quantity, CollectionLog.Status status, String tooltip)
+	{
+		DropSlot slot = new DropSlot(status, tooltip);
+		int stack = quantity != null && quantity.length > 0 ? quantity[0] : 1;
+		icons.setItem(slot, item.getItemId(), stack);
+		return slot;
+	}
+
+	private static JPanel dropGrid(List<JComponent> slots)
+	{
+		JPanel grid = new JPanel(new GridLayout(0, GRID_COLUMNS, 0, 2));
+		grid.setOpaque(false);
+		grid.setAlignmentX(LEFT_ALIGNMENT);
+		grid.setBorder(new EmptyBorder(2, 0, 2, 0));
+		slots.forEach(grid::add);
+		// Keep empty cells after a short last row: the grid is always five pictures wide
+		for (int i = slots.size(); i < GRID_COLUMNS; i++)
+		{
+			grid.add(Box.createRigidArea(new Dimension(DropSlot.WIDTH, DropSlot.HEIGHT)));
+		}
+		grid.setMaximumSize(grid.getPreferredSize());
+		return grid;
+	}
+
+	/**
+	 * A drop's tooltip: its name, where it comes from (for a superior), the drop rate, the better rate on task, the
+	 * stack size, the collection log status and the value.
+	 */
+	static String dropTooltip(SlayerLocationData.Drop d, String from, CollectionLog.Status status, DropItems.Item item,
+		ItemValueMode mode, boolean clogSynced)
+	{
+		StringBuilder tip = new StringBuilder("<html><b>").append(escape(d.getItem())).append("</b>");
+		if (from != null)
+		{
+			tip.append("<br>From ").append(escape(from));
+		}
+		tip.append("<br>Drop rate: ").append(escape(nullToEmpty(d.getRarity())));
+		if (d.getOnTask() != null && !d.getOnTask().equals(d.getRarity()))
+		{
+			tip.append("<br>On task: ").append(escape(d.getOnTask()));
+		}
+		String quantity = DropItems.quantityText(d.getQuantity());
+		if (quantity != null)
+		{
+			tip.append("<br>Stack: ").append(quantity);
+		}
+		if (d.isClog())
+		{
+			tip.append("<br>").append(status == CollectionLog.Status.LOGGED ? "In your collection log"
+				: status == CollectionLog.Status.MISSING ? "Not in your collection log yet"
+				: clogSynced ? "Collection log item" : "Collection log item. Search your log to check it.");
+		}
+		tip.append("<br>").append(DropItems.valueText(mode, item, d.getQuantity()));
+		return tip.append("</html>").toString();
+	}
+
+	static String alwaysTooltip(String name, DropItems.Item item, ItemValueMode mode)
+	{
+		return "<html><b>" + escape(name) + "</b><br>Always dropped<br>" + DropItems.valueText(mode, item, null) + "</html>";
+	}
+
+	/** What a boss's crown means; the start of its row's tooltip. */
+	static final String BOSS_TIP = "Boss: counts for this task, fought in its own lair";
+
+	/** "Boss: counts for this task, fought in its own lair. Show Vorkath" */
+	static String bossTooltip(String name)
+	{
+		return BOSS_TIP + ". Show " + name;
 	}
 
 	/** "Can spawn a superior: Shadow Wyrm (3,520 XP)", or null when it has none. */
@@ -386,49 +1098,40 @@ public class SlayerPanel extends PluginPanel
 			: "Can spawn a superior: " + String.join(", ", names) + ". Needs the Bigger and Badder unlock.";
 	}
 
-	/** Monsters left out of the table, superiors and bosses. */
+	/** Superiors, which aren't in the table, unless they're already shown with their monster. Bosses are in the table. */
 	private void addVariantExtras(JPanel card, List<Variant> variants, List<LocationOption> locations)
 	{
-		// Monsters that count for the task but don't live at any listed place stay out of the way
-		List<String> elsewhere = new ArrayList<>();
-		for (Variant v : Variants.unlisted(variants, locations))
-		{
-			elsewhere.add(v.getName() + " (level " + Variants.range(v.getLevel()) + ", " + Variants.xpEach(v.getXp()) + " XP)");
-		}
-		if (!elsewhere.isEmpty())
-		{
-			addDrawer(card, "Also counts", String.join(", ", elsewhere) + ". Not at any of the places below.");
-		}
-
-		// Superiors already shown with their monster aren't repeated
 		List<Variant> listed = Variants.listed(variants, locations);
 		addSpecials(card, "Superior", variants, s -> s.isSuperior()
 			&& listed.stream().noneMatch(v -> Variants.superiorsOf(variants, v).contains(s)));
-		addSpecials(card, "Boss", variants, Variant::isBoss);
 	}
 
-	/** "Superior: Shadow Wyrm 3,520 XP, Magma strykewyrm 3,655 XP" */
-	private static void addSpecials(JPanel card, String caption, List<Variant> variants, Predicate<Variant> which)
+	/** "Superior: Shadow Wyrm 3,520 XP", one row per monster, each with its notable drops as pictures. */
+	private void addSpecials(JPanel card, String caption, List<Variant> variants, Predicate<Variant> which)
 	{
-		List<String> parts = new ArrayList<>();
+		boolean first = true;
 		for (Variant v : variants)
 		{
-			if (which.test(v))
+			if (!which.test(v))
 			{
-				parts.add(escape(v.getName()) + " <font color='#ffc85a'>" + Variants.xpEach(v.getXp()) + " XP</font>");
+				continue;
 			}
-		}
-		if (!parts.isEmpty())
-		{
-			card.add(factRow(caption, textChip(String.join(", ", parts), ColorScheme.LIGHT_GRAY_COLOR)));
+			card.add(factRow(first ? caption : "", textChip(escape(v.getName()) + " <font color='#ffc85a'>"
+				+ Variants.xpEach(v.getXp()) + " XP</font>", ColorScheme.LIGHT_GRAY_COLOR)));
+			addNotableDrops(card, variants, v);
+			first = false;
 		}
 	}
 
-	/** One line of the variant table. Clicking it runs onClick; null for the header and the selected row. */
-	private static JPanel variantRow(String name, String superiorTip, String level, String xp, String total, Color color,
-		boolean selected, Runnable onClick)
+	/**
+	 * One line of the variant table. Clicking it runs onClick; null for the header and the selected row. A boss's row
+	 * has a crown after the name, and its tooltip and accessible description say it's a boss.
+	 */
+	private static JPanel variantRow(String name, String superiorTip, boolean boss, String level, String xp, String total,
+		Color color, boolean selected, Runnable onClick, Consumer<JLabel> totalCell, int[] widths)
 	{
 		JPanel row = new JPanel(new GridBagLayout());
+		row.setName(TABLE_ROW);
 		row.setOpaque(selected);
 		row.setBackground(ColorScheme.DARK_GRAY_HOVER_COLOR);
 		row.setAlignmentX(LEFT_ALIGNMENT);
@@ -438,27 +1141,49 @@ public class SlayerPanel extends PluginPanel
 		c.gridy = 0;
 
 		c.weightx = 1;
-		JLabel nameCell = cell(name, color, 0, SwingConstants.LEFT);
-		if (superiorTip != null)
+		boolean icon = boss || superiorTip != null;
+		// The level column's own gap keeps the name off the first number
+		int room = TABLE_ROW_WIDTH - widths[0] - widths[1] - widths[2] - (icon ? NAME_ICON_ROOM : 0);
+		List<String> lines = wrapName(name, TABLE_METRICS.get(), room);
+		JLabel nameCell = cell(lines.size() == 1 ? name
+			: "<html>" + lines.stream().map(SlayerPanel::escape).collect(Collectors.joining("<br>")) + "</html>",
+			color, 0, SwingConstants.LEFT);
+		nameCell.getAccessibleContext().setAccessibleName(name);
+		if (boss || superiorTip != null)
 		{
-			// Star after the name; the tooltip says which superior
-			nameCell.setIcon(SUPERIOR_STAR);
+			// Crown or star after the name; the tooltip says it's a boss, or which superior
+			nameCell.setIcon(boss ? BOSS_CROWN : SUPERIOR_STAR);
 			nameCell.setHorizontalTextPosition(SwingConstants.LEFT);
 			nameCell.setIconTextGap(3);
 		}
-		// Let the name give up space (and clip) rather than squeezing the number columns
-		nameCell.setPreferredSize(new Dimension(10, 16));
-		nameCell.setMinimumSize(new Dimension(0, 16));
+		if (boss)
+		{
+			nameCell.getAccessibleContext().setAccessibleDescription(BOSS_TIP);
+			if (onClick == null)
+			{
+				// The selected row has no row tooltip; the crown still says what it means
+				nameCell.setToolTipText(BOSS_TIP);
+			}
+		}
+		// The name takes what the number columns leave, on as many lines as it needs
+		int height = Math.max(16, nameCell.getPreferredSize().height);
+		nameCell.setPreferredSize(new Dimension(10, height));
+		nameCell.setMinimumSize(new Dimension(0, height));
 		row.add(nameCell, c);
 		c.weightx = 0;
-		row.add(cell(level, color, 34, SwingConstants.RIGHT), c);
-		row.add(cell(xp, color, 38, SwingConstants.RIGHT), c);
-		row.add(cell(total, color, 40, SwingConstants.RIGHT), c);
+		row.add(cell(level, color, widths[0], SwingConstants.RIGHT), c);
+		row.add(cell(xp, color, widths[1], SwingConstants.RIGHT), c);
+		JLabel totalLabel = cell(total, color, widths[2], SwingConstants.RIGHT);
+		row.add(totalLabel, c);
+		if (totalCell != null)
+		{
+			totalCell.accept(totalLabel);
+		}
 
 		if (onClick != null)
 		{
 			row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-			row.setToolTipText(superiorTip != null ? superiorTip : "Show " + name);
+			row.setToolTipText(boss ? bossTooltip(name) : superiorTip != null ? superiorTip : "Show " + name);
 			row.addMouseListener(new MouseAdapter()
 			{
 				@Override
@@ -500,10 +1225,22 @@ public class SlayerPanel extends PluginPanel
 		return label;
 	}
 
+	/** "1,234 each · 61,700 for 50 left" */
+	private static String xpHtml(Variant v, int left)
+	{
+		return "<font color='#ffc85a'>" + Variants.xpEach(v.getXp()) + "</font> each · "
+			+ "<font color='#ffc85a'>" + Variants.xpTotal(v.getXp(), left) + "</font> for " + left + " left";
+	}
+
+	private static String chipHtml(String html)
+	{
+		return "<html><body style='width:" + (INFO_TEXT_WIDTH - CAPTION_WIDTH) + "px'>" + html + "</body></html>";
+	}
+
 	/** Wrapping HTML text for the right-hand side of a fact row. */
 	private static JLabel textChip(String html, Color color)
 	{
-		JLabel label = new JLabel("<html><body style='width:" + (INFO_TEXT_WIDTH - CAPTION_WIDTH) + "px'>" + html + "</body></html>");
+		JLabel label = new JLabel(chipHtml(html));
 		label.setFont(FontManager.getRunescapeSmallFont());
 		label.setForeground(color);
 		label.setBorder(new EmptyBorder(3, 0, 0, 0));
@@ -526,7 +1263,7 @@ public class SlayerPanel extends PluginPanel
 			weakness = info.getElementalWeakness() + ". " + weakness;
 		}
 		addDrawer(card, "Weakness", weakness);
-		if (TaskTags.from(info).isPrayerNeedsDetail())
+		if (showsPrayer(info, selected) && TaskTags.from(info).isPrayerNeedsDetail())
 		{
 			addDrawer(card, "Prayer", info.getProtectionPrayer());
 		}
@@ -539,7 +1276,45 @@ public class SlayerPanel extends PluginPanel
 	}
 
 	/** Labelled rows: what to attack with, what to pray, and elemental weaknesses (one row per variant group). */
-	private JPanel chips(SlayerLocationData.TaskInfo info, TaskTags tags, boolean showWeakness)
+	/**
+	 * Whether to give protection prayer advice. Never for a boss: the plugin hub's guidelines rule out prayer
+	 * recommendations for bosses, slayer bosses included. Also not when the data has no advice for the task.
+	 */
+	static boolean showsPrayer(SlayerLocationData.TaskInfo info, Variant selected)
+	{
+		return info != null && notBlank(info.getProtectionPrayer()) && (selected == null || !selected.isBoss());
+	}
+
+	private void addPrayerRow(JPanel rows, SlayerLocationData.TaskInfo info, TaskTags tags)
+	{
+		String prayerTip = "Pray: " + nullToEmpty(info.getProtectionPrayer());
+		JPanel pray = iconRow();
+		if (tags.getPrayers().isEmpty())
+		{
+			pray.add(chipText("No protection prayer", ColorScheme.LIGHT_GRAY_COLOR, prayerTip));
+		}
+		for (int i = 0; i < tags.getPrayers().size(); i++)
+		{
+			if (i > 0)
+			{
+				pray.add(chipText("/", ColorScheme.MEDIUM_GRAY_COLOR, prayerTip));
+			}
+			JLabel icon = chipIcon(prayerTip);
+			icons.setPrayer(icon, tags.getPrayers().get(i));
+			pray.add(icon);
+		}
+		if (tags.getPrayers().size() > 1)
+		{
+			pray.add(chipText("varies", WEAKNESS_COLOR, prayerTip));
+		}
+		else if (tags.isPrayerOptional())
+		{
+			pray.add(chipText("if needed", ColorScheme.LIGHT_GRAY_COLOR, prayerTip));
+		}
+		rows.add(factRow("Pray", pray));
+	}
+
+	private JPanel chips(SlayerLocationData.TaskInfo info, TaskTags tags, boolean showWeakness, boolean showPrayer)
 	{
 		JPanel rows = new JPanel();
 		rows.setLayout(new BoxLayout(rows, BoxLayout.Y_AXIS));
@@ -569,32 +1344,11 @@ public class SlayerPanel extends PluginPanel
 		}
 		rows.add(factRow("Attack", attack));
 
-		// Pray: protection prayer icons; several means it depends on the variant or phase
-		String prayerTip = "Pray: " + nullToEmpty(info.getProtectionPrayer());
-		JPanel pray = iconRow();
-		if (tags.getPrayers().isEmpty())
+		// Pray: protection prayer icons; several means it depends on the variant
+		if (showPrayer)
 		{
-			pray.add(chipText("No protection prayer", ColorScheme.LIGHT_GRAY_COLOR, prayerTip));
+			addPrayerRow(rows, info, tags);
 		}
-		for (int i = 0; i < tags.getPrayers().size(); i++)
-		{
-			if (i > 0)
-			{
-				pray.add(chipText("/", ColorScheme.MEDIUM_GRAY_COLOR, prayerTip));
-			}
-			JLabel icon = chipIcon(prayerTip);
-			icons.setPrayer(icon, tags.getPrayers().get(i));
-			pray.add(icon);
-		}
-		if (tags.getPrayers().size() > 1)
-		{
-			pray.add(chipText("varies", WEAKNESS_COLOR, prayerTip));
-		}
-		else if (tags.isPrayerOptional())
-		{
-			pray.add(chipText("if needed", ColorScheme.LIGHT_GRAY_COLOR, prayerTip));
-		}
-		rows.add(factRow("Pray", pray));
 
 		// Weak to: one row per element, naming the variants when they differ
 		boolean first = true;
@@ -683,7 +1437,7 @@ public class SlayerPanel extends PluginPanel
 		{
 			return;
 		}
-		boolean open = openDrawers.contains(title);
+		boolean open = memory.isOpen(title);
 
 		JPanel drawer = new JPanel(new BorderLayout());
 		drawer.setOpaque(false);
@@ -693,7 +1447,7 @@ public class SlayerPanel extends PluginPanel
 		// The RuneScape font has no arrow characters, so draw the arrow
 		JLabel arrow = new JLabel(open ? ARROW_OPEN : ARROW_CLOSED);
 		arrow.setBorder(new EmptyBorder(0, 0, 0, 4));
-		JLabel header = new JLabel("<html><b>" + escape(title) + "</b>" + (open ? "" : "  " + escape(preview(text))) + "</html>");
+		JLabel header = new JLabel("<html><b>" + escape(title) + "</b>" + (open ? "" : "  " + escape(preview(text, PREVIEW_ROOM - title.length()))) + "</html>");
 		header.setFont(FontManager.getRunescapeSmallFont());
 		header.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 
@@ -708,11 +1462,7 @@ public class SlayerPanel extends PluginPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				if (!openDrawers.remove(title))
-				{
-					openDrawers.add(title);
-				}
-				redraw();
+				toggleDrawer(title);
 			}
 		});
 		drawer.add(top, BorderLayout.NORTH);
@@ -745,6 +1495,19 @@ public class SlayerPanel extends PluginPanel
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		g.setColor(SUPERIOR_COLOR);
 		g.fillPolygon(xs, ys, 10);
+		g.dispose();
+		return new ImageIcon(image);
+	}
+
+	/** A small gold crown marking a boss in the monster table. */
+	private static ImageIcon crownIcon()
+	{
+		BufferedImage image = new BufferedImage(10, 9, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = image.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(BOSS_COLOR);
+		// Three points on a band
+		g.fillPolygon(new int[]{0, 0, 3, 5, 7, 10, 10}, new int[]{8, 1, 4, 0, 4, 1, 8}, 7);
 		g.dispose();
 		return new ImageIcon(image);
 	}
@@ -783,13 +1546,20 @@ public class SlayerPanel extends PluginPanel
 	/** The first few words of a note, cut at a word boundary. */
 	static String preview(String text)
 	{
+		return preview(text, PREVIEW_LENGTH);
+	}
+
+	/** The first words of a note that fit in about {@code room} characters, before the "...". */
+	static String preview(String text, int room)
+	{
 		String t = text.trim();
-		if (t.length() <= PREVIEW_LENGTH)
+		int length = Math.max(6, Math.min(PREVIEW_LENGTH, room));
+		if (t.length() <= length)
 		{
 			return t;
 		}
-		int cut = t.lastIndexOf(' ', PREVIEW_LENGTH);
-		return t.substring(0, cut > PREVIEW_LENGTH / 2 ? cut : PREVIEW_LENGTH).replaceAll("[,;:.]$", "") + "...";
+		int cut = t.lastIndexOf(' ', length);
+		return t.substring(0, cut > length / 2 ? cut : length).replaceAll("[,;:.]$", "") + "...";
 	}
 
 	private static String nullToEmpty(String s)
@@ -802,7 +1572,29 @@ public class SlayerPanel extends PluginPanel
 		return s != null && !s.trim().isEmpty();
 	}
 
-	private JPanel card(LocationOption location)
+	/**
+	 * The places that have the selected monster first, then the rest, each keeping its order: picking a monster in the
+	 * table brings its places to the top, which matters on tasks with many places (Skeletons). Only the cards move;
+	 * Go to nearest still picks from every place.
+	 */
+	static List<LocationOption> selectedFirst(List<LocationOption> locations, List<Variant> variants, String selected)
+	{
+		if (selected == null)
+		{
+			return locations;
+		}
+		List<LocationOption> first = new ArrayList<>();
+		List<LocationOption> rest = new ArrayList<>();
+		for (LocationOption location : locations)
+		{
+			(Variants.at(variants, location.getKey()).contains(selected) ? first : rest).add(location);
+		}
+		first.addAll(rest);
+		return first;
+	}
+
+	/** One place: its name and facts, and its Go button. {@code lastTime}: the place the player chose last time. */
+	private JPanel card(LocationOption location, boolean lastTime)
 	{
 		JPanel card = new JPanel(new BorderLayout(6, 2));
 		card.setAlignmentX(LEFT_ALIGNMENT);
@@ -817,7 +1609,7 @@ public class SlayerPanel extends PluginPanel
 
 		// Combat type, and whether a cannon can be set up here
 		boolean cannonKnown = "yes".equals(location.getCannon()) || "no".equals(location.getCannon());
-		if (location.getCombat() != null || cannonKnown)
+		if (!compact && (location.getCombat() != null || cannonKnown))
 		{
 			JPanel facts = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
 			facts.setOpaque(false);
@@ -832,7 +1624,8 @@ public class SlayerPanel extends PluginPanel
 			{
 				boolean allowed = "yes".equals(location.getCannon());
 				JLabel ball = chipIcon(allowed ? "You can use a cannon here" : "Cannons can't be set up here");
-				ball.setPreferredSize(new Dimension(16, 18));
+				// Room for the 16px icon plus the chip's 3px right border, so the text doesn't touch the ball
+				ball.setPreferredSize(new Dimension(20, 18));
 				icons.setCannon(ball, allowed);
 				facts.add(ball);
 				facts.add(chipText(allowed ? "Cannon" : "No cannon",
@@ -843,22 +1636,37 @@ public class SlayerPanel extends PluginPanel
 			text.add(facts);
 		}
 		List<String> here = Variants.at(currentVariants, location.getKey());
-		if (!here.isEmpty())
+		if (!compact && !here.isEmpty())
 		{
-			StringBuilder names = new StringBuilder();
-			for (String name : here)
-			{
-				if (names.length() > 0)
-				{
-					names.append(", ");
-				}
-				names.append(name.equals(selectedVariant) ? "<font color='#ff981f'>" + escape(name) + "</font>" : escape(name));
-			}
-			JLabel monsters = new JLabel("<html><body style='width:" + CARD_TEXT_WIDTH + "px'>" + names + "</body></html>");
+			JLabel monsters = new JLabel();
 			monsters.setFont(FontManager.getRunescapeSmallFont());
+			monsters.setText(monsterLine(here, selectedVariant, monsters.getFontMetrics(monsters.getFont()),
+				CARD_TEXT_WIDTH));
+			monsters.setName(CARD_MONSTERS);
+			// Room under it: the line below (Recommended, Needs ...) would touch its descenders
+			monsters.setBorder(new EmptyBorder(0, 0, MONSTER_LINE_GAP, 0));
 			monsters.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 			monsters.setAlignmentX(LEFT_ALIGNMENT);
+			if (here.contains(selectedVariant))
+			{
+				monsters.setToolTipText(SELECTED_MONSTER_TIP);
+				monsters.getAccessibleContext().setAccessibleDescription(selectedVariant + " is the monster shown above");
+			}
 			text.add(monsters);
+		}
+		else if (!compact && !location.isBossLair())
+		{
+			// The guide lists the place for the task, but no monster's spawns match it (and the task has several)
+			JLabel unknown = wrapped(NO_MONSTER_HERE, ColorScheme.LIGHT_GRAY_COLOR, FontManager.getRunescapeSmallFont(),
+				CARD_TEXT_WIDTH);
+			unknown.setName(CARD_MONSTERS);
+			text.add(unknown);
+		}
+		if (lastTime)
+		{
+			JLabel last = line(LAST_TIME, LAST_TIME_COLOR);
+			last.setToolTipText("You chose this place the last time you had this task");
+			text.add(last);
 		}
 		if (location.isRecommended())
 		{
@@ -874,10 +1682,18 @@ public class SlayerPanel extends PluginPanel
 		}
 		if (!location.isAccessible())
 		{
-			text.add(wrapped("Needs " + String.join(", ", location.getMissingRequirements()), WILDERNESS_COLOR,
-				FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH));
+			JLabel needs = wrapped("Needs " + String.join(", ", location.getMissingRequirements()), WILDERNESS_COLOR,
+				FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH);
+			needs.setName(CARD_NEEDS);
+			text.add(needs);
 		}
-		if (location.getNote() != null)
+		if (!location.isRoutable())
+		{
+			// Go is greyed out: say why on the card, not only in the button's tooltip (shown in compact too)
+			// Light grey like other information: the darker grey is the greyed-out button's and read as decoration
+			text.add(wrapped(NO_MAP_POINT, ColorScheme.LIGHT_GRAY_COLOR, FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH));
+		}
+		if (!compact && location.getNote() != null)
 		{
 			text.add(wrapped(location.getNote(), ColorScheme.LIGHT_GRAY_COLOR, FontManager.getRunescapeSmallFont(), CARD_TEXT_WIDTH));
 		}
@@ -886,7 +1702,9 @@ public class SlayerPanel extends PluginPanel
 		JButton go = new JButton("Go");
 		go.setPreferredSize(new Dimension(40, 22));
 		go.setMargin(new java.awt.Insets(0, 0, 0, 0));
-		go.setEnabled(location.isRoutable());
+		// Only a missing map point greys Go out (NO_MAP_POINT says so on the card). A missing quest or level never
+		// does: it's shown as "Needs ...", and the player's state may not be known yet
+		go.setEnabled(goEnabled(location));
 		go.setToolTipText(!location.isRoutable() ? "No map point for this place yet"
 			: location.isAccessible() ? "Path to " + location.getLabel()
 			: "Path to " + location.getLabel() + " (you may not be able to get in yet)");
@@ -896,8 +1714,15 @@ public class SlayerPanel extends PluginPanel
 			if (!here.isEmpty() && !here.contains(selectedVariant))
 			{
 				selectedVariant = here.get(0);
-				redraw();
+				memory.setMonster(variantTaskKey, selectedVariant);
 			}
+			// Marked "Last time" when this task comes up again (not for a preview: it isn't a real trip)
+			if (!previewing)
+			{
+				memory.setLastPlace(variantTaskKey, location.getKey());
+			}
+			onMemoryChanged.accept(memory);
+			redraw();
 			onGo.accept(location);
 		});
 		JPanel goWrap = new JPanel(new BorderLayout());
@@ -905,6 +1730,85 @@ public class SlayerPanel extends PluginPanel
 		goWrap.add(go, BorderLayout.NORTH);
 		card.add(goWrap, BorderLayout.EAST);
 		return card;
+	}
+
+	/**
+	 * The line under Go to nearest, or null: why it's greyed out (no non-lair place with a map point; a list of only
+	 * boss lairs already says so with {@link #BOSS_GO_HINT}-style cards), or that every place it picks from is gated.
+	 */
+	static String nearestReason(List<LocationOption> shown, List<LocationOption> targets)
+	{
+		if (targets.isEmpty())
+		{
+			return shown.stream().anyMatch(l -> !l.isBossLair()) ? NEAREST_NO_POINT : null;
+		}
+		return LocationPicker.nearestIsGated(targets) ? NEAREST_GATED : null;
+	}
+
+	/** Whether a place's Go button works: only when there's a point to path to, whatever the player still needs. */
+	static boolean goEnabled(LocationOption location)
+	{
+		return location.isRoutable();
+	}
+
+	/**
+	 * A place card's monster names, as the label's HTML. The monster shown above is in the selected colour, on every
+	 * card that lists it, whichever monster it is (a mark before the name was dropped: the player found it noise, and
+	 * the RuneScape fonts have no bullet). The names are wrapped here, at {@code width} in {@code fm}, so the lines can have {@link #MONSTER_LINE_GAP}
+	 * between them (Swing's HTML has no line-height); each line's words are joined by no-break spaces so it can't wrap
+	 * again.
+	 */
+	static String monsterLine(List<String> here, String selected, FontMetrics fm, int width)
+	{
+		// Words with whether they're the selected monster's; a name's last word takes the comma before the next name
+		List<String> words = new ArrayList<>();
+		List<Boolean> marked = new ArrayList<>();
+		for (int i = 0; i < here.size(); i++)
+		{
+			String name = here.get(i);
+			String[] parts = name.trim().split("\\s+");
+			for (int j = 0; j < parts.length; j++)
+			{
+				String w = parts[j];
+				if (j == parts.length - 1 && i < here.size() - 1)
+				{
+					w += ",";
+				}
+				words.add(w);
+				marked.add(name.equals(selected));
+			}
+		}
+
+		StringBuilder html = new StringBuilder("<html><body style='width:" + width + "px'>");
+		int start = 0;
+		while (start < words.size())
+		{
+			// As many words as fit (at least one)
+			int end = start + 1;
+			String plain = words.get(start);
+			while (end < words.size() && fm.stringWidth(plain + " " + words.get(end)) <= width)
+			{
+				plain += " " + words.get(end);
+				end++;
+			}
+			html.append(start == 0 ? "<div>" : "<div style='margin-top:" + MONSTER_LINE_GAP + "px'>");
+			for (int k = start; k < end; k++)
+			{
+				boolean on = marked.get(k);
+				boolean opens = on && (k == start || !marked.get(k - 1));
+				boolean closes = on && (k == end - 1 || !marked.get(k + 1));
+				if (k > start)
+				{
+					// Inside the selected colour when both words are the selected monster's
+					html.append('\u00a0');
+				}
+				html.append(opens ? "<font color='#ff981f'>" : "").append(escape(words.get(k)))
+					.append(closes ? "</font>" : "");
+			}
+			html.append("</div>");
+			start = end;
+		}
+		return html.append("</body></html>").toString();
 	}
 
 	private static JLabel title(String text)
@@ -941,6 +1845,13 @@ public class SlayerPanel extends PluginPanel
 		return label;
 	}
 
+	/** Plain text with line breaks as a tooltip that wraps at {@link #TOOLTIP_WIDTH}. */
+	static String wrappedTooltip(String text)
+	{
+		return "<html><body style='width:" + TOOLTIP_WIDTH + "px'>" + escape(text).replace("\n", "<br>")
+			+ "</body></html>";
+	}
+
 	private static String escape(String s)
 	{
 		return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
@@ -951,11 +1862,43 @@ public class SlayerPanel extends PluginPanel
 		return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
 	}
 
+	/** Show another monster's details, as clicking its row does. */
+	void selectVariant(String name)
+	{
+		pickVariant(name);
+	}
+
+	/** The player picked a monster in the table: show it, and remember it for this task. */
+	private void pickVariant(String name)
+	{
+		selectedVariant = name;
+		if (variantTaskKey != null)
+		{
+			memory.setMonster(variantTaskKey, name);
+			onMemoryChanged.accept(memory);
+		}
+		redraw();
+	}
+
+	/** Open or close a drawer, as clicking its title does. Remembered for every task. */
+	void toggleDrawer(String title)
+	{
+		memory.toggle(title);
+		onMemoryChanged.accept(memory);
+		redraw();
+	}
+
+	/** The monster whose details are shown. */
+	String getSelectedVariant()
+	{
+		return selectedVariant;
+	}
+
 	private void redraw()
 	{
-		if (lastShow != null)
+		if (showingTask)
 		{
-			lastShow.run();
+			drawTask();
 		}
 	}
 

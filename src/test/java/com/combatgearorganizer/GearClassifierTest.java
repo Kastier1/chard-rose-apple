@@ -148,16 +148,69 @@ public class GearClassifierTest
 	@Test
 	public void ammoFiredWeaponsCountTheirAmmo()
 	{
-		Bonuses tbow = Bonuses.builder().range(70).rangedStrength(20).build();
-		Bonuses bowfa = Bonuses.builder().range(128).rangedStrength(106).build();
-		Bonuses acb = Bonuses.builder().range(100).prayer(1).build();
-		Bonuses blowpipe = Bonuses.builder().range(30).rangedStrength(20).build();
+		Bonuses tbow = Bonuses.builder().range(70).rangedStrength(20).attackSpeed(6).build();
+		Bonuses bowfa = Bonuses.builder().range(128).rangedStrength(106).attackSpeed(5).build();
+		Bonuses acb = Bonuses.builder().range(100).prayer(1).attackSpeed(6).build();
+		Bonuses msb = Bonuses.builder().range(75).attackSpeed(4).build();
 		int tbowPower = power("Twisted bow", GearSlot.WEAPON, tbow);
 		int acbPower = power("Armadyl crossbow", GearSlot.WEAPON, acb);
 		assertTrue(tbowPower > power("Bow of faerdhinen (c)", GearSlot.WEAPON, bowfa));
-		assertTrue(acbPower > power("Toxic blowpipe", GearSlot.WEAPON, blowpipe));
-		// Without the ammo adjustment the crossbow (100) would rank below the blowpipe (30 + 20)
-		assertTrue(acbPower > power("", GearSlot.NONE, blowpipe));
+		// Without the bolts' strength the crossbow (+100 ranged, no strength) would rank below a shortbow
+		assertTrue(acbPower > power("", GearSlot.NONE, msb));
+	}
+
+	// Stats below are the wiki's (osrs-dps-calc equipment.json), attack speed in ticks.
+
+	@Test
+	public void rangedWeaponsRankPerTick()
+	{
+		Bonuses bowfa = Bonuses.builder().range(128).rangedStrength(106).attackSpeed(5).build();
+		Bonuses heavyBallista = Bonuses.builder().range(125).rangedStrength(15).attackSpeed(7).build();
+		Bonuses blowpipe = Bonuses.builder().range(30).rangedStrength(20).attackSpeed(3).build();
+		Bonuses rcb = Bonuses.builder().range(90).attackSpeed(6).build();
+		assertTrue(power("Bow of faerdhinen (c)", GearSlot.WEAPON, bowfa) > power("Heavy ballista", GearSlot.WEAPON, heavyBallista));
+		assertTrue(power("Toxic blowpipe", GearSlot.WEAPON, blowpipe) > power("Rune crossbow", GearSlot.WEAPON, rcb));
+	}
+
+	@Test
+	public void specWeaponsGoAfterMainWeapons()
+	{
+		Bonuses fang = Bonuses.builder().stab(105).slash(75).strength(103).attackSpeed(5).build();
+		Bonuses maul = Bonuses.builder().crush(135).strength(147).attackSpeed(6).build();
+		Bonuses ags = Bonuses.builder().slash(132).crush(80).strength(132).prayer(8).attackSpeed(6).build();
+		Bonuses whip = Bonuses.builder().slash(82).strength(82).attackSpeed(4).build();
+		int fangPower = power("Osmumten's fang", GearSlot.WEAPON, fang);
+		assertTrue(fangPower > power("Elder maul", GearSlot.WEAPON, maul));
+		assertTrue(fangPower > power("Armadyl godsword", GearSlot.WEAPON, ags));
+		// Spec weapons still sort among themselves
+		assertTrue(power("Elder maul", GearSlot.WEAPON, maul) > power("Armadyl godsword", GearSlot.WEAPON, ags));
+		// Even a whip comes before them
+		assertTrue(power("Abyssal whip", GearSlot.WEAPON, whip) > power("Elder maul", GearSlot.WEAPON, maul));
+	}
+
+	@Test
+	public void slowWeaponsLoseToFastOnes()
+	{
+		// Same bonuses, a two-handed speed against a one-handed one
+		Bonuses fast = Bonuses.builder().slash(90).strength(86).attackSpeed(4).build();
+		Bonuses slow = Bonuses.builder().slash(90).strength(86).attackSpeed(7).build();
+		assertTrue(power("", GearSlot.WEAPON, fast) > power("", GearSlot.WEAPON, slow));
+	}
+
+	@Test
+	public void poweredStavesRankByTheirSpell()
+	{
+		Bonuses shadow = Bonuses.builder().magic(35).prayer(1).attackSpeed(5).build();
+		Bonuses sang = Bonuses.builder().magic(25).range(-4).attackSpeed(4).build();
+		Bonuses ahrims = Bonuses.builder().magic(15).magicDamage(5).crush(68).strength(68).attackSpeed(6).build();
+		Bonuses masterWand = Bonuses.builder().magic(20).magicDamage(10).attackSpeed(4).build();
+		Bonuses staffOfLight = Bonuses.builder().stab(55).slash(70).magic(17).magicDamage(15).strength(72).attackSpeed(4).build();
+		int sangPower = power("Sanguinesti staff", GearSlot.WEAPON, sang);
+		assertEquals(GearStyle.MAGIC, style("Sanguinesti staff", GearSlot.WEAPON, sang));
+		assertTrue(power("Tumeken's shadow", GearSlot.WEAPON, shadow) > sangPower);
+		assertTrue(sangPower > power("Ahrim's staff", GearSlot.WEAPON, ahrims));
+		assertTrue(sangPower > power("Master wand", GearSlot.WEAPON, masterWand));
+		assertTrue(sangPower > power("Staff of light", GearSlot.WEAPON, staffOfLight));
 	}
 
 	@Test
@@ -174,5 +227,29 @@ public class GearClassifierTest
 		Bonuses plain = Bonuses.builder().slash(10).strength(10).build();
 		Bonuses tanky = Bonuses.builder().slash(10).strength(10).defSlash(40).build();
 		assertTrue(power("", GearSlot.HEAD, tanky) > power("", GearSlot.HEAD, plain));
+	}
+
+	// Found testing in game: atlatl darts sat with the slayer helmet in Utility
+
+	@Test
+	public void ammoWithNoBonusesIsRanged()
+	{
+		Bonuses atlatlDart = Bonuses.builder().build();
+		assertEquals(GearStyle.RANGED, style("Atlatl dart", GearSlot.AMMO, atlatlDart));
+		// Blessings have a prayer bonus and stay with the prayer gear
+		Bonuses unholy = Bonuses.builder().prayer(1).build();
+		assertEquals(GearStyle.PRAYER, style("Unholy blessing", GearSlot.AMMO, unholy));
+		// A no-stat item in another slot is still utility
+		assertEquals(GearStyle.UTILITY, style("Ring of dueling(8)", GearSlot.RING, Bonuses.builder().build()));
+	}
+
+	@Test
+	public void eclipseAtlatlCountsMeleeStrength()
+	{
+		// Wiki stats: +87 ranged, +40 melee strength, which its hits use
+		Bonuses atlatl = Bonuses.builder().range(87).strength(40).attackSpeed(4).build();
+		Bonuses msb = Bonuses.builder().range(75).attackSpeed(4).build();
+		assertEquals(GearStyle.RANGED, style("Eclipse atlatl", GearSlot.WEAPON, atlatl));
+		assertTrue(power("Eclipse atlatl", GearSlot.WEAPON, atlatl) > power("Magic shortbow (i)", GearSlot.WEAPON, msb));
 	}
 }

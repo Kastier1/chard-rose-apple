@@ -1,6 +1,7 @@
 package com.combatgearorganizer;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -68,6 +69,47 @@ public class TagItemResolverTest
 		List<Integer> ids = resolve(Arrays.asList(SLAYER_HELMET_I, -SLAYER_HELMET), null,
 			Collections.singletonList(SLAYER_HELMET_I));
 		assertEquals(Collections.singletonList(SLAYER_HELMET_I), ids);
+	}
+
+	@Test
+	public void oldPlainTagOfAnotherVersionDoesNotAddAGhost()
+	{
+		// Found testing in game: the uncharged version was tagged on its own earlier, then Add worn gear tagged the
+		// group while wearing the charged one. Only the charged one is owned, so only it is laid out.
+		List<Integer> ids = resolve(Arrays.asList(GLORY, -GLORY), null, Collections.singletonList(GLORY_4));
+		assertEquals(Collections.singletonList(GLORY_4), ids);
+		// Same with a non-base version
+		ids = resolve(Arrays.asList(GLORY_1, -GLORY), null, Collections.singletonList(GLORY_4));
+		assertEquals(Collections.singletonList(GLORY_4), ids);
+	}
+
+	@Test
+	public void onlyAPlaceholderOfAnotherVersionGivesNoExtraSlot()
+	{
+		// Found testing in game: the bank kept a placeholder of the old version after it was upgraded. The plugin no
+		// longer passes placeholders as owned, so only the worn version is laid out
+		List<Integer> ids = resolve(Collections.singletonList(-GLORY), null, Collections.singletonList(GLORY_4));
+		assertEquals(Collections.singletonList(GLORY_4), ids);
+		// Nothing owned at all: the old layout entry (or the fallback) still holds the slot
+		ids = resolve(Collections.singletonList(-GLORY), new int[]{GLORY_1}, Collections.emptyList());
+		assertEquals(Collections.singletonList(GLORY_1), ids);
+	}
+
+	@Test
+	public void plainTagOfAnOwnedVersionStaysNextToTheOthers()
+	{
+		// Two real items: both shown
+		List<Integer> ids = resolve(Arrays.asList(GLORY_1, -GLORY), null, Arrays.asList(GLORY_4, GLORY_1));
+		assertEquals(2, ids.size());
+		assertTrue(ids.containsAll(Arrays.asList(GLORY_4, GLORY_1)));
+	}
+
+	@Test
+	public void plainTagWithoutAGroupTagIsKeptEvenIfNotOwned()
+	{
+		// No variation tag for the group: a plain tag is the player's own choice, keep it as a placeholder
+		List<Integer> ids = resolve(Collections.singletonList(GLORY_1), null, Collections.singletonList(GLORY_4));
+		assertEquals(Collections.singletonList(GLORY_1), ids);
 	}
 
 	@Test

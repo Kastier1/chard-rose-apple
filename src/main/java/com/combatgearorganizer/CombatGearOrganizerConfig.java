@@ -10,6 +10,8 @@ import net.runelite.client.config.Keybind;
 public interface CombatGearOrganizerConfig extends Config
 {
 	String GROUP = "combatgearorganizer";
+	String TAG_NAME_KEY = "tagName";
+	String GROUPING_KEY = "grouping";
 
 	@ConfigSection(
 		name = "Slayer",
@@ -18,8 +20,15 @@ public interface CombatGearOrganizerConfig extends Config
 	)
 	String slayerSection = "slayer";
 
+	@ConfigSection(
+		name = "Item values",
+		description = "How the plugin values items, such as drops in the slayer panel",
+		position = 20
+	)
+	String valuesSection = "values";
+
 	@ConfigItem(
-		keyName = "tagName",
+		keyName = TAG_NAME_KEY,
 		name = "Bank tag",
 		description = "The bank tag tab that holds your combat gear",
 		position = 0
@@ -30,10 +39,11 @@ public interface CombatGearOrganizerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "grouping",
+		keyName = GROUPING_KEY,
 		name = "Group by",
 		description = "Combat style: melee / ranged / magic / prayer sections, each ordered by slot.<br>"
-			+ "Equipment slot: one section per slot, each ordered by combat style.",
+			+ "Equipment slot: one section per slot, each ordered by combat style.<br>"
+			+ "Gear set: armour slots as rows and sets as columns, so each set lines up; other slots as by slot.",
 		position = 1
 	)
 	default Grouping grouping()
@@ -97,5 +107,44 @@ public interface CombatGearOrganizerConfig extends Config
 	default boolean showWildernessLocations()
 	{
 		return false;
+	}
+
+	@ConfigItem(
+		keyName = "taskSummaryChat",
+		name = "Task summary in chat",
+		description = "When you finish a task, also put the summary in your chat box,<br>"
+			+ "e.g. \"Task done: 140 Abyssal demons in 24 min, 2 superiors, 1.2M loot\".",
+		section = slayerSection,
+		position = 13
+	)
+	default boolean taskSummaryChat()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "compactPanel",
+		name = "Compact panel",
+		description = "Show only the task, its progress, the route and the places with their Go buttons.<br>"
+			+ "Hides the monster details and drops.",
+		section = slayerSection,
+		position = 14
+	)
+	default boolean compactPanel()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "itemValue",
+		name = "Item value",
+		description = "Grand Exchange: what the item sells for. High alchemy: the coins you get for casting High Level Alchemy on it.<br>"
+			+ "Used for every value the plugin shows, including the loot value of your current task.",
+		section = valuesSection,
+		position = 21
+	)
+	default ItemValueMode itemValue()
+	{
+		return ItemValueMode.GRAND_EXCHANGE;
 	}
 }

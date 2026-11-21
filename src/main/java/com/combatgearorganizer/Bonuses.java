@@ -25,4 +25,6 @@ public class Bonuses
 	int rangedStrength;
 	float magicDamage;
 	int prayer;
+	/** Attack speed in game ticks, as RuneLite's item stats give it; 0 when unknown. */
+	int attackSpeed;
 }

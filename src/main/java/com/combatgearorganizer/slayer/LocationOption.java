@@ -23,6 +23,10 @@ public class LocationOption
 	List<int[]> targets;
 	/** Quests and skills the player still needs to get in. Empty when they can go. */
 	List<String> missingRequirements;
+	/** True for a place made from one monster's wiki spawns rather than the slayer location guide. */
+	boolean fromWiki;
+	/** True for a boss's lair. "Go to nearest" never picks one. */
+	boolean bossLair;
 
 	public boolean isRoutable()
 	{

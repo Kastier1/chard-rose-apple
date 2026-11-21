@@ -27,7 +27,7 @@ public class SlayerLocationData
 		private List<LocationEntry> wildernessLocations = Collections.emptyList();
 		/** What to bring and expect. Null when the data has none. */
 		private TaskInfo info;
-		/** Each monster that counts for the task, lowest level first; superiors and bosses last. */
+		/** Each monster that counts for the task, lowest level first; then bosses, then superiors. */
 		private List<Variant> variants = Collections.emptyList();
 	}
 
@@ -48,8 +48,9 @@ public class SlayerLocationData
 		private VariantWeakness weakness;
 		/** Superiors only appear while on task, by chance. */
 		private boolean superior;
+		/** A boss that counts for the task. Its only place is its lair ({@link LocationEntry#isBossLair()}). */
 		private boolean boss;
-		/** Keys of the task's places where this monster spawns. */
+		/** Keys of the task's places where this monster spawns; for a boss, its lair. */
 		private List<String> places = Collections.emptyList();
 		/** For a superior: the name of the monster it replaces. */
 		private String superiorOf;
@@ -57,11 +58,60 @@ public class SlayerLocationData
 		private List<Drop> drops = Collections.emptyList();
 		/** What it always drops worth naming: bones or ashes. */
 		private List<String> alwaysDrops = Collections.emptyList();
+		/** Prayer and storage items worth bringing for it (bonecrusher, herb sack...). */
+		private List<Carry> carry = Collections.emptyList();
+		/** Its defence stats, for the gear-up DPS maths. Null when the wiki has none. */
+		private Combat combat;
+		/** Wiki monster attributes, lower case: "demon", "dragon", "undead", "kalphite", "leafy", "vampyre1"... */
+		private List<String> attributes = Collections.emptyList();
+		/** For a boss: the only masters (SlayerMasters names) whose task it counts for; empty means any. */
+		private List<String> masters = Collections.emptyList();
+		/** For a boss: masters (SlayerMasters names) whose task it doesn't count for. */
+		private List<String> notMasters = Collections.emptyList();
+		/**
+		 * What this monster needs beyond its places' requirements (a higher Slayer level than the task's, or a quest
+		 * finished where the others only need it started). Null when nothing more. Its places' notes say it too.
+		 */
+		private Requirements requirements;
 
 		public boolean isRegular()
 		{
 			return !superior && !boss;
 		}
+	}
+
+	/**
+	 * A monster's defensive stats from the wiki's monster infobox (its most common version). Values left out of the
+	 * file are 0.
+	 */
+	@Data
+	public static class Combat
+	{
+		/** Defence level. */
+		private int defence;
+		/** Magic level, which magic attacks roll against. */
+		private int magic;
+		/** Magic attack bonus; the Twisted bow scales with this or the Magic level, whichever is higher. */
+		private int magicAttack;
+		private int stab;
+		private int slash;
+		private int crush;
+		private int magicDefence;
+		/** Ranged defence against light (thrown, darts), standard (arrows) and heavy (bolts, javelins) ammo. */
+		private int light;
+		private int standard;
+		private int heavy;
+		/** Tiles per side; 0 in the file means 1. */
+		private int size;
+	}
+
+	@Data
+	public static class Carry
+	{
+		/** A {@link CarryItem} key, e.g. "herbSack". */
+		private String item;
+		/** For drop-based items: about one drop in this many kills. Null for rule-based ones (bonecrusher). */
+		private Integer per;
 	}
 
 	@Data
@@ -72,6 +122,8 @@ public class SlayerLocationData
 		private String rarity;
 		/** The better rate while on task, when there is one. */
 		private String onTask;
+		/** [lowest, highest] stack size when it can be more than one; null for one. */
+		private int[] quantity;
 		/** True when it's a collection log slot. */
 		private boolean clog;
 	}
@@ -118,7 +170,38 @@ public class SlayerLocationData
 		private String note;
 		/** Quests and skills needed to get in. Null when there are none. */
 		private Requirements requirements;
+		/**
+		 * Where the place comes from: null for the slayer location guide, {@link #SOURCE_WIKI} for a place made from
+		 * one monster's OSRS Wiki spawn points because it lives away from every guide place, {@link #SOURCE_BOSS} for
+		 * a boss's lair (its points are where the player walks in).
+		 */
+		private String source;
+		/**
+		 * True for a guide place the generator couldn't match to any of the task's monsters (none of their wiki spawn
+		 * spots is near it or named like it, and the task has more than one). The card says so.
+		 */
+		private boolean noMonster;
+		/**
+		 * Why no monster is known here: the evidence from the generator's reviewed list (NO_MONSTER_PLACES), which
+		 * every {@link #noMonster} place has.
+		 */
+		private String noMonsterWhy;
+
+		public boolean isFromWiki()
+		{
+			return SOURCE_WIKI.equals(source);
+		}
+
+		public boolean isBossLair()
+		{
+			return SOURCE_BOSS.equals(source);
+		}
 	}
+
+	/** {@link LocationEntry#getSource()} of a place made from a monster's wiki spawns. */
+	public static final String SOURCE_WIKI = "wiki";
+	/** {@link LocationEntry#getSource()} of a boss's lair. */
+	public static final String SOURCE_BOSS = "boss";
 
 	@Data
 	public static class Requirements
@@ -129,6 +212,10 @@ public class SlayerLocationData
 		private List<String> questsStarted = Collections.emptyList();
 		/** RuneLite {@code Skill} enum name to the real level needed. */
 		private Map<String, Integer> skills = Collections.emptyMap();
+		/** Skills in {@link #skills} whose level may be boosted to meet it (the wiki says so for that place). */
+		private List<String> boostable = Collections.emptyList();
+		/** Achievement Diary tiers that must be complete, by {@link Diaries} name ("WILDERNESS_MEDIUM"). */
+		private List<String> diaries = Collections.emptyList();
 	}
 
 	public TaskEntry findTask(int taskId, String name)

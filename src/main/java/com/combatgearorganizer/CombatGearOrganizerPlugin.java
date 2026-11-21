@@ -1,16 +1,21 @@
 package com.combatgearorganizer;
 
 import com.combatgearorganizer.slayer.SlayerHelper;
+import com.combatgearorganizer.slayer.SlayerMasters;
+import com.combatgearorganizer.slayer.SlayerPanel;
 import com.google.inject.Provides;
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
+import javax.swing.SwingUtilities;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
@@ -20,9 +25,15 @@ import net.runelite.api.ItemComposition;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.CommandExecuted;
+import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.ScriptPreFired;
+import net.runelite.api.events.StatChanged;
+import net.runelite.api.events.WidgetLoaded;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
+import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.chat.ChatMessageBuilder;
 import net.runelite.client.chat.ChatMessageManager;
@@ -30,30 +41,38 @@ import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.events.NpcLootReceived;
+import net.runelite.client.events.PluginChanged;
+import net.runelite.client.events.PluginMessage;
 import net.runelite.client.game.ItemEquipmentStats;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
 import net.runelite.client.game.ItemVariationMapping;
-import net.runelite.client.events.PluginChanged;
+import net.runelite.client.game.chatbox.ChatboxPanelManager;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDependency;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.PluginManager;
+import net.runelite.client.plugins.bank.BankSearch;
 import net.runelite.client.plugins.banktags.BankTagsPlugin;
 import net.runelite.client.plugins.banktags.BankTagsService;
 import net.runelite.client.plugins.banktags.TagManager;
 import net.runelite.client.plugins.banktags.tabs.Layout;
 import net.runelite.client.plugins.banktags.tabs.LayoutManager;
 import net.runelite.client.plugins.slayer.SlayerPlugin;
+import net.runelite.client.ui.ClientToolbar;
+import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.HotkeyListener;
+import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.Text;
 
 @Slf4j
 @PluginDescriptor(
 	name = "Combat Gear Organizer",
 	description = "Lays out your combat gear bank tag, and shows where to do your slayer task",
-	tags = {"bank", "tag", "layout", "gear", "combat", "organize", "sort", "slayer", "task", "shortest path"}
+	tags = {"bank", "tag", "layout", "gear", "combat", "organize", "sort", "slayer", "task", "shortest path", "drops",
+		"collection log", "dps"}
 )
 @PluginDependency(BankTagsPlugin.class)
 @PluginDependency(SlayerPlugin.class)
@@ -61,6 +80,7 @@ public class CombatGearOrganizerPlugin extends Plugin
 {
 	static final String ORGANIZE_COMMAND = "gearsort";
 	static final String ADD_WORN_COMMAND = "gearadd";
+	static final String SLAYER_TASK_COMMAND = "slayertask";
 	static final String UNDO_ARGUMENT = "undo";
 	/** Shows as "Auto layout: Combat gear" on a laid-out tag tab's menu, with a preview and Keep / Undo. */
 	static final String AUTO_LAYOUT_NAME = "Combat gear";
@@ -98,7 +118,30 @@ public class CombatGearOrganizerPlugin extends Plugin
 	@Inject
 	private PluginManager pluginManager;
 
+	@Inject
+	private ConfigManager configManager;
+
+	@Inject
+	private ClientToolbar clientToolbar;
+
+	@Inject
+	private ChatboxPanelManager chatboxPanelManager;
+
+	@Inject
+	private BankSearch bankSearch;
+
 	private boolean slayerStarted;
+
+	/** The one side panel: Slayer and Combat tab sections. Swing thread. */
+	private OrganizerPanel organizerPanel;
+	private CombatTabPanel combatTabPanel;
+	private NavigationButton navButton;
+	/** Read the Combat tab state again on the next tick, e.g. after a Bank Tags setting changed. */
+	private volatile boolean combatTabDirty = true;
+	/** What the Combat tab section last showed. Client thread. */
+	private CombatTabStatus shownStatus;
+	private Grouping shownGrouping;
+	private boolean lastBankOpen;
 
 	/** Layout of each tag before this plugin last overwrote it, for ::gearsort undo. Cleared on shutdown. */
 	private final Map<String, int[]> undoLayouts = new HashMap<>();
@@ -124,7 +167,26 @@ public class CombatGearOrganizerPlugin extends Plugin
 		keyManager.registerKeyListener(hotkeyListener);
 		layoutManager.registerAutoLayout(this, AUTO_LAYOUT_NAME,
 			previous -> new Layout(previous.getTag(), buildArrangement(previous.getTag(), previous)));
+
+		combatTabPanel = new CombatTabPanel(this::chooseTag, this::chooseGrouping,
+			() -> clientThread.invokeLater(this::organizeFromPanel),
+			() -> clientThread.invokeLater(() -> undo(config.tagName())),
+			() -> clientThread.invokeLater(() -> addWornGear(config.tagName())));
+		organizerPanel = new OrganizerPanel(combatTabPanel);
+		final BufferedImage icon = ImageUtil.loadImageResource(SlayerHelper.class, "slayer_icon.png");
+		navButton = NavigationButton.builder()
+			.tooltip("Combat Gear Organizer")
+			.icon(ImageUtil.resizeImage(icon, 18, 16))
+			.priority(7)
+			.panel(organizerPanel)
+			.build();
+		clientToolbar.addNavigation(navButton);
+
 		updateSlayerPanel();
+		shownStatus = null;
+		shownGrouping = null;
+		combatTabDirty = true;
+		clientThread.invokeLater(this::refreshCombatTab);
 	}
 
 	@Override
@@ -138,6 +200,10 @@ public class CombatGearOrganizerPlugin extends Plugin
 			slayerHelper.stop();
 			slayerStarted = false;
 		}
+		clientToolbar.removeNavigation(navButton);
+		navButton = null;
+		organizerPanel = null;
+		combatTabPanel = null;
 	}
 
 	private void updateSlayerPanel()
@@ -152,11 +218,38 @@ public class CombatGearOrganizerPlugin extends Plugin
 			slayerHelper.stop();
 			slayerStarted = false;
 		}
+		else
+		{
+			return;
+		}
+		final OrganizerPanel panel = organizerPanel;
+		final SlayerPanel slayer = slayerHelper.getPanel();
+		if (panel != null)
+		{
+			onSwing(() -> panel.setSlayerPanel(slayer));
+		}
+	}
+
+	private static void onSwing(Runnable r)
+	{
+		if (SwingUtilities.isEventDispatchThread())
+		{
+			r.run();
+		}
+		else
+		{
+			SwingUtilities.invokeLater(r);
+		}
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
+		final boolean bankOpen = isBankOpen();
+		if (combatTabDirty || bankOpen != lastBankOpen)
+		{
+			refreshCombatTab();
+		}
 		if (slayerStarted)
 		{
 			slayerHelper.onGameTick();
@@ -182,12 +275,75 @@ public class CombatGearOrganizerPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onItemContainerChanged(ItemContainerChanged event)
+	{
+		if (slayerStarted)
+		{
+			slayerHelper.onItemContainerChanged(event);
+		}
+	}
+
+	@Subscribe
+	public void onWidgetLoaded(WidgetLoaded event)
+	{
+		if (slayerStarted)
+		{
+			slayerHelper.onWidgetLoaded(event);
+		}
+	}
+
+	@Subscribe
+	public void onGameStateChanged(GameStateChanged event)
+	{
+		refreshCombatTab();
+		if (slayerStarted)
+		{
+			slayerHelper.onGameStateChanged(event);
+		}
+	}
+
+	@Subscribe
+	public void onStatChanged(StatChanged event)
+	{
+		if (slayerStarted)
+		{
+			slayerHelper.onStatChanged(event);
+		}
+	}
+
+	@Subscribe
+	public void onNpcLootReceived(NpcLootReceived event)
+	{
+		if (slayerStarted)
+		{
+			slayerHelper.onNpcLootReceived(event);
+		}
+	}
+
+	@Subscribe
+	public void onPluginMessage(PluginMessage event)
+	{
+		if (slayerStarted)
+		{
+			slayerHelper.onPluginMessage(event);
+		}
+	}
+
+	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
+		if (BankTagsPlugin.CONFIG_GROUP.equals(event.getGroup()))
+		{
+			// Tag tabs, tagged items and layouts all live here; tagging can change many keys at once
+			markCombatTabDirty();
+			return;
+		}
 		if (!CombatGearOrganizerConfig.GROUP.equals(event.getGroup()))
 		{
 			return;
 		}
+		// Bank tag or layout changed in the settings or the panel: show it in the panel
+		clientThread.invokeLater(this::refreshCombatTab);
 		updateSlayerPanel();
 		if (slayerStarted)
 		{
@@ -198,6 +354,8 @@ public class CombatGearOrganizerPlugin extends Plugin
 	@Subscribe
 	public void onPluginChanged(PluginChanged event)
 	{
+		// Bank Tags turned on or off: update the checklist
+		markCombatTabDirty();
 		// e.g. Shortest Path turned on or off: update the panel's directions text
 		if (slayerStarted && event.getPlugin() != this)
 		{
@@ -218,6 +376,12 @@ public class CombatGearOrganizerPlugin extends Plugin
 			return;
 		}
 
+		if (SLAYER_TASK_COMMAND.equals(command))
+		{
+			clientThread.invokeLater(() -> previewSlayerTask(args));
+			return;
+		}
+
 		final String tag = args.length > 0 ? joinFrom(args, 0) : config.tagName();
 		if (ORGANIZE_COMMAND.equals(command))
 		{
@@ -227,6 +391,41 @@ public class CombatGearOrganizerPlugin extends Plugin
 		{
 			clientThread.invokeLater(() -> addWornGear(tag));
 		}
+	}
+
+	/**
+	 * ::slayertask &lt;task&gt; [master] shows that task in the slayer panel as if you had it (to look it up, or try the panel
+	 * out); ::slayertask off goes back to your real task. Nothing in the game changes. Client thread.
+	 */
+	private void previewSlayerTask(String[] args)
+	{
+		if (!slayerStarted)
+		{
+			sendMessage("Turn on the slayer task panel in the plugin settings first.");
+			return;
+		}
+		if (args.length == 0)
+		{
+			sendMessage("Type ::" + SLAYER_TASK_COMMAND + " followed by a task, e.g. ::" + SLAYER_TASK_COMMAND
+				+ " abyssal demons, or add a master: ::" + SLAYER_TASK_COMMAND + " lava dragons krystilia."
+				+ " ::" + SLAYER_TASK_COMMAND + " off goes back to your task.");
+			return;
+		}
+		if (args.length == 1 && (args[0].equalsIgnoreCase("off") || args[0].equalsIgnoreCase("stop")))
+		{
+			slayerHelper.stopPreview();
+			sendMessage(slayerHelper.isPreviewing() ? "Back to your current task." : "No preview was showing.");
+			return;
+		}
+		// A master's name at the end picks who "gave" the task (Konar, Krystilia...)
+		String master = null;
+		int end = args.length;
+		if (args.length > 1 && SlayerMasters.idForName(args[args.length - 1]) != 0)
+		{
+			master = args[args.length - 1];
+			end--;
+		}
+		sendMessage(slayerHelper.previewTask(String.join(" ", java.util.Arrays.copyOf(args, end)), master));
 	}
 
 	/**
@@ -260,7 +459,10 @@ public class CombatGearOrganizerPlugin extends Plugin
 			added++;
 		}
 
-		sendMessage("Tagged " + added + " worn item" + (added == 1 ? "" : "s") + " with '" + tag + "'.");
+		final String tagged = "Tagged " + added + " worn item" + (added == 1 ? "" : "s") + " with '" + tag + "'.";
+		sendMessage(tagged);
+		panelNote(tagged, null);
+		markCombatTabDirty();
 
 		if (config.organizeOnAdd())
 		{
@@ -303,9 +505,170 @@ public class CombatGearOrganizerPlugin extends Plugin
 		undoLayouts.put(tag, existing != null ? existing.getLayout().clone() : null);
 		layoutManager.saveLayout(new Layout(tag, arrangement));
 		redrawIfOpen(tag);
+		panelNote("Organized '" + tag + "'. Click Undo to put it back.", OrganizeSummary.of(items));
+		markCombatTabDirty();
 
 		sendMessage("Organized " + items.size() + " items in '" + tag + "': " + summarize(items)
 			+ ". Type ::" + ORGANIZE_COMMAND + " " + UNDO_ARGUMENT + " to put it back.");
+	}
+
+	/**
+	 * Organize now in the side panel: the same auto layout as the tab menu's "Auto layout: Combat gear", shown as a
+	 * preview with Keep and Undo in the chat box. Client thread.
+	 */
+	private void organizeFromPanel()
+	{
+		final CombatTabStatus status = readCombatTabStatus();
+		final String blocker = SetupChecklist.organizeBlocker(status);
+		if (blocker != null)
+		{
+			panelNote(blocker, null);
+			refreshCombatTab();
+			return;
+		}
+
+		final String tag = status.getTag();
+		if (!(bankTagsService instanceof BankTagsPlugin))
+		{
+			// No way to show the preview: organize with the panel's Undo button and ::gearsort undo
+			organize(tag);
+			return;
+		}
+
+		final BankTagsPlugin bankTags = (BankTagsPlugin) bankTagsService;
+		final Layout saved = layoutManager.loadLayout(tag);
+		final List<GearItem> items = gearItems(tag, saved);
+		if (items.isEmpty())
+		{
+			panelNote("Put some gear in the tab first.", null);
+			return;
+		}
+
+		final Layout preview = new Layout(tag, LayoutBuilder.build(items, config.grouping(), config.blankRow()));
+		final String summary = OrganizeSummary.of(items);
+		// What the menu entry does: show the new layout without saving it, then ask
+		bankTags.openTag(tag, preview);
+		// Picking an option closes the menu too, and the close can run before or after the option (the close is
+		// queued on the client thread; a click runs the option at once, a key press queues it after the close)
+		final boolean[] answered = {false};
+		chatboxPanelManager.openTextMenuInput("Tab laid out using the '" + AUTO_LAYOUT_NAME + "' layout.")
+			.option("1. Keep", () -> clientThread.invoke(() ->
+			{
+				answered[0] = true;
+				layoutManager.saveLayout(preview);
+				// The plugin's own undo is for an older layout now
+				undoLayouts.remove(tag);
+				panelNote("Kept the new layout of '" + tag + "'.", summary);
+				markCombatTabDirty();
+			}))
+			.option("2. Undo", () -> clientThread.invoke(() ->
+			{
+				answered[0] = true;
+				bankTags.openTag(tag, saved);
+				panelNote("Put back the old layout of '" + tag + "'.", null);
+			}))
+			.onClose(() ->
+			{
+				bankSearch.layoutBank();
+				// Runs after a queued option, so only a menu closed without an answer (e.g. Escape) gets this note
+				clientThread.invokeLater(() ->
+				{
+					if (!answered[0])
+					{
+						panelNote("Not kept. Open the tab again to see your old layout.", null);
+					}
+				});
+			})
+			.build();
+		panelNote("Pick Keep or Undo in the chat box.", summary);
+	}
+
+	/** The player picked or typed a tag in the panel. Swing thread. */
+	private void chooseTag(String raw)
+	{
+		final String tag = Text.standardize(raw);
+		if (!tag.isEmpty() && !tag.equals(Text.standardize(config.tagName())))
+		{
+			configManager.setConfiguration(CombatGearOrganizerConfig.GROUP, CombatGearOrganizerConfig.TAG_NAME_KEY, tag);
+		}
+	}
+
+	/** The player picked By style, By slot or By set in the panel. Swing thread. */
+	private void chooseGrouping(Grouping grouping)
+	{
+		if (grouping != config.grouping())
+		{
+			configManager.setConfiguration(CombatGearOrganizerConfig.GROUP, CombatGearOrganizerConfig.GROUPING_KEY, grouping);
+		}
+	}
+
+	private void markCombatTabDirty()
+	{
+		combatTabDirty = true;
+		if (client.getGameState() != GameState.LOGGED_IN)
+		{
+			// No game ticks while logged out
+			clientThread.invokeLater(this::refreshCombatTab);
+		}
+	}
+
+	/** Reads the Combat tab state and hands it to the panel if it changed. Client thread. */
+	private void refreshCombatTab()
+	{
+		combatTabDirty = false;
+		final CombatTabPanel panel = combatTabPanel;
+		if (panel == null)
+		{
+			return;
+		}
+		final CombatTabStatus status = readCombatTabStatus();
+		final Grouping grouping = config.grouping();
+		lastBankOpen = status.isBankOpen();
+		if (status.equals(shownStatus) && grouping == shownGrouping)
+		{
+			return;
+		}
+		shownStatus = status;
+		shownGrouping = grouping;
+		SwingUtilities.invokeLater(() -> panel.update(status, grouping));
+	}
+
+	/** Client thread. */
+	private CombatTabStatus readCombatTabStatus()
+	{
+		final boolean loggedIn = client.getGameState() == GameState.LOGGED_IN;
+		final String tag = Text.standardize(Objects.toString(config.tagName(), ""));
+		final List<String> tabs = new ArrayList<>();
+		for (String t : Text.fromCSV(Objects.toString(
+			configManager.getConfiguration(BankTagsPlugin.CONFIG_GROUP, BankTagsPlugin.TAG_TABS_CONFIG), "")))
+		{
+			final String name = Text.standardize(t);
+			if (!name.isEmpty() && !tabs.contains(name))
+			{
+				tabs.add(name);
+			}
+		}
+		final int tagged = tag.isEmpty() ? 0 : tagManager.getItemsForTag(tag).size();
+		final boolean layout = !tag.isEmpty() && layoutManager.loadLayout(tag) != null;
+		return new CombatTabStatus(loggedIn, isBankTagsActive(), loggedIn && isBankOpen(), tag, tabs, tagged, layout,
+			undoLayouts.containsKey(tag));
+	}
+
+	/** Client thread. */
+	private boolean isBankOpen()
+	{
+		final Widget items = client.getWidget(InterfaceID.Bankmain.ITEMS);
+		return items != null && !items.isHidden();
+	}
+
+	/** A line in the Combat tab section about what just happened. Any thread. */
+	private void panelNote(String text, String summary)
+	{
+		final CombatTabPanel panel = combatTabPanel;
+		if (panel != null)
+		{
+			SwingUtilities.invokeLater(() -> panel.showNote(text, summary));
+		}
 	}
 
 	/** @PluginDependency loads Bank Tags but doesn't turn it on, and without it no layout is drawn. */
@@ -329,6 +692,7 @@ public class CombatGearOrganizerPlugin extends Plugin
 		if (!undoLayouts.containsKey(tag))
 		{
 			sendMessage("Nothing to undo for '" + tag + "' since the plugin started.");
+			panelNote("Nothing to undo for '" + tag + "'.", null);
 			return;
 		}
 		final int[] previous = undoLayouts.remove(tag);
@@ -342,6 +706,8 @@ public class CombatGearOrganizerPlugin extends Plugin
 		}
 		redrawIfOpen(tag);
 		sendMessage("Put back the previous layout of '" + tag + "'.");
+		panelNote("Put back the previous layout of '" + tag + "'.", null);
+		markCombatTabDirty();
 	}
 
 	/** Builds the layout for the auto layout menu entry, which shows a preview with Keep / Undo. */
@@ -406,13 +772,30 @@ public class CombatGearOrganizerPlugin extends Plugin
 			}
 			for (Item item : container.getItems())
 			{
-				if (item.getId() > 0)
+				// A bank placeholder (quantity 0) is an item the player used to have, not one they own. Counting it
+				// laid out the old version next to the one they have (found testing: a placeholder of Iban's staff
+				// next to the worn Iban's staff (u)). Tagged items kept only as placeholders still get a slot when
+				// no other version is owned.
+				if (item.getId() > 0 && item.getQuantity() > 0)
 				{
 					ids.add(item.getId());
 				}
 			}
 		}
 		return ids;
+	}
+
+	/**
+	 * The set of the item (armour, or a set's own weapon or shield), from its name or else the name of its variation
+	 * group base (its uncharged or undamaged version). Client thread.
+	 */
+	private String setOf(int itemId, String name)
+	{
+		return GearSets.setOf(name, () ->
+		{
+			final int base = ItemVariationMapping.map(itemId);
+			return base == itemId ? null : itemManager.getItemComposition(base).getName();
+		});
 	}
 
 	/** For a tagged variation group the player has none of: the version with the best stats. */
@@ -440,30 +823,16 @@ public class CombatGearOrganizerPlugin extends Plugin
 
 		if (stats == null || !stats.isEquipable() || stats.getEquipment() == null)
 		{
-			return new GearItem(itemId, name, GearSlot.NONE, GearStyle.SUPPLIES, 0);
+			return new GearItem(itemId, name, GearSlot.NONE, GearStyle.SUPPLIES, 0, null);
 		}
 
 		final ItemEquipmentStats e = stats.getEquipment();
-		final Bonuses bonuses = Bonuses.builder()
-			.stab(e.getAstab())
-			.slash(e.getAslash())
-			.crush(e.getAcrush())
-			.magic(e.getAmagic())
-			.range(e.getArange())
-			.defStab(e.getDstab())
-			.defSlash(e.getDslash())
-			.defCrush(e.getDcrush())
-			.defMagic(e.getDmagic())
-			.defRange(e.getDrange())
-			.strength(e.getStr())
-			.rangedStrength(e.getRstr())
-			.magicDamage(e.getMdmg())
-			.prayer(e.getPrayer())
-			.build();
+		final Bonuses bonuses = EquipmentBonuses.of(e);
 
 		final GearSlot slot = GearSlot.fromEquipmentIndex(e.getSlot());
 		final GearStyle style = GearClassifier.classify(name, slot, bonuses);
-		return new GearItem(itemId, name, slot, style, GearClassifier.power(style, name, slot, bonuses));
+		return new GearItem(itemId, name, slot, style, GearClassifier.power(style, name, slot, bonuses),
+			LayoutBuilder.isSetSlot(slot) ? setOf(itemId, name) : null);
 	}
 
 	private static String joinFrom(String[] args, int from)
