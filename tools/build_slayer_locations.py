@@ -29,8 +29,10 @@ from pathlib import Path
 OUT = Path(__file__).resolve().parent.parent / "src/main/resources/com/combatgearorganizer/slayer/slayer_locations.json"
 
 # Wilderness bounds: x, y, width, height. The first two are RuneLite NpcAggroAreaPlugin's;
-# the third covers the Wilderness Slayer Cave, which sits east of the second box.
-WILDERNESS = [(2944, 3523, 448, 448), (2944, 9918, 320, 442), (3264, 10030, 192, 200)]
+# the third covers the Wilderness Slayer Cave, which sits east of the second box, and the fourth the Escape Caves north
+# of it (https://oldschool.runescape.wiki/w/Escape_Caves: "an underground multicombat area found in between level 30-42
+# Wilderness"; its grizzly bear and poison spider spawns are at 3333-3382, 10247-10294, and nothing else spawns there)
+WILDERNESS = [(2944, 3523, 448, 448), (2944, 9918, 320, 442), (3264, 10030, 192, 200), (3264, 10230, 192, 100)]
 
 
 def in_wilderness(p):
@@ -119,10 +121,56 @@ UNDERGROUND_OFFSET = 6400
 NEAR_UNDERGROUND = 100
 # Big dungeons whose only known point is an entrance far from where the monsters are
 NEAR_UNDERGROUND_WIDE = {"neypotzli": 250, "karuulm_slayer_dungeon": 250}
-# Wide matches that land on a neighbouring dungeon (Frost Nagua live in the Ruins of Tapoyauik)
-NOT_AT = {("Frost Nagua", "neypotzli"),
-          # The KBD lair's map icon sits above the Lava Maze Dungeon, whose black dragons are listed there already
-          ("Black dragon", "king_black_dragon_lair")}
+# Distance matches that land on a neighbouring place where the monster doesn't spawn, each checked against the
+# monster's spawn spots in tools/data/wiki_monsters.json (named spots go by name, distance_spawns; these are the
+# matches by distance to a place's own spots that are still wrong)
+NOT_AT = {
+    # Wide matches that land on a neighbouring dungeon: Frost Nagua live in the Ruins of Tapoyauik, and Earthen Nagua in
+    # the Tonali Cavern under the Crypt of Tonali (wiki Earthen_Nagua: "found in the Tonali Cavern"), not in Neypotzli
+    ("Frost Nagua", "neypotzli"), ("Earthen Nagua", "neypotzli"),
+    # The KBD lair's map icon sits above the Lava Maze Dungeon, whose black dragons are listed there already
+    ("Black dragon", "king_black_dragon_lair"),
+    # https://oldschool.runescape.wiki/w/Slayer_task/Monkeys: Maniacal monkeys live only in Kruk's Dungeon (its two
+    # "Kruk's Dungeon" spots), which is beside the Ape Atoll Dungeon's spots, not in it; Monkey Zombies only in the Ape
+    # Atoll Dungeon and the Temple of Marimbo Dungeon; Monkey Archers only in Marim and at the Marim gates
+    ("Maniacal monkey", "ape_atoll_dungeon"), ("Monkey Zombie", "wiki_kruk_s_dungeon_upper_level"),
+    ("Monkey Archer", "temple_of_marimbo"),
+    # Zogres and skogres live only at Jiggig and in its dungeon, and the Enclave guard only in Gu'Tanoth (their only
+    # wiki spots); Gu'Tanoth, Jiggig, the Feldip Hills and west of Yanille are each other's neighbours
+    ("Zogre", "gutanoth"), ("Skogre", "gutanoth"), ("Enclave guard", "jiggig"),
+    # Poison Scorpion: only "Near North Brimhaven mine" and "Taverley Dungeon"; the Dwarven Mine spot it matched is
+    # the Dwarves task's
+    ("Poison Scorpion", "dwarven_mine"),
+    # Chaos dwarf: Taverley Dungeon and three Wilderness spots; Dwarf gang member: only the Dwarven Mine
+    ("Chaos dwarf", "dwarven_mine"), ("Dwarf gang member", "taverley_dungeon"),
+    # Guard (Prifddinas): only "Prifddinas" and "Prifddinas upper level", not the Iorwerth Dungeon under the city
+    ("Guard", "iorwerth_dungeon"),
+    # Vyrewatch: only Meiyerditch, Slepe and Darkmeyer; the Haunted Woods, east of Burgh de Rott and Ver Sinhaza are
+    # other vampyres' spots near them
+    ("Vyrewatch", "haunted_woods"), ("Vyrewatch", "east_of_burgh_de_rott"), ("Vyrewatch", "ver_sinhaza"),
+    # Penguin: only the Ardougne Zoo and (north and north-west of) Miscellania, not the Rooster's spots
+    ("Penguin", "wiki_rooster"),
+    # The level 158 and 182 Zarosian spiritual creatures (wiki version "Zaros", named with a capital) are only in the
+    # God Wars Dungeon's Ancient Prison (wiki God_Wars_Dungeon: Nex's area), never in the Wilderness God Wars Dungeon
+    ("Spiritual Ranger", "wilderness_god_wars_dungeon"), ("Spiritual Warrior", "wilderness_god_wars_dungeon"),
+    ("Spiritual Mage", "wilderness_god_wars_dungeon"),
+}
+# Other names the wiki gives a guide place's spawn spots, by place key: own_places matches a spot named so as that place.
+# https://oldschool.runescape.wiki/w/Crypt_of_Tonali: "The Tonali Cavern is an area beneath the crypt filled with
+# monsters, including earthen nagua"; https://oldschool.runescape.wiki/w/Wyrmscraig: the wyrms and mountain trolls of
+# the guide's "Wyrmscraig" are the wiki's "Wyrmscraig Cavern" spots
+# https://oldschool.runescape.wiki/w/Corsair_Cove_Dungeon: "aka = Myths' Guild dungeon", "mainly inhabited by ogresses"
+PLACE_ALIASES = {"crypt_of_tonali": ["Tonali Cavern"], "wyrmscraig": ["Wyrmscraig Cavern"],
+                 "myths_guild_dungeon": ["Corsair Cove Dungeon"]}
+# Guide places whose only point is an entrance that isn't the way to the monsters, so fill_from_spawns gives them their
+# monsters' spawn points instead: (task, place key) -> evidence
+SPAWNS_OVER_ENTRANCE = {
+    # The guide's point (2456,2847) is the Myths' Guild; the wiki: "the western caves are part of the Myths' Guild",
+    # while "The eastern side of the dungeon is accessible to all players. It only contains Ogress Warriors, Ogress
+    # Shamans" (the entrance is at Corsair Cove, 2523,2861)
+    ("Ogres", "myths_guild_dungeon"): "the ogresses live in the eastern side, reached from Corsair Cove, not through "
+                                      "the Myths' Guild",
+}
 MELEE_WORDS = {"melee", "stab", "slash", "crush"}
 
 
@@ -143,20 +191,50 @@ def span(values):
     return [values[0], values[-1]] if values else None
 
 
+# A guide entrance that is only a spot on the surface place's own map (its infobox map, or the first kill spot), not
+# the way down into a dungeon: no underground match from it (Mort'ton, Lumbridge, Molch and Darkmeyer are towns and
+# swamps, not the tops of the dungeons 6400 tiles north of them)
+SURFACE_ENTRANCE = re.compile(r"infobox map|first kill spot", re.IGNORECASE)
+
+
+class PlacePoints(dict):
+    """location key -> every point known for that place (place_points), with .entrances: key -> the place's dungeon
+    entrance, for the underground match (places_for)."""
+
+    def __init__(self, points, entrances, any_entrances):
+        super().__init__(points)
+        self.entrances = entrances
+        self.any_entrances = any_entrances
+
+
+def dungeon_entrance(entrance, source):
+    """The entrance when it is the way into a dungeon: on the surface, and not a surface place's map spot."""
+    if not entrance or entrance[1] >= UNDERGROUND_OFFSET or SURFACE_ENTRANCE.search(source or ""):
+        return None
+    return entrance
+
+
 def place_points(data, locations):
     """location key -> every point known for that place: each task's spawn spots there, plus the entrance."""
-    points = {}
+    points, entrances, any_entrances = {}, {}, {}
     for key, loc in locations.items():
         pts = points.setdefault(key, [])
         if loc.get("entrance"):
             pts.append(loc["entrance"])
+            any_entrances.setdefault(key, []).append(loc["entrance"])
+            if dungeon_entrance(loc["entrance"], loc.get("entranceSource")):
+                entrances[key] = loc["entrance"]
         for per_task in loc.get("tasks", []):
             pts += per_task.get("spots") or []
     for t in data["wildernessTaskLocations"]:
         for p in t.get("places", []):
             pts = points.setdefault(p["key"], [])
             pts += (p.get("spots") or []) + ([p["entrance"]] if p.get("entrance") else [])
-    return points
+            if p.get("entrance"):
+                any_entrances.setdefault(p["key"], []).append(p["entrance"])
+            if p.get("entrance") and dungeon_entrance(p["entrance"], p.get("entranceSource")):
+                entrances.setdefault(p["key"], p["entrance"])
+    return PlacePoints(points, entrances, any_entrances)
 
 
 def near(spawns, points, radius, dy=0):
@@ -164,19 +242,44 @@ def near(spawns, points, radius, dy=0):
                for sp in spawns for pt in points)
 
 
-def places_for(spawns, places, all_points):
+def places_for(spawns, places, all_points, named_spawns=()):
+    """Keys of the places some of these spawns are within NEAR of, or, for a place known only by a dungeon entrance
+    (PlacePoints.entrances), within NEAR_UNDERGROUND of that entrance moved UNDERGROUND_OFFSET north.
+
+    named_spawns (distance_spawns) are the spawns of spots the wiki names like a listed place: they go to that place by
+    name, and to another place only when within NEAR of that place's own spawn spots for this task, never of its
+    entrance or of other tasks' spots there (the Lizardman Caves' entrance is in the Lizardman Settlement, the Shade
+    Catacombs' in Mort'ton, and the Dwarven Mine's spots for the Dwarves task are no place for a chaos dwarf)."""
     keys = []
+    entrances = getattr(all_points, "entrances", {})
+    any_entrances = getattr(all_points, "any_entrances", {})
     for pl in places:
         if pl.get("source") == BOSS_SOURCE:
             continue  # a boss's lair is for the boss alone
         pts = all_points.get(pl["key"]) or (pl["points"] + pl["wildernessPoints"])
-        if near(spawns, pts, NEAR):
+        own = [pt for pt in pl["points"] + pl["wildernessPoints"] if pt not in any_entrances.get(pl["key"], [])]
+        entrance = entrances.get(pl["key"])
+        if near(spawns, pts, NEAR) or near(named_spawns, own, NEAR):
             keys.append(pl["key"])
         # A place made from wiki spawns is where the monsters are, not an entrance, so no looser underground match
-        elif pl.get("source") != WIKI_SOURCE and all(pt[1] < UNDERGROUND_OFFSET for pt in pts) and near(
-                spawns, pts, NEAR_UNDERGROUND_WIDE.get(pl["key"], NEAR_UNDERGROUND), UNDERGROUND_OFFSET):
+        elif entrance and pl.get("source") != WIKI_SOURCE and all(pt[1] < UNDERGROUND_OFFSET for pt in pts) and near(
+                spawns, [entrance], NEAR_UNDERGROUND_WIDE.get(pl["key"], NEAR_UNDERGROUND), UNDERGROUND_OFFSET):
             keys.append(pl["key"])
     return keys
+
+
+def distance_spawns(pages, wiki, listed):
+    """The monster's spawn points split for places_for: (those of the unnamed spots and of the spots the wiki names
+    like none of the listed places (place_index), those of the spots named like one). A named spot is that place, not
+    its neighbours: the Shade Catacombs' shades aren't at Mort'ton above them, the Dwarven Mine's dwarf gang members
+    aren't in Taverley Dungeon next door. Spots that are no place to go (NOT_A_GO_SPOT: an instance, or only during a
+    quest, like the Iorwerth Camp in Prifddinas during Song of the Elves) match nothing by distance."""
+    free, named = [], []
+    for loc, pts in spawn_groups(pages, wiki):
+        if loc and NOT_A_GO_SPOT.search(loc):
+            continue
+        (named if loc and own_places(listed, loc) else free).extend(pts)
+    return free, named
 
 
 RARITY = re.compile(r"~?\s*([\d,.]+)\s*/\s*([\d,.]+)")
@@ -390,8 +493,8 @@ def spawns_of(pages, wiki):
     return out
 
 
-def places_of(name, spawns, places, all_points):
-    return [k for k in places_for(spawns, places, all_points) if (name, k) not in NOT_AT]
+def places_of(name, spawns, named_spawns, places, all_points):
+    return [k for k in places_for(spawns, places, all_points, named_spawns) if (name, k) not in NOT_AT]
 
 
 # Places made from a monster's own wiki spawn points, for monsters that live away from every listed place
@@ -405,6 +508,10 @@ WILD_NOTE = "_wildernessNote"
 NO_ACCESS_NOTE = "The data has no access details for this place."
 # Access for wiki locations no guide place is named like, checked on the wiki (keyed by name_keys' first form)
 WIKI_ACCESS = {
+    # https://oldschool.runescape.wiki/w/Slayer_task/Monkeys, Maniacal monkey in Kruk's Dungeon: "Requires partial
+    # completion of Monkey Madness II"
+    "kruksdungeonlowerlevel": {"questsStarted": ["MONKEY_MADNESS_II"]},
+    "kruksdungeonupperlevel": {"questsStarted": ["MONKEY_MADNESS_II"]},
     # "They can be found throughout the Ancient Guthixian Temple after completion of the quest."
     "ancientguthixiantemple": {"questsFinished": ["WHILE_GUTHIX_SLEEPS"]},
     # The Guard dog page's own spot name says it: "Brimhaven, Black Arm Gang hideout (requires having started Heroes'
@@ -899,7 +1006,8 @@ def name_words(text):
 
 def place_index(places):
     """What own_places looks places up in: by_name of the labels, and each label's words."""
-    return (by_name((pl["label"], pl["key"]) for pl in places),
+    return (by_name([(pl["label"], pl["key"]) for pl in places]
+                    + [(alias, pl["key"]) for pl in places for alias in PLACE_ALIASES.get(pl["key"], [])]),
             [(name_words(pl["label"]), name_words(name_head(pl["label"])), pl["key"]) for pl in places])
 
 
@@ -910,13 +1018,15 @@ def own_places(index, loc, beside=None):
     is "Peninsula West of the Crafting Guild"). One word alone only matches one word ("Lumbridge" is "In and around
     Lumbridge", but "Crandor" isn't "Crandor and Karamja Dungeon").
 
+    With the same name found, the word matches go into beside (when given) instead.
+
     A word match where the longer name only places one relative to the other ("Troll Arena" and "Tunnel between Troll
     arena and Trollheim", "Dark Altar" and "East of Dark Altar": same_spot) isn't the same place: its keys go into
     beside (a set) when given, for named_places to check by distance, and are not returned.
     """
     by_label, worded = index
     same = find_by_name(by_label, loc)
-    if same:
+    if same and beside is None:
         return [same]
     words, head = name_words(loc), name_words(name_head(loc))
     out = []
@@ -932,6 +1042,13 @@ def own_places(index, loc, beside=None):
                 out.append(key)
             elif beside is not None:
                 beside.add(key)
+    if same:
+        # The same name wins; the other places named like it ("Frozen Waste Plateau" for the wiki's "Northern Frozen
+        # Waste Plateau", "Near the Bone Yard Hunter area" for its "Bone Yard Hunter area") may hold the spot too,
+        # which beside_places checks by distance
+        beside.update(k for k in out if k != same)
+        beside.discard(same)
+        return [same]
     return out
 
 
@@ -1053,7 +1170,7 @@ def extra_spot(task_name, name, loc, pts, places, listed, all_points):
     underground = all(pt[1] >= UNDERGROUND_OFFSET for pt in pts)
     if not loc or NOT_A_GO_SPOT.search(loc) or len(pts) < (1 if underground else EXTRA_SPOT_MIN):
         return False
-    if places_of(name, pts, places, all_points):
+    if places_of(name, pts, (), places, all_points):
         return False
     if any(task == task_name and (monster, spot) == (name, loc) for (task, _), (monster, spot, *_) in SPOT_PLACES.items()):
         return False
@@ -1075,19 +1192,23 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
     if not wiki:
         return [], {}
     listed = place_index(places)
+    unbossed = place_index([pl for pl in places if pl.get("source") != BOSS_SOURCE])
     joined = {}
     spots = {}
     taken = {pl["key"] for pl in places}
     for name, versions in task_monsters(task_name, wiki).items():
         pages = {v["page_name"] for v in versions}
-        if is_superior(name, pages, wiki) or is_boss(name, task_name):
+        if is_superior(name, pages, wiki) or is_boss(name, task_name) or name in AT_LAIR:
             continue
         spawns = spawns_of(pages, wiki)
         if not spawns:
             continue
         # A monster found at a listed place keeps its other spots too (Lumbridge's spiders beside the listed
         # dungeons), but only named ones (extra_spot) that no listed place stands for, by distance or by name
-        matched = bool(places_of(name, spawns, places, all_points))
+        # (any of its spawns near one, or a spot of the same name; a spot only named like one, "Harmony Island
+        # Church", keeps a place of its own)
+        matched = bool(places_of(name, spawns, (), places, all_points)
+                       or any(find_by_name(unbossed[0], loc) for loc, _ in spawn_groups(pages, wiki) if loc))
         groups = []
         for loc, pts in spawn_groups(pages, wiki):
             if matched and not extra_spot(task_name, name, loc, pts, places, listed, all_points):
@@ -1232,7 +1353,7 @@ def variants_for(task_name, places, wiki, all_points, wilderness_only=False, joi
                 anchors.setdefault(key, []).extend(pts)
             if beside:
                 pending.append((name, beside))
-            found = places_of(name, spawns, places, all_points) + (joined or {}).get(name, []) + [
+            found = places_of(name, *distance_spawns(pages, wiki, listed), places, all_points) + (joined or {}).get(name, []) + [
                 k for k in named if (name, k) not in NOT_AT]
         weak = Counter((v["elemental_weakness"], v.get("elemental_weakness_percent"))
                        for v in versions if v.get("elemental_weakness"))
@@ -1446,6 +1567,9 @@ SPOT_PLACES = {
 # point to match by distance, and no task monster's wiki page has a spawn spot named like it or near it.
 NONE_NAMED = "no task monster's wiki page has a spawn spot named like it, and the guide row has no point"
 NO_MONSTER_PLACES = {
+    ("Bears", "demonic_ruins"): "the Demonic Ruins are the way into Callisto's Den (boss_callistos_den, where "
+                                "Callisto is listed); the grizzly bears it matched by distance are in the Escape "
+                                "Caves, which have a place of their own",
     ("Bats", "graveyard_of_heroes"): NONE_NAMED,
     ("Bats", "karamja_volcano_dungeon"): NONE_NAMED + " (the bat pages' Karamja spawns are \"Crandor and Karamja "
                                          "Dungeon\", which is another place on the list)",
@@ -1473,8 +1597,6 @@ NO_MONSTER_PLACES = {
                                                   "headquarters, and the guide row has no point",
     ("Elves", "tower_of_voices"): NONE_NAMED,
     ("Moss giants", "south_east_of_the_lava_maze"): NONE_NAMED + " in the Wilderness",
-    ("Ogres", "myths_guild_dungeon"): "no ogre page has a spawn spot named like it or within reach of its entrance "
-                                      "(2456,2847)",
     ("Scorpions", "stonecutter_outpost_temple_east_of_colossal_wyrm_remains"): (
         "the Scorpion page's \"South-west of Stonecutter Outpost\" is another spot, and the guide row has no point"),
     ("Scorpions", "scorpion_pit_cave"): "the cave's scorpions are Scorpia's offspring, which are only listed at "
@@ -1556,9 +1678,10 @@ def fill_from_spawns(task_name, places, variants, wiki, wilderness_list, unrouta
     """
     if not wiki:
         return []
-    empty = [pl for pl in places if not pl["points"] and not pl["wildernessPoints"]
+    empty = [pl for pl in places if (not pl["points"] and not pl["wildernessPoints"]
+                                     or (task_name, pl["key"]) in SPAWNS_OVER_ENTRANCE)
              and pl.get("source") != BOSS_SOURCE and pl["key"] not in unroutable]
-    index = by_name((pl["label"], pl["key"]) for pl in empty)
+    index = place_index(empty)[0]
     found, monsters = {}, task_monsters(task_name, wiki)
     for v in variants:
         if v["superior"] or v["boss"]:

@@ -989,6 +989,107 @@ public class BundledDataTest
 		assertFalse(Variants.byName(zombies.getVariants(), "Armoured zombie").getPlaces().contains("wiki_varrock_palace"));
 	}
 
+	private static List<String> placesOf(String task, String monster)
+	{
+		SlayerLocationData.Variant v = Variants.byName(data.findTask(-1, task).getVariants(), monster);
+		assertNotNull(task + " / " + monster, v);
+		return v.getPlaces();
+	}
+
+	/**
+	 * Review finding 3 and the W items of its data audit: loose distance matching (40 tiles, and 100 tiles around a
+	 * surface place moved 6400 tiles into the underground) linked monsters to neighbouring places where they don't
+	 * spawn. A spot the wiki names like a place now goes to that place by name, the underground match is only for a
+	 * dungeon entrance, and the rest are NOT_AT pairs.
+	 */
+	@Test
+	public void monstersAreOnlyLinkedWhereTheySpawn()
+	{
+		String[][] notAt = {
+			{"Lizardmen", "Lizardman", "lizardman_caves"}, {"Lizardmen", "Lizardman", "lizardman_temple"},
+			{"Lizardmen", "Lizardman brute", "lizardman_caves"}, {"Lizardmen", "Lizardman brute", "lizardman_temple"},
+			{"Lesser Nagua", "Sulphur Nagua", "crypt_of_tonali"}, {"Lesser Nagua", "Earthen Nagua", "neypotzli"},
+			{"Monkeys", "Maniacal monkey", "ape_atoll_dungeon"}, {"Monkeys", "Maniacal monkey", "marim_gates"},
+			{"Monkeys", "Monkey Zombie", "marim_gates"}, {"Monkeys", "Monkey Zombie", "temple_of_marimbo"},
+			{"Trolls", "Ice troll", "keldagrim"}, {"Trolls", "Ice troll", "troll_stronghold"},
+			{"Trolls", "Troll general", "ice_path"}, {"Trolls", "Troll general", "north_of_the_troll_arena"},
+			{"Trolls", "Twig", "death_plateau"}, {"Trolls", "Twig", "ice_path"}, {"Trolls", "Berry", "north_of_the_troll_arena"},
+			{"Ogres", "Zogre", "feldip_hills"}, {"Ogres", "Zogre", "gutanoth"}, {"Ogres", "Zogre", "west_of_yanille"},
+			{"Ogres", "Skogre", "gutanoth"}, {"Ogres", "Enclave guard", "jiggig"},
+			{"Scorpions", "Poison Scorpion", "dwarven_mine"},
+			{"Dwarves", "Chaos dwarf", "dwarven_mine"}, {"Dwarves", "Chaos dwarf", "ice_mountain"},
+			{"Dwarves", "Dwarf gang member", "ice_mountain"}, {"Dwarves", "Dwarf gang member", "taverley_dungeon"},
+			{"Dwarves", "Black Guard", "dwarven_mine"},
+			{"Goblins", "Cave goblin", "lumbridge"}, {"Goblins", "Cave goblin miner", "lumbridge"},
+			{"Goblins", "Cave goblin guard", "lumbridge"},
+			{"Elves", "Guard", "iorwerth_dungeon"}, {"Elves", "Iorwerth Archer", "iorwerth_dungeon"},
+			{"Crabs", "King Sand Crab", "crabclaw_isle"}, {"Crabs", "King Sand Crab", "hosidius_southern_coast"},
+			{"Crabs", "Sandy Boulder", "crabclaw_isle"}, {"Crabs", "Sandy Boulder", "hosidius_southern_coast"},
+			{"Vampyres", "Vyrewatch", "haunted_woods"}, {"Vampyres", "Vyrewatch", "east_of_burgh_de_rott"},
+			{"Vampyres", "Vyrewatch", "ver_sinhaza"}, {"Vampyres", "Vyrewatch Sentinel", "haunted_woods"},
+			{"Birds", "Penguin", "wiki_rooster"},
+			{"Spiritual creatures", "Spiritual Ranger", "wilderness_god_wars_dungeon"},
+			{"Spiritual creatures", "Spiritual Warrior", "wilderness_god_wars_dungeon"},
+			{"Spiritual creatures", "Spiritual Mage", "wilderness_god_wars_dungeon"},
+		};
+		for (String[] n : notAt)
+		{
+			assertFalse(n[0] + " / " + n[1] + " at " + n[2], placesOf(n[0], n[1]).contains(n[2]));
+		}
+		// Shamans only at the west of the canyon, the caves and the temple
+		assertEquals(Arrays.asList("lizardman_canyon", "lizardman_caves", "lizardman_temple"),
+			placesOf("Lizardmen", "Lizardman shaman"));
+		// Sulphur nagua only in Neypotzli, earthen only in the Tonali Cavern under the Crypt of Tonali
+		assertEquals(Collections.singletonList("neypotzli"), placesOf("Lesser Nagua", "Sulphur Nagua"));
+		assertEquals(Collections.singletonList("crypt_of_tonali"), placesOf("Lesser Nagua", "Earthen Nagua"));
+		// The Shade Catacombs' shades aren't in Mort'ton above them; only Loar shades are in Mort'ton
+		for (String shade : new String[]{"Phrin", "Riyl", "Asyn", "Fiyr", "Urium"})
+		{
+			assertEquals(shade, Collections.singletonList("shade_catacombs"), placesOf("Shades", shade + " Shade"));
+			assertEquals(shade, Collections.singletonList("shade_catacombs"), placesOf("Shades", shade + " Shadow"));
+		}
+		assertEquals(Collections.singletonList("mortton"), placesOf("Shades", "Loar Shade"));
+		// Revenants are in the Revenant Caves, not at the surface ghost spots above them
+		SlayerLocationData.TaskEntry ghosts = data.findTask(-1, "Ghosts");
+		for (SlayerLocationData.Variant v : ghosts.getVariants())
+		{
+			if (v.getName().startsWith("Revenant "))
+			{
+				assertEquals(v.getName(), Collections.singletonList("revenant_caves"), v.getPlaces());
+			}
+		}
+		// Maniacal monkeys get Kruk's Dungeon, gated by Monkey Madness II
+		List<String> maniacal = placesOf("Monkeys", "Maniacal monkey");
+		assertFalse(maniacal.isEmpty());
+		for (String key : maniacal)
+		{
+			SlayerLocationData.LocationEntry kruk = place(data.findTask(-1, "Monkeys"), key);
+			assertTrue(kruk.getLabel(), kruk.getLabel().contains("Kruk's Dungeon"));
+			assertEquals(Collections.singletonList("MONKEY_MADNESS_II"), kruk.getRequirements().getQuestsStarted());
+		}
+		// The Myths' Guild dungeon is the wiki's Corsair Cove Dungeon: the ogresses are there, with their spawn points
+		// and the Corsair Cove note, and no copy of it
+		SlayerLocationData.TaskEntry ogres = data.findTask(-1, "Ogres");
+		SlayerLocationData.LocationEntry myths = place(ogres, "myths_guild_dungeon");
+		assertTrue(placesOf("Ogres", "Ogress Warrior").contains("myths_guild_dungeon"));
+		assertTrue(placesOf("Ogres", "Ogress Shaman").contains("myths_guild_dungeon"));
+		assertTrue(myths.getNote().contains("Corsair Cove"));
+		assertTrue(hasPointNear(myths, 1996, 8985));
+		assertFalse(hasPointNear(myths, 2456, 2847));
+		assertNull(place(ogres, "wiki_corsair_cove_dungeon"));
+		// Poison scorpions get their Taverley Dungeon spot instead of the Dwarves task's Dwarven Mine one
+		assertTrue(placesOf("Scorpions", "Poison Scorpion").stream()
+			.anyMatch(k -> place(data.findTask(-1, "Scorpions"), k).getLabel().contains("Taverley Dungeon")));
+		// Callisto's Den entrance is no grizzly place; the Escape Caves' grizzlies are, in the Wilderness
+		assertFalse(placesOf("Bears", "Grizzly bear").contains("demonic_ruins"));
+		SlayerLocationData.LocationEntry escape = wikiPlace("Bears", "Grizzly bear (Escape Caves)");
+		assertTrue(escape.getPoints().isEmpty());
+		assertFalse(escape.getWildernessPoints().isEmpty());
+		// Places inside a named one still count: the Frozen Waste Plateau holds its northern and southern spots
+		assertTrue(placesOf("Ice warriors", "Ice warrior").contains("frozen_waste_plateau"));
+		assertTrue(placesOf("Hill giants", "Hill Giant").contains("near_the_bone_yard_hunter_area"));
+	}
+
 	@Test
 	public void tormentedDemonsCountForGreaterDemonsAndYouCanGo() throws Exception
 	{
