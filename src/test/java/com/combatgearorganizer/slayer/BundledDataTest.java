@@ -2583,12 +2583,21 @@ public class BundledDataTest
 			Variants.byName(wolves.getVariants(), "Wolf").getPlaces().stream()
 				.filter(k -> k.equals("wiki_northern_side_of_the_hailstorm_mountains") || k.equals("wiki_the_proudspire"))
 				.collect(java.util.stream.Collectors.toList()));
-		// Sea mogres say they're fought from a boat
+		// Sea mogres say they're fought from a boat, at all three of Mogre_(sea)'s spots. Mudskipper Sound's has its own
+		// card: folded into the land Mudskipper Point card it took that card's quest gate and had no boat note
 		for (String task : new String[]{"Mogres", "Ogres"})
 		{
-			SlayerLocationData.LocationEntry sea = place(data.findTask(-1, task), "wiki_kharazi_strait_south_of_the_kharazi_jungle");
-			assertNotNull(task, sea);
-			assertTrue(task, sea.getNote().contains("from a boat"));
+			for (String key : new String[]{"wiki_kharazi_strait_south_of_the_kharazi_jungle",
+				"wiki_strait_of_khazard_south_east_of_port_khazard", "wiki_mudskipper_sound_south_of_musa_point"})
+			{
+				SlayerLocationData.LocationEntry sea = place(data.findTask(-1, task), key);
+				assertNotNull(task + " " + key, sea);
+				assertTrue(task + " " + key, sea.getNote().contains("from a boat"));
+				assertTrue(task + " " + key, sea.getRequirements() == null
+					|| sea.getRequirements().getQuestsFinished() == null
+					|| sea.getRequirements().getQuestsFinished().isEmpty());
+				assertTrue(task + " " + key, !sea.getPoints().isEmpty());
+			}
 		}
 	}
 

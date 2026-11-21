@@ -569,7 +569,12 @@ WIKI_SPOT_NOTES = {
     # better will not take any damage from mogres"; these LocLines are sea straits
     "kharazistraitsouthofthekharazijungle": "Sea mogres, fought from a boat: the points are open water.",
     "straitofkhazardsoutheastofportkhazard": "Sea mogres, fought from a boat: the points are open water.",
+    "mudskippersoundsouthofmusapoint": "Sea mogres, fought from a boat: the points are open water.",
 }
+# Wiki spots that get a card of their own even though their name reads as beside a listed place (keyed like
+# WIKI_ACCESS). Mogre_(sea)'s "Mudskipper Sound - south of Musa Point" is open sea fought from a boat, with no quest;
+# folded into the guide's land "Mudskipper Point" it took that card's Skippy and the Mogres gate and had no boat note
+OWN_CARD_SPOTS = {"mudskippersoundsouthofmusapoint"}
 # A requirement the wiki puts in a spot's name, said by the place's requirements instead of its label
 SPOT_REQUIREMENT = re.compile(r"\s*\((?:requires|after completing) [^)]*\)$", re.IGNORECASE)
 
@@ -1244,6 +1249,8 @@ def extra_spot(task_name, name, loc, pts, places, listed, all_points):
         return False
     if places_of(name, pts, (), places, all_points):
         return False
+    if name_keys(loc)[0] in OWN_CARD_SPOTS:
+        return True
     beside = set()
     return not own_places(listed, loc, beside) and not beside
 
@@ -2228,7 +2235,8 @@ def stale_overrides(tasks, wiki):
                      if not any(loc == spot for loc, _ in spots.get(page, []))]
         locs = {name_keys(loc)[0] for groups in spots.values() for loc, _ in groups if loc}
         problems += [f"{table} / {key}: no wiki spot is named so" for table, entries in
-                     (("WIKI_ACCESS", WIKI_ACCESS), ("WIKI_SPOT_NOTES", WIKI_SPOT_NOTES)) for key in entries
+                     (("WIKI_ACCESS", WIKI_ACCESS), ("WIKI_SPOT_NOTES", WIKI_SPOT_NOTES),
+                      ("OWN_CARD_SPOTS", OWN_CARD_SPOTS)) for key in entries
                      if key not in locs]
     return problems
 
