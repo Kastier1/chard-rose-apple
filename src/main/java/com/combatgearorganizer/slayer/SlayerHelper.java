@@ -137,6 +137,8 @@ public class SlayerHelper
 	private volatile SlayerPanel panel;
 	private BufferedImage markerImage;
 	private SlayerTaskState lastState = SlayerTaskState.NONE;
+	/** Which task the route is for, so starting or stopping a preview leaves the real task's route alone. */
+	private final RouteOwner routeOwner = new RouteOwner();
 	/** A task the player asked to look at instead of their real one; null normally. */
 	private volatile SlayerTaskState preview;
 	/** The kill count a preview shows. */
@@ -199,6 +201,7 @@ public class SlayerHelper
 		markerImage = ImageUtil.resizeImage(icon, 24, 21);
 		panel = new SlayerPanel(icons, this::go, this::goNearest, this::cancelRoute, this::saveMemory);
 		lastState = SlayerTaskState.NONE;
+		routeOwner.reset();
 		clientThread.invokeLater(() ->
 		{
 			// On the client thread, so a save queued by stop() just before still goes to the right account
@@ -453,6 +456,10 @@ public class SlayerHelper
 		SlayerTaskState real = readTask();
 		// Progress always follows the real task, even while the panel shows a preview
 		updateProgress(real);
+		if (routeOwner.realTask(real))
+		{
+			endTaskRoute();
+		}
 		final SlayerTaskState shownPreview = preview;
 		SlayerTaskState state = shownPreview != null ? shownPreview : real;
 		ItemValueMode valueMode = itemValues.mode();
@@ -511,14 +518,12 @@ public class SlayerHelper
 		CollectionLog.Snapshot clog = collectionLog.snapshot();
 
 		boolean taskEnded = lastState.hasTask() && !state.hasTask();
-		boolean taskChanged = state.getTaskId() != lastState.getTaskId() || !Objects.equals(state.getName(), lastState.getName());
+		boolean taskChanged = RouteOwner.isOtherTask(state, lastState);
 		lastState = state;
-		if (taskEnded || (taskChanged && lastTask != null))
+		if ((taskEnded || (taskChanged && lastTask != null)) && routeOwner.shownTaskChanged())
 		{
-			// Only clears the path if it is still the one we set
-			shortestPath.clearIfOurs();
-			removeMapMarkers();
-			setRoute(Route.NONE);
+			// The preview the route was for changed or stopped. A route for the real task ends above, with that task.
+			endTaskRoute();
 		}
 
 		if (!state.hasTask())
@@ -778,9 +783,22 @@ public class SlayerHelper
 		}
 	}
 
+	/** The task the route is for changed or ended. Client thread. */
+	private void endTaskRoute()
+	{
+		// Only clears the path if it is still the one we set
+		shortestPath.clearIfOurs();
+		removeMapMarkers();
+		setRoute(Route.NONE);
+	}
+
 	/** Client thread. */
 	private void setRoute(Route r)
 	{
+		if (r.getKind() == Route.Kind.NONE)
+		{
+			routeOwner.ended();
+		}
 		if (r.equals(route))
 		{
 			return;
@@ -989,6 +1007,7 @@ public class SlayerHelper
 				removeMapMarkers();
 				shortestPath.path(targets, allowWilderness);
 				setRoute(Route.shortestPath(place));
+				routeOwner.started(preview != null);
 				if (allowWilderness)
 				{
 					chatMessageManager.queue(QueuedMessage.builder()
@@ -1009,6 +1028,7 @@ public class SlayerHelper
 				targets.forEach(t -> points.add(new WorldPoint(t[0], t[1], t[2])));
 				setRoute(Route.worldMap(place));
 				mapTargets = points;
+				routeOwner.started(preview != null);
 			}
 		});
 	}

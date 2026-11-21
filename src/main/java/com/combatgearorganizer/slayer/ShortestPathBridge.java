@@ -22,8 +22,11 @@ import net.runelite.client.plugins.PluginManager;
  *
  * <p>Two rules keep this from leaking into the player's own use of Shortest Path:
  * <ul>
- * <li>The "avoid Wilderness" override is only for our own route. It is put back to the player's own setting when they
- * arrive, when someone else's path replaces ours, or when our path is cleared.</li>
+ * <li>The "avoid Wilderness" override is only for our own route, and is dropped when the player arrives, when someone
+ * else's path replaces ours, or when our path is cleared. Shortest Path keeps a {@code config} override until the next
+ * {@code clear}, so dropping it means {@code clear} and, where a path should stay, sending that path again without
+ * {@code config}. Re-sending the player's own value would itself be an override, hiding later changes to their setting
+ * for the rest of the session.</li>
  * <li>Automatic clears (task changed or ended) only clear the path if it is still ours. We ask Shortest Path what it is
  * showing ({@code getTarget}) and act on its {@code currentTarget} reply.</li>
  * </ul>
@@ -53,6 +56,8 @@ public class ShortestPathBridge
 	/** True from Go until the player arrives, the route is cleared, or another path replaces ours. */
 	private boolean routeActive;
 	private boolean pendingAutoClear;
+	/** Arrived with our override in force: drop it once Shortest Path says whose path is shown. */
+	private boolean pendingDropOverride;
 	private int ticksSinceRequest = -1;
 	private int ticksSinceCheck;
 
@@ -134,8 +139,8 @@ public class ShortestPathBridge
 		}
 		else if (overrideActive)
 		{
-			// Replace our earlier Wilderness override with the player's own setting
-			data.put("config", wildernessConfig(playerAvoidsWilderness.getAsBoolean()));
+			// A path without config keeps the earlier overrides, so drop our Wilderness override first
+			postClear();
 		}
 		eventBus.post(new PluginMessage(NAMESPACE, "path", data));
 
@@ -143,6 +148,7 @@ public class ShortestPathBridge
 		routeActive = true;
 		overrideActive = override;
 		pendingAutoClear = false;
+		pendingDropOverride = false;
 		ticksSinceRequest = -1;
 		ticksSinceCheck = 0;
 	}
@@ -152,7 +158,7 @@ public class ShortestPathBridge
 	{
 		if (isPathShown() || overrideActive)
 		{
-			eventBus.post(new PluginMessage(NAMESPACE, "clear", new HashMap<>()));
+			postClear();
 		}
 		reset();
 	}
@@ -172,12 +178,15 @@ public class ShortestPathBridge
 	}
 
 	/**
-	 * The plugin is shutting down, so there is no time to wait for a reply. Leave whatever path is shown, but never leave
-	 * our Wilderness override behind.
+	 * The plugin is shutting down, so there is no time to wait for a reply. Leave whatever path is shown, unless our
+	 * Wilderness override is still in force: then clear, which is the only way to drop it, so it can't outlive us.
 	 */
 	public void release()
 	{
-		restoreWildernessSetting();
+		if (overrideActive)
+		{
+			postClear();
+		}
 		reset();
 	}
 
@@ -192,8 +201,16 @@ public class ShortestPathBridge
 		if ((overrideActive || routeActive) && player != null && near(ourTargets, player))
 		{
 			// Arrived. The path stays ours, so a task change can still clear it
-			restoreWildernessSetting();
 			routeActive = false;
+			if (overrideActive && !pendingDropOverride)
+			{
+				// Drop the override once Shortest Path confirms the path is still ours (or someone else's)
+				pendingDropOverride = true;
+				if (ticksSinceRequest < 0)
+				{
+					requestTarget();
+				}
+			}
 		}
 
 		if (ticksSinceRequest >= 0)
@@ -202,13 +219,23 @@ public class ShortestPathBridge
 			if (ticksSinceRequest > REPLY_TIMEOUT_TICKS)
 			{
 				// Shortest Path didn't answer (an older version without getTarget). Don't clear a path that might not be
-				// ours, but do give the player their Wilderness setting back.
-				restoreWildernessSetting();
+				// ours, unless our Wilderness override is in force: that needs a clear to go. Our path, as far as we
+				// know, is then shown again without it, unless the task ended.
+				ticksSinceRequest = -1;
+				if (overrideActive)
+				{
+					postClear();
+					overrideActive = false;
+					pendingDropOverride = false;
+					if (!pendingAutoClear)
+					{
+						postPath(ourTargets.stream().collect(Collectors.toList()));
+					}
+				}
 				if (pendingAutoClear)
 				{
 					reset();
 				}
-				ticksSinceRequest = -1;
 			}
 			return;
 		}
@@ -234,20 +261,50 @@ public class ShortestPathBridge
 		}
 		ticksSinceRequest = -1;
 
-		boolean ours = Boolean.TRUE.equals(data.get("set")) && ourTargets.equals(targetPoints(data.get("target")));
+		boolean shown = Boolean.TRUE.equals(data.get("set"));
+		boolean ours = shown && ourTargets.equals(targetPoints(data.get("target")));
 		if (ours)
 		{
 			if (pendingAutoClear)
 			{
-				eventBus.post(new PluginMessage(NAMESPACE, "clear", new HashMap<>()));
+				postClear();
 				reset();
+			}
+			else if (pendingDropOverride)
+			{
+				// Arrived: show the same path again without our override
+				postClear();
+				postPath(data.get("target"));
+				overrideActive = false;
+				pendingDropOverride = false;
 			}
 			return;
 		}
 
-		// Someone else's path (or none) replaced ours: drop our override without touching their path
-		restoreWildernessSetting();
+		// Someone else's path (or none) replaced ours. Their path message replaced our override only if it had a config
+		// of its own; if our override is all that's left, drop it and show their path again as it was.
+		if (overrideActive && wildernessConfig(false).equals(data.get("config")))
+		{
+			postClear();
+			if (shown)
+			{
+				postPath(data.get("target"));
+			}
+		}
 		reset();
+	}
+
+	private void postClear()
+	{
+		eventBus.post(new PluginMessage(NAMESPACE, "clear", new HashMap<>()));
+	}
+
+	/** A path to these targets (as {@code currentTarget} lists them, or WorldPoints) with no setting overrides. */
+	private void postPath(Object targets)
+	{
+		Map<String, Object> data = new HashMap<>();
+		data.put("target", targets);
+		eventBus.post(new PluginMessage(NAMESPACE, "path", data));
 	}
 
 	private void requestTarget()
@@ -256,19 +313,6 @@ public class ShortestPathBridge
 		data.put("id", MESSAGE_ID);
 		eventBus.post(new PluginMessage(NAMESPACE, "getTarget", data));
 		ticksSinceRequest = 0;
-	}
-
-	private void restoreWildernessSetting()
-	{
-		if (!overrideActive)
-		{
-			return;
-		}
-		// A config-only path message applies the overrides and changes nothing else
-		Map<String, Object> data = new HashMap<>();
-		data.put("config", wildernessConfig(playerAvoidsWilderness.getAsBoolean()));
-		eventBus.post(new PluginMessage(NAMESPACE, "path", data));
-		overrideActive = false;
 	}
 
 	/** Whether the player is within {@link #ARRIVAL_DISTANCE} tiles of one of the targets, on the same plane. */
@@ -294,6 +338,7 @@ public class ShortestPathBridge
 		overrideActive = false;
 		routeActive = false;
 		pendingAutoClear = false;
+		pendingDropOverride = false;
 		ticksSinceRequest = -1;
 		ticksSinceCheck = 0;
 	}

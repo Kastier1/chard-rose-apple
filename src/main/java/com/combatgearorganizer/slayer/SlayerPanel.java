@@ -281,7 +281,7 @@ public class SlayerPanel extends JPanel
 		row.setAlignmentX(LEFT_ALIGNMENT);
 		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		row.setBorder(new EmptyBorder(4, 6, 4, 4));
-		row.add(wrapped("Preview, not your current task. Kills and progress aren't counted.", ColorScheme.BRAND_ORANGE,
+		row.add(wrapped("Preview, not your current task. Your real task and its route carry on; Stop to go back.", ColorScheme.BRAND_ORANGE,
 			FontManager.getRunescapeSmallFont(), ROUTE_TEXT_WIDTH), BorderLayout.CENTER);
 		JButton stop = new JButton("Stop");
 		stop.setToolTipText("Go back to your current task");

@@ -21,12 +21,17 @@ public class ShortestPathBridgeTest
 	private static final int[] WILDY_CAVE = {3343, 10163, 0};
 	private static final int[] CATACOMBS = {1675, 10091, 0};
 
-	/** Stands in for Shortest Path: records what it receives and answers getTarget like the real plugin. */
+	/**
+	 * Stands in for Shortest Path: records what it receives, keeps setting overrides the way the real plugin does (a
+	 * path message with a non-empty config replaces them, and they last until the next clear), and answers getTarget.
+	 */
 	public static class FakeShortestPath
 	{
 		final List<PluginMessage> received = new ArrayList<>();
 		/** What it is currently showing; null means nothing. */
 		List<Object> shownTargets;
+		/** The setting overrides in force. */
+		Map<String, Object> overrides = new HashMap<>();
 		boolean answers = true;
 		private EventBus bus;
 
@@ -49,9 +54,16 @@ public class ShortestPathBridgeTest
 					{
 						shownTargets = new ArrayList<>((List<?>) m.getData().get("target"));
 					}
+					Object config = m.getData().get("config");
+					if (config instanceof Map && !((Map<?, ?>) config).isEmpty())
+					{
+						overrides = new HashMap<>();
+						((Map<?, ?>) config).forEach((k, v) -> overrides.put((String) k, v));
+					}
 					break;
 				case "clear":
 					shownTargets = null;
+					overrides = new HashMap<>();
 					break;
 				case "getTarget":
 					if (answers)
@@ -62,6 +74,10 @@ public class ShortestPathBridgeTest
 						if (shownTargets != null)
 						{
 							reply.put("target", shownTargets);
+						}
+						if (!overrides.isEmpty())
+						{
+							reply.put("config", new HashMap<>(overrides));
 						}
 						bus.post(new PluginMessage("shortestpath", "currentTarget", reply));
 					}
@@ -140,19 +156,27 @@ public class ShortestPathBridgeTest
 	{
 		bridge.path(Collections.singletonList(WILDY_CAVE), true);
 		assertEquals(Boolean.FALSE, avoidWilderness(sp.last("path")));
+		assertEquals(Boolean.FALSE, sp.overrides.get("avoidWilderness"));
 		assertTrue(bridge.isOverrideActive());
 
 		// Still walking: override stays
 		bridge.onGameTick(new WorldPoint(3100, 3500, 0));
 		assertTrue(bridge.isOverrideActive());
 
-		// Arrived: the player's own setting is put back with a config-only message, the path is left alone
+		// Arrived: Shortest Path confirms the path is ours, so it's cleared and shown again with no override at all.
+		// Re-sending the player's own value would be an override too, hiding later changes to their setting.
 		bridge.onGameTick(new WorldPoint(3345, 10160, 0));
 		assertFalse(bridge.isOverrideActive());
-		PluginMessage restore = sp.last("path");
-		assertEquals(Boolean.TRUE, avoidWilderness(restore));
-		assertFalse(restore.getData().containsKey("target"));
-		assertEquals(0, sp.count("clear"));
+		assertTrue(sp.overrides.isEmpty());
+		assertEquals(1, sp.count("clear"));
+		PluginMessage again = sp.last("path");
+		assertNull(again.getData().get("config"));
+		assertEquals(Collections.singletonList(new WorldPoint(3343, 10163, 0)), sp.shownTargets);
+		// Still our path: a task change still clears it
+		assertTrue(bridge.isPathShown());
+		bridge.clearIfOurs();
+		assertEquals(2, sp.count("clear"));
+		assertNull(sp.shownTargets);
 	}
 
 	@Test
@@ -162,6 +186,7 @@ public class ShortestPathBridgeTest
 		lenient.path(Collections.singletonList(WILDY_CAVE), true);
 		assertNull(avoidWilderness(sp.last("path")));
 		assertFalse(lenient.isOverrideActive());
+		assertTrue(sp.overrides.isEmpty());
 	}
 
 	@Test
@@ -169,16 +194,37 @@ public class ShortestPathBridgeTest
 	{
 		bridge.path(Collections.singletonList(WILDY_CAVE), true);
 
-		// The player picks their own destination on the world map
+		// The player picks their own destination on the world map: Shortest Path keeps our override for it
 		WorldPoint bank = new WorldPoint(3185, 3436, 0);
 		sp.shownTargets = new ArrayList<>(Collections.singletonList(bank));
 
 		ticks(ShortestPathBridge.CHECK_INTERVAL_TICKS, new WorldPoint(3100, 3500, 0));
 		assertFalse(bridge.isOverrideActive());
 		assertFalse(bridge.isPathShown());
-		assertEquals(Boolean.TRUE, avoidWilderness(sp.last("path")));
-		assertEquals(0, sp.count("clear"));
+		// Our override is gone, and their path is shown again as it was
+		assertTrue(sp.overrides.isEmpty());
 		assertEquals(Collections.singletonList(bank), sp.shownTargets);
+		assertNull(sp.last("path").getData().get("config"));
+	}
+
+	@Test
+	public void anotherPluginsOwnOverridesAreLeftAlone()
+	{
+		bridge.path(Collections.singletonList(WILDY_CAVE), true);
+
+		// Another plugin shows its own path with its own overrides, which replaced ours
+		WorldPoint clue = new WorldPoint(3240, 3225, 0);
+		sp.shownTargets = new ArrayList<>(Collections.singletonList(clue));
+		sp.overrides = new HashMap<>();
+		sp.overrides.put("useFairyRings", false);
+		long clears = sp.count("clear");
+
+		ticks(ShortestPathBridge.CHECK_INTERVAL_TICKS, new WorldPoint(3100, 3500, 0));
+		assertEquals(clears, sp.count("clear"));
+		assertEquals(Boolean.FALSE, sp.overrides.get("useFairyRings"));
+		assertEquals(Collections.singletonList(clue), sp.shownTargets);
+		assertFalse(bridge.isOverrideActive());
+		assertFalse(bridge.isPathShown());
 	}
 
 	@Test
@@ -205,34 +251,60 @@ public class ShortestPathBridgeTest
 	}
 
 	@Test
-	public void noReplyNeverClearsButRestoresWildernessSetting()
+	public void noReplyNeverClearsAPathWithoutOurOverride()
 	{
+		sp.answers = false;
+		bridge.path(Collections.singletonList(CATACOMBS), false);
+		bridge.clearIfOurs();
+		ticks(ShortestPathBridge.REPLY_TIMEOUT_TICKS + 1, new WorldPoint(3100, 3500, 0));
+		assertEquals(0, sp.count("clear"));
+		assertFalse(bridge.isPathShown());
+	}
+
+	@Test
+	public void noReplyStillDropsOurOverride()
+	{
+		// An older Shortest Path that doesn't answer getTarget: a clear is the only way to drop the override
 		sp.answers = false;
 		bridge.path(Collections.singletonList(WILDY_CAVE), true);
 		bridge.clearIfOurs();
 		ticks(ShortestPathBridge.REPLY_TIMEOUT_TICKS + 1, new WorldPoint(3100, 3500, 0));
-
-		assertEquals(0, sp.count("clear"));
+		assertEquals(1, sp.count("clear"));
+		assertTrue(sp.overrides.isEmpty());
 		assertFalse(bridge.isOverrideActive());
-		assertEquals(Boolean.TRUE, avoidWilderness(sp.last("path")));
+
+		// Arriving without a reply: cleared, then our path shown again without the override
+		bridge.path(Collections.singletonList(WILDY_CAVE), true);
+		bridge.onGameTick(new WorldPoint(3345, 10160, 0));
+		ticks(ShortestPathBridge.REPLY_TIMEOUT_TICKS + 1, new WorldPoint(3345, 10160, 0));
+		assertTrue(sp.overrides.isEmpty());
+		assertEquals(Collections.singletonList(new WorldPoint(3343, 10163, 0)), sp.shownTargets);
+		assertTrue(bridge.isPathShown());
 	}
 
 	@Test
-	public void normalRouteAfterWildernessRouteRestoresSetting()
+	public void normalRouteAfterWildernessRouteDropsTheOverride()
 	{
 		bridge.path(Collections.singletonList(WILDY_CAVE), true);
 		bridge.path(Collections.singletonList(CATACOMBS), false);
-		assertEquals(Boolean.TRUE, avoidWilderness(sp.last("path")));
+		assertNull(avoidWilderness(sp.last("path")));
+		assertTrue(sp.overrides.isEmpty());
+		assertEquals(Collections.singletonList(new WorldPoint(1675, 10091, 0)), sp.shownTargets);
 		assertFalse(bridge.isOverrideActive());
 	}
 
 	@Test
-	public void releaseOnShutdownRestoresSettingWithoutClearing()
+	public void releaseOnShutdownClearsOnlyToDropOurOverride()
 	{
-		bridge.path(Collections.singletonList(WILDY_CAVE), true);
+		bridge.path(Collections.singletonList(CATACOMBS), false);
 		bridge.release();
 		assertEquals(0, sp.count("clear"));
-		assertEquals(Boolean.TRUE, avoidWilderness(sp.last("path")));
+		assertEquals(Collections.singletonList(new WorldPoint(1675, 10091, 0)), sp.shownTargets);
+
+		bridge.path(Collections.singletonList(WILDY_CAVE), true);
+		bridge.release();
+		assertEquals(1, sp.count("clear"));
+		assertTrue(sp.overrides.isEmpty());
 		assertFalse(bridge.isOverrideActive());
 	}
 

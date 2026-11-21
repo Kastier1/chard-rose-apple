@@ -71,7 +71,8 @@ import net.runelite.client.util.Text;
 @PluginDescriptor(
 	name = "Combat Gear Organizer",
 	description = "Lays out your combat gear bank tag, and shows where to do your slayer task",
-	tags = {"bank", "tag", "layout", "gear", "combat", "organize", "sort", "slayer", "task", "shortest path"}
+	tags = {"bank", "tag", "layout", "gear", "combat", "organize", "sort", "slayer", "task", "shortest path", "drops",
+		"collection log", "dps"}
 )
 @PluginDependency(BankTagsPlugin.class)
 @PluginDependency(SlayerPlugin.class)
