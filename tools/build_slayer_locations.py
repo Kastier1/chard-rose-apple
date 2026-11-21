@@ -83,11 +83,35 @@ CATEGORY_ALIASES = {
 }
 # Not killed on a normal task: Arceuus reanimations, Leagues echoes, quest/minigame rematches
 NOT_A_TASK_KILL = re.compile(r"^reanimated |\((echo|hard)\)", re.IGNORECASE)
-# Wiki pages of the same monster that aren't fought on a task: the PvM Arena copies of bosses ("Kree'arra (PvM Arena)")
-NOT_A_TASK_PAGE = re.compile(r"\(PvM Arena\)$", re.IGNORECASE)
-# Versions only fought during a quest ("Vorkath": "Dragon Slayer II" beside "Post-quest"; "Amoxliatl": "Quest"), which
-# would widen the level, hitpoints and XP ranges with a fight the player can't have on a task
-QUEST_VERSIONS = {"quest", "dragon slayer ii"}
+# Wiki pages of the same monster that aren't fought on a task: the PvM Arena copies of bosses ("Kree'arra (PvM Arena)"),
+# the Temple Trekking minigame's encounters ("Zombie (Temple Trekking)"), and the Varrock Palace quest instance of
+# Defender of Varrock ("Armoured zombie (Defender of Varrock)", every spawn at x 3900+, y 4900+: an instance)
+NOT_A_TASK_PAGE = re.compile(r"\((PvM Arena|Temple Trekking|Defender of Varrock)\)$", re.IGNORECASE)
+# Versions only fought during a quest or a minigame ("Vorkath": "Dragon Slayer II" beside "Post-quest"; "Amoxliatl":
+# "Quest"; "Dire Wolf": "Meat and Greet", the 10-hitpoint wolves Dire Wolf Alpha summons in the quest; "Pirate": "Cabin
+# Fever"; "Blessed spider": "Song of the Elves"), which would widen the level, hitpoints and XP ranges with a fight the
+# player can't have on a task
+QUEST_VERSIONS = {"quest", "dragon slayer ii", "meat and greet", "cabin fever", "song of the elves"}
+# ...and the same said in brackets after the level or style: "Level 50 (In Aid of the Myreque)", "Level 119 (Sins of
+# the Father)", "Level 90 (Temple Trekking)", "Ranger (Quest)", "Level 66 (Contact!)", "Melee (invasion)"
+QUEST_VERSIONS_IN_BRACKETS = {"quest", "temple trekking", "in aid of the myreque", "sins of the father",
+                              "beneath cursed sands", "contact!", "invasion"}
+
+
+def quest_version(anchor):
+    """Whether a wiki version anchor is a quest's or minigame's version of the monster (QUEST_VERSIONS)."""
+    anchor = (anchor or "").strip().lower()
+    bracket = re.search(r"\(([^)]*)\)$", anchor)
+    return anchor in QUEST_VERSIONS or bool(bracket and bracket.group(1) in QUEST_VERSIONS_IN_BRACKETS)
+
+
+# Spawn spots of a page that are another version than the one that counts, so they are no place for the task:
+# (wiki page, spot name) -> evidence. Their points are left out of the monster's spawns everywhere.
+NOT_A_TASK_SPOT = {
+    # https://oldschool.runescape.wiki/w/Mourner: the Arandar LocLine is "levels = 11", the version with "slayxp1 =
+    # None" and "cat1 = None"; only the level 108 Mourners in the Mourner Tunnels count as elves
+    ("Mourner", "Arandar"): "the level 11 Mourners, which give no Slayer XP and aren't elves for a task",
+}
 # A variant belongs to a place when one of its spawns is this close (tiles) to one of the place's points
 NEAR = 40
 # Most dungeons sit 6400 tiles north of their entrance on the world map; an entrance-only place gets a looser match
@@ -338,9 +362,9 @@ def task_monsters(task_name, wiki):
         categories = [c.lower() for c in m.get("slayer_category", [])]
         if m["name"] not in bosses and (category not in categories or "bosses" in categories):
             continue
-        if m["name"] in GWD_MINIONS | ONE_TIME_FIGHTS or NOT_A_TASK_KILL.search(m["name"]) or NOT_A_TASK_PAGE.search(m["page_name"]):
+        if m["name"] in GWD_MINIONS | BOSS_FIGHT_MINIONS | ONE_TIME_FIGHTS or NOT_A_TASK_KILL.search(m["name"]) or NOT_A_TASK_PAGE.search(m["page_name"]):
             continue
-        if (m.get("version_anchor") or "").lower() in QUEST_VERSIONS:
+        if quest_version(m.get("version_anchor")):
             continue
         if not m.get("combat_level") or m["page_name"] in league_only:
             continue
@@ -357,7 +381,13 @@ def is_boss(name, task_name):
 
 
 def spawns_of(pages, wiki):
-    return [pt for p in sorted(pages) for pt in wiki["spawns"].get(p, [])]
+    """The monster's spawn points over its pages, without the NOT_A_TASK_SPOT ones."""
+    out = []
+    for p in sorted(pages):
+        left_out = {tuple(pt) for loc, pts in wiki.get("spawn_locations", {}).get(p, [])
+                    if (p, loc) in NOT_A_TASK_SPOT for pt in pts}
+        out += [pt for pt in wiki["spawns"].get(p, []) if tuple(pt) not in left_out]
+    return out
 
 
 def places_of(name, spawns, places, all_points):
@@ -377,7 +407,12 @@ NO_ACCESS_NOTE = "The data has no access details for this place."
 WIKI_ACCESS = {
     # "They can be found throughout the Ancient Guthixian Temple after completion of the quest."
     "ancientguthixiantemple": {"questsFinished": ["WHILE_GUTHIX_SLEEPS"]},
+    # The Guard dog page's own spot name says it: "Brimhaven, Black Arm Gang hideout (requires having started Heroes'
+    # Quest)"
+    "brimhavenblackarmganghideoutrequireshavingstartedheroesquest": {"questsStarted": ["HEROES_QUEST"]},
 }
+# A requirement the wiki puts in a spot's name, said by the place's requirements instead of its label
+SPOT_REQUIREMENT = re.compile(r"\s*\(requires [^)]*\)$", re.IGNORECASE)
 
 
 # God Wars Dungeon bodyguards: they only appear in their general's room and are killed as part of the boss fight, so
@@ -393,10 +428,30 @@ GWD_MINIONS = {
     "Starlight", "Growler", "Bree",  # Commander Zilyana
     "Fumus", "Umbra", "Cruor", "Glacies",  # Nex
 }
-# Fights a player has once per account, so never a place to go on a task: Kolodion counts as a black demon, but
-# https://oldschool.runescape.wiki/w/Slayer_task/Black_demons says "Kolodion can only be killed once during the Mage
-# Arena miniquest". (Porazdir is left out of BOSSES for a different reason, given there.)
-ONE_TIME_FIGHTS = {"Kolodion"}
+# Monsters that only appear in a boss fight and don't count down the task:
+# https://oldschool.runescape.wiki/w/Acidic_Araxyte "hatch from green eggs during the battle with Araxxor ... Araxxor's
+# minions and eggs are considered by the game to be part of an araxyte task without decrementing the task count"
+BOSS_FIGHT_MINIONS = {"Acidic Araxyte"}
+# Fights a player has once per account, during a quest or miniquest, so never a place to go on a task (each wiki page
+# says so). (Porazdir is left out of BOSSES for a different reason, given there.)
+ONE_TIME_FIGHTS = {
+    # Slayer_task/Black_demons: "Kolodion can only be killed once during the Mage Arena miniquest"
+    "Kolodion",
+    # Dad: "players must fight [him] during the Troll Stronghold quest"; Arrg: "can only be fought during the quest"
+    # (Troll Romance). Their Nightmare Zone copies share the name and aren't a task place either.
+    "Dad", "Arrg",
+    # Temple_Guardian: "During the Priest in Peril quest, the player is tricked into killing it"
+    "Temple Guardian",
+    # Dire_Wolf_Alpha: "a monster fought during the Meat and Greet quest" (its den spot is mapID -1, an instance)
+    "Dire Wolf Alpha",
+    # Giant_lobster: "encountered during The Slug Menace quest ... After the quest is complete, they can no longer be
+    # found in the dungeon"
+    "Giant Lobster",
+    # Bouncer: "a hellhound that is fought during the Fight Arena quest"
+    "Bouncer",
+    # Damien_Leucurte: "a minor antagonist of the Sins of the Father quest", fought in it
+    "Damien Leucurte",
+}
 # Regular monsters that live only in a boss's lair (wiki name -> BOSS_LAIRS id). The lair is their only place.
 # https://oldschool.runescape.wiki/w/Slayer_task/Scorpions on Scorpia's offspring: "Only found in Scorpia's Lair in the
 # Wilderness."
@@ -983,6 +1038,29 @@ def merge_close(spots):
     return merged
 
 
+# A surface spot of a monster that has a listed place needs this many spawns to get a place of its own, so a lone spawn
+# the wiki pins in a town ("Varrock", 1 spider; "Kourend Castle", 1 guard dog) doesn't make a card. A spot underground
+# (y past UNDERGROUND_OFFSET) is a dungeon the player goes to on purpose, so one spawn is enough there (the Charred
+# Dungeon's Skeleton Mage, the lesser demon in Melzar's Maze Basement).
+EXTRA_SPOT_MIN = 2
+
+
+def extra_spot(task_name, name, loc, pts, places, listed, all_points):
+    """Whether a spawn spot of a monster that matched a listed place gets a wiki place too: it's named (not a quest,
+    instance or unreachable spot: NOT_A_GO_SPOT), has EXTRA_SPOT_MIN spawns (one underground), isn't near a listed place (places_of),
+    isn't a listed place's spot by hand (SPOT_PLACES) and isn't named like one (own_places, beside ones included:
+    those are only checked by distance later)."""
+    underground = all(pt[1] >= UNDERGROUND_OFFSET for pt in pts)
+    if not loc or NOT_A_GO_SPOT.search(loc) or len(pts) < (1 if underground else EXTRA_SPOT_MIN):
+        return False
+    if places_of(name, pts, places, all_points):
+        return False
+    if any(task == task_name and (monster, spot) == (name, loc) for (task, _), (monster, spot, *_) in SPOT_PLACES.items()):
+        return False
+    beside = set()
+    return not own_places(listed, loc, beside) and not beside
+
+
 def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
     """Places for the task's regular monsters whose spawns match none of the listed places, from their spawns.
 
@@ -1005,10 +1083,15 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
         if is_superior(name, pages, wiki) or is_boss(name, task_name):
             continue
         spawns = spawns_of(pages, wiki)
-        if not spawns or places_of(name, spawns, places, all_points):
+        if not spawns:
             continue
+        # A monster found at a listed place keeps its other spots too (Lumbridge's spiders beside the listed
+        # dungeons), but only named ones (extra_spot) that no listed place stands for, by distance or by name
+        matched = bool(places_of(name, spawns, places, all_points))
         groups = []
         for loc, pts in spawn_groups(pages, wiki):
+            if matched and not extra_spot(task_name, name, loc, pts, places, listed, all_points):
+                continue
             pts = [pt for pt in pts if in_wilderness(pt) or not wilderness_only]
             # Only the same name joins: a place with more words ("Harmony Island Church") keeps its own spawn
             # points for Go (variants_for still links the monster to "Harmony Island" too)
@@ -1033,11 +1116,12 @@ def wiki_places(task_name, places, wiki, all_points, wilderness_only, guide):
     out = []
     for key, spot in merge_close(spots).items():
         loc, monsters = spot["location"], spot["monsters"]
+        shown = SPOT_REQUIREMENT.sub("", loc) if loc else loc
         if loc and len(monsters) == 1:
             # "Tormented Demon (Ancient Guthixian Temple)", but not "Arrg (Troll Stronghold (Middle Level))"
-            label = f"{monsters[0]}, {loc}" if "(" in loc else f"{monsters[0]} ({loc})"
+            label = f"{monsters[0]}, {shown}" if "(" in shown else f"{monsters[0]} ({shown})"
         elif loc:
-            label = loc
+            label = shown
         elif spot["spots"]:
             label = f"{monsters[0]} (several places)"
         else:
@@ -1453,9 +1537,11 @@ def link_unmatched(task_name, places, variants):
             pl[NO_MONSTER_WHY] = NO_MONSTER_PLACES[(task_name, pl["key"])]
 
 
-# Spawn spots fill_from_spawns doesn't take points from: an instance Shortest Path can't path into ("North-east Karamja
-# (Instanced)") or spawns only there during a quest ("Digsite Dungeon (During The Dig Site)")
-NOT_A_GO_SPOT = re.compile(r"\binstanced?\b|\(during\b", re.IGNORECASE)
+# Spawn spots fill_from_spawns doesn't take points from, and extra_spot makes no place of: an instance Shortest Path
+# can't path into ("North-east Karamja (Instanced)"), spawns only there during a quest ("Digsite Dungeon (During The
+# Dig Site)", "Cabin Fever quest (deck)", the "Cabin Fever Boats" at 1800,4800, which are the quest's ships), or spawns
+# the wiki says no one can reach ("Crandor and Karamja Dungeon (Unreachable)")
+NOT_A_GO_SPOT = re.compile(r"\binstanced?\b|\bduring\b|\bquest \(|^cabin fever\b|\bunreachable\b", re.IGNORECASE)
 
 
 def fill_from_spawns(task_name, places, variants, wiki, wilderness_list, unroutable):
@@ -1538,8 +1624,10 @@ def validate(tasks):
             if boss.get("display", name) not in found and (t["locations"] or BOSS_LAIRS[boss["lair"]].get("krystilia")):
                 problems.append(f'{t["name"]} / {name}: in BOSSES but not in the wiki data for the task')
         for v in t.get("variants", []):
-            if v["name"] in GWD_MINIONS:
-                problems.append(f'{t["name"]} / {v["name"]}: a God Wars Dungeon bodyguard')
+            if v["name"] in GWD_MINIONS | BOSS_FIGHT_MINIONS:
+                problems.append(f'{t["name"]} / {v["name"]}: a boss fight\'s minion')
+            if v["name"] in ONE_TIME_FIGHTS:
+                problems.append(f'{t["name"]} / {v["name"]}: a one-time quest fight')
     names = {t["name"] for t in tasks}
     problems += [f"NO_MONSTER_PLACES / {task}: no such task" for task, _ in NO_MONSTER_PLACES if task not in names]
     by_task = {t["name"]: t for t in tasks}

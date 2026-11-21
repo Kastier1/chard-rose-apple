@@ -430,7 +430,7 @@ public class SlayerPanelCardsTest
 	@Test
 	public void aSpotIsNotLinkedToAPlaceOnlyNamedBesideIt()
 	{
-		assertNotAt("Trolls", "Dad", "tunnel_between_troll_arena_and_trollheim");
+		// (Dad is no longer a task monster at all: a quest fight, ONE_TIME_FIGHTS)
 		assertNotAt("Trolls", "Troll spectator", "tunnel_between_troll_arena_and_trollheim");
 		assertLivesAt("Trolls", "Mountain troll", "tunnel_between_troll_arena_and_trollheim");
 		// A place named beside a spot still matches when another monster's spot of that name is right there (the

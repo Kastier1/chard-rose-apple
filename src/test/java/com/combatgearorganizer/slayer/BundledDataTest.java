@@ -853,8 +853,8 @@ public class BundledDataTest
 		assertEquals(Collections.singletonList("WHILE_GUTHIX_SLEEPS"), temple.getRequirements().getQuestsFinished());
 		assertEquals("Spawn points from the OSRS Wiki.", temple.getNote());
 		// Neither: it says the access isn't known
-		SlayerLocationData.LocationEntry unknown = wikiPlaces(data.findTask(-1, "Hellhounds")).stream()
-			.filter(l -> l.getLabel().startsWith("Bouncer")).findFirst().orElse(null);
+		SlayerLocationData.LocationEntry unknown = wikiPlaces(data.findTask(-1, "Skeletons")).stream()
+			.filter(l -> l.getLabel().equals("Skeleton Mage (Piscatoris Fishing Colony)")).findFirst().orElse(null);
 		assertNotNull(unknown);
 		assertNull(unknown.getRequirements());
 		assertTrue(unknown.getNote().contains("no access details"));
@@ -882,6 +882,111 @@ public class BundledDataTest
 		// Krystilia-only tasks leave out monsters that never spawn in the Wilderness
 		assertNull(Variants.byName(data.findTask(-1, "Chaos druids").getVariants(), "Chaos druid warrior"));
 		assertNull(Variants.byName(data.findTask(-1, "Green dragons").getVariants(), "Elvarg"));
+	}
+
+	private static SlayerLocationData.LocationEntry wikiPlace(String task, String label)
+	{
+		SlayerLocationData.LocationEntry out = wikiPlaces(data.findTask(-1, task)).stream()
+			.filter(l -> l.getLabel().equals(label)).findFirst().orElse(null);
+		assertNotNull(task + " / " + label, out);
+		return out;
+	}
+
+	private static boolean hasPointNear(SlayerLocationData.LocationEntry l, int x, int y)
+	{
+		List<int[]> points = new ArrayList<>(l.getPoints());
+		points.addAll(l.getWildernessPoints());
+		return points.stream().anyMatch(p -> Math.abs(p[0] - x) <= 5 && Math.abs(p[1] - y) <= 5);
+	}
+
+	/**
+	 * Review finding 8: a monster that matched one listed place lost all its other spawn spots, so the Lumbridge and
+	 * Varrock Sewers spiders, the Skeleton Mage at Piscatoris and the Charred Dungeon, and the lesser
+	 * demons of the Charred Dungeon and the Isle of Souls Dungeon were never offered.
+	 */
+	@Test
+	public void aMonsterAtAListedPlaceKeepsItsOtherSpawnSpots()
+	{
+		SlayerLocationData.TaskEntry spiders = data.findTask(-1, "Spiders");
+		SlayerLocationData.LocationEntry spider = wikiPlace("Spiders", "Spider (several places)");
+		assertTrue(Variants.byName(spiders.getVariants(), "Spider").getPlaces().contains(spider.getKey()));
+		assertTrue(spider.getNote(), spider.getNote().contains("Lumbridge Castle, Cellar"));
+		assertTrue(spider.getNote(), spider.getNote().contains("Varrock Sewers"));
+		assertTrue(hasPointNear(spider, 3209, 9618));
+		// ...and still its listed places
+		assertTrue(Variants.byName(spiders.getVariants(), "Spider").getPlaces().contains("stronghold_of_security"));
+		// A lone surface spawn makes no card ("Varrock", one spider), but it isn't needed for an underground one
+		assertTrue(spider.getNote(), !spider.getNote().contains("Varrock,") && !spider.getNote().endsWith("Varrock."));
+		assertTrue(wikiPlaces(data.findTask(-1, "Dogs")).stream().noneMatch(l -> l.getLabel().contains("Kourend Castle")));
+
+		SlayerLocationData.TaskEntry skeletons = data.findTask(-1, "Skeletons");
+		List<String> mage = Variants.byName(skeletons.getVariants(), "Skeleton Mage").getPlaces();
+		assertTrue(mage.toString(), mage.contains("waterfall_dungeon"));
+		assertTrue(mage.toString(), mage.contains(wikiPlace("Skeletons", "Skeleton Mage (Piscatoris Fishing Colony)").getKey()));
+		assertTrue(mage.toString(), mage.contains(wikiPlace("Skeletons", "Skeleton Mage (Charred Dungeon)").getKey()));
+
+		SlayerLocationData.TaskEntry lesser = data.findTask(-1, "Lesser demons");
+		List<String> demon = Variants.byName(lesser.getVariants(), "Lesser demon").getPlaces();
+		assertTrue(demon.toString(), demon.contains(wikiPlace("Lesser demons", "Lesser demon (Charred Dungeon)").getKey()));
+		assertTrue(demon.toString(), demon.contains(wikiPlace("Lesser demons", "Lesser demon (Isle of Souls Dungeon)").getKey()));
+		// A spot named like a listed place joins it, no copy: the Wizards' Tower cage
+		assertTrue(wikiPlaces(lesser).stream().noneMatch(l -> l.getLabel().contains("Wizards' Tower")));
+
+		// Dire wolves at Mynydd and outside Lletya, beside Arandar
+		SlayerLocationData.LocationEntry dire = wikiPlace("Wolves", "Dire Wolf (several places)");
+		assertTrue(dire.getNote(), dire.getNote().contains("Mynydd") && dire.getNote().contains("Outside Lletya"));
+		assertTrue(Variants.byName(data.findTask(-1, "Wolves").getVariants(), "Dire Wolf").getPlaces().contains(dire.getKey()));
+
+		// A spot linked to a listed place by hand (SPOT_PLACES) gets no copy of its own
+		assertTrue(wikiPlaces(data.findTask(-1, "Dwarves")).stream().noneMatch(l -> l.getLabel().contains("Mining Guild")));
+		// Nor a quest-only or unreachable spot
+		assertTrue(wikiPlaces(data.findTask(-1, "Fire giants")).stream().noneMatch(l -> l.getLabel().contains("Unreachable")));
+		assertTrue(data.getTasks().stream().flatMap(t -> wikiPlaces(t).stream())
+			.noneMatch(l -> l.getLabel().toLowerCase().contains("during") || (l.getNote() != null && l.getNote().contains("Cabin Fever"))));
+		// A requirement the wiki puts in the spot's name is a requirement, not part of the label
+		SlayerLocationData.LocationEntry gang = wikiPlace("Dogs", "Guard dog (Brimhaven, Black Arm Gang hideout)");
+		assertEquals(Collections.singletonList("HEROES_QUEST"), gang.getRequirements().getQuestsStarted());
+	}
+
+	/**
+	 * Review finding 4: quest-only or non-counting monsters were task variants with a working Go, and quest versions
+	 * widened a monster's level, hitpoints and XP (Dire Wolf from 10 hitpoints, the Meat and Greet wolves).
+	 */
+	@Test
+	public void questFightsAndBossMinionsAreNotTaskMonsters()
+	{
+		String[][] gone = {
+			{"Trolls", "Dad"}, {"Trolls", "Arrg"}, {"Dogs", "Temple Guardian"}, {"Wolves", "Dire Wolf Alpha"},
+			{"Scorpions", "Giant Lobster"}, {"Hellhounds", "Bouncer"}, {"Vampyres", "Damien Leucurte"},
+			{"Spiders", "Acidic Araxyte"}, {"Araxytes", "Acidic Araxyte"},
+		};
+		for (String[] g : gone)
+		{
+			SlayerLocationData.TaskEntry t = data.findTask(-1, g[0]);
+			assertNull(g[0] + " / " + g[1], Variants.byName(t.getVariants(), g[1]));
+			assertTrue(g[0] + " / " + g[1], allLocations(t).stream().noneMatch(l -> l.getLabel().startsWith(g[1] + " ")
+				|| l.getLabel().startsWith(g[1] + ",")));
+		}
+		// Only the versions a task can have: the Meat and Greet wolves (10 hitpoints) and the quest and Temple
+		// Trekking vampyres are left out of the ranges
+		SlayerLocationData.Variant dire = Variants.byName(data.findTask(-1, "Wolves").getVariants(), "Dire Wolf");
+		assertEquals(Arrays.asList(74, 85), Arrays.asList(dire.getHitpoints()[0], dire.getHitpoints()[1]));
+		assertTrue(dire.getXp()[0] >= 74);
+		SlayerLocationData.Variant juvinate = Variants.byName(data.findTask(-1, "Vampyres").getVariants(), "Vampyre Juvinate");
+		assertEquals(54, juvinate.getLevel()[1]);
+		SlayerLocationData.Variant pirate = Variants.byName(data.findTask(-1, "Pirates").getVariants(), "Pirate");
+		assertEquals(26, pirate.getLevel()[1]);
+		SlayerLocationData.Variant mage = Variants.byName(data.findTask(-1, "Scabarites").getVariants(), "Scarab Mage");
+		assertEquals(Arrays.asList(93, 93), Arrays.asList(mage.getLevel()[0], mage.getLevel()[1]));
+
+		// The level 11 Mourners at Arandar give no Slayer XP; only the Mourner Tunnels count
+		SlayerLocationData.TaskEntry elves = data.findTask(-1, "Elves");
+		assertEquals(Collections.singletonList("wiki_mourner_tunnels"), Variants.byName(elves.getVariants(), "Mourner").getPlaces());
+		assertNull(place(elves, "wiki_arandar"));
+		// The Varrock Palace armoured zombies are Defender of Varrock's quest instance
+		SlayerLocationData.TaskEntry zombies = data.findTask(-1, "Zombies");
+		assertNull(place(zombies, "wiki_varrock_palace"));
+		assertFalse(Variants.byName(zombies.getVariants(), "Armoured zombie").getPlaces().contains("wiki_varrock_palace"));
 	}
 
 	@Test
