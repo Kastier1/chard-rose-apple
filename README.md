@@ -47,15 +47,17 @@ other weapons, shields, capes, amulets, rings, ammo and supplies: one row block 
   Proselyte, Crystal, Obsidian, d'hide and blessed d'hide, rune / dragon / god armour, Mystic, Infinity, Lunar,
   Dagon'hai, Elder chaos, Ghostly, Graceful, Spirit angler and others.
 - Melee sets come first, then ranged, then magic (a set's style is that of most of its pieces), strongest first.
-- A set's own weapon or shield (Barrows weapons, Blue moon spear, Inquisitor's mace, Void knight mace, a d'hide
-  shield) goes in the set's column, under its armour. Without any of the set's armour in the tab it stays with the
-  other weapons.
+- A set's own weapon or shield (Barrows weapons, the moon sets' weapons, Inquisitor's mace, Void knight mace, Lunar
+  staff, a d'hide shield) goes in the set's column, under its armour. It needs the set to have a column (armour for
+  two slots); otherwise it stays with the other weapons.
 - Armour that isn't in a set, or is the only piece of its set in the tab, goes to the right of the sets in its own
   row. So does a second piece for a slot a set already has (a second void helm).
-- More than 8 sets wrap into another block of rows below. Odd armour that doesn't all fit beside the last sets
-  starts a block of its own, so all your odd helms stay in one row.
-- Adding a weapon (even the set's own), jewellery or an odd piece of armour never moves a set. A new set, or a set getting stronger, can
-  move the sets that come after it.
+- More than 8 sets wrap into another block of rows below. Odd armour sits beside the last block of sets when all of
+  its columns fit in the bank's 8; otherwise it starts a block of its own below, so its helms stay in one row (it
+  wraps again only past 8 odd pieces for one slot).
+- Adding a weapon (even the set's own), jewellery or an odd piece of armour never moves a set to another column. It
+  can add a row, which moves the rows below down: the first set weapon adds a weapons row, odd gloves a gloves row. A
+  new set, or a set getting stronger, can move the sets that come after it.
 
 ## Usage
 

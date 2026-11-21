@@ -75,10 +75,14 @@ public class GearSetsTest
 		assertEquals("Inquisitor's", GearSets.setOf("Inquisitor's mace"));
 		assertEquals("Void knight", GearSets.setOf("Void knight mace"));
 		assertEquals("Black d'hide", GearSets.setOf("Black d'hide shield"));
+		// The moon sets' and Lunar's weapons aren't named after the set
+		assertEquals("Blood moon", GearSets.setOf("Dual macuahuitl"));
+		assertEquals("Eclipse moon", GearSets.setOf("Eclipse atlatl"));
+		assertEquals("Lunar", GearSets.setOf("Lunar staff"));
 		// Weapons that only share a word with a set stay out of it
 		for (String weapon : new String[]{"Bandos godsword", "Armadyl crossbow", "Saradomin sword", "Ancient sceptre",
 			"Zamorak spear", "Guthix staff", "Dragon battleaxe", "Dragon defender", "Rune crossbow", "Crystal bow",
-			"Granite maul", "Mystic smoke staff", "Dual macuahuitl", "Eclipse atlatl"})
+			"Granite maul", "Mystic smoke staff"})
 		{
 			assertNull(weapon, GearSets.setOf(weapon));
 		}

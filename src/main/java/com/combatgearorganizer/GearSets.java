@@ -16,7 +16,9 @@ import java.util.function.Supplier;
  * name doesn't start like the set. A prefix only matches whole words, and the longest matching prefix wins, so
  * "Bandos d'hide body" is blessed d'hide and not the Bandos set.
  *
- * <p>To add a set, add a line to {@link #SETS}: the set's name, then the start of each piece's name.
+ * <p>To add a set, add a line to {@link #SETS}: the set's name, then the start of each piece's name, including its own
+ * weapon or shield when that isn't named after the set (Blood moon's Dual macuahuitl); By set puts those under the
+ * set's armour.
  */
 public final class GearSets
 {
@@ -71,9 +73,9 @@ public final class GearSets
 			new Entry("Crystal", "Crystal helm", "Crystal body", "Crystal legs"),
 			new Entry("Obsidian", "Obsidian helmet", "Obsidian platebody", "Obsidian platelegs"),
 			new Entry("Void knight", "Void knight", "Elite void", "Void melee helm", "Void ranger helm", "Void mage helm"),
-			new Entry("Blood moon", "Blood moon"),
+			new Entry("Blood moon", "Blood moon", "Dual macuahuitl"),
 			new Entry("Blue moon", "Blue moon"),
-			new Entry("Eclipse moon", "Eclipse moon"),
+			new Entry("Eclipse moon", "Eclipse moon", "Eclipse atlatl"),
 			new Entry("Sunfire fanatic", "Sunfire fanatic"),
 			new Entry("Proselyte", "Proselyte"),
 			new Entry("Granite", "Granite helm", "Granite body", "Granite legs"),
@@ -88,7 +90,7 @@ public final class GearSets
 			// Robes
 			new Entry("Mystic", "Mystic hat", "Mystic robe", "Mystic gloves", "Mystic boots"),
 			new Entry("Infinity", "Infinity"),
-			new Entry("Lunar", "Lunar helm", "Lunar torso", "Lunar legs", "Lunar gloves", "Lunar boots"),
+			new Entry("Lunar", "Lunar helm", "Lunar torso", "Lunar legs", "Lunar gloves", "Lunar boots", "Lunar staff"),
 			new Entry("Dagon'hai", "Dagon'hai"),
 			new Entry("Elder chaos", "Elder chaos"),
 			new Entry("Ghostly", "Ghostly"),

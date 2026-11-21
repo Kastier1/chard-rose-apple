@@ -376,11 +376,13 @@ public class LayoutBuilderTest
 		items.add(gear(52, "Verac's helm", GearSlot.HEAD, GearStyle.MELEE, 10));
 		int[] layout = LayoutBuilder.build(items, Grouping.BY_SET, false);
 		Map<Integer, Integer> at = positions(layout);
-		// Verac's helm and flail are two slots of one set: a column of their own, the flail under the helm
-		assertLinedUp(layout, 52, 51);
-		// No Dharok's armour: the greataxe is in the weapons rows, not alone in a column of the grid
-		assertEquals(0, column(layout, 41));
-		assertTrue(at.get(41) > at.get(51));
+		// A lone Verac's helm is odd armour even with Verac's flail: one armour slot doesn't make a set
+		assertEquals(3, column(layout, 52));
+		assertTrue(at.get(52) < 8);
+		// No Dharok's armour: the greataxe is in the weapons rows, not alone in a column of the grid, and so is the
+		// flail; strongest first
+		assertEquals(32, (int) at.get(41));
+		assertEquals(33, (int) at.get(51));
 	}
 
 	@Test
@@ -428,6 +430,9 @@ public class LayoutBuilderTest
 			new GearItem[]{gear(14, "Bandos chestplate (or)", GearSlot.BODY, GearStyle.MELEE, 1)},
 			// The set's own weapon goes under it, however strong, without moving it or the others
 			new GearItem[]{gear(24, "Karil's crossbow", GearSlot.WEAPON, GearStyle.RANGED, 6000)},
+			// Nor does a lone piece's set weapon make that piece a set
+			new GearItem[]{gear(51, "Verac's flail", GearSlot.WEAPON, GearStyle.MELEE, 6000),
+				gear(52, "Verac's helm", GearSlot.HEAD, GearStyle.MELEE, 6000)},
 			// A new set after the others (weakest magic set) leaves their columns alone
 			new GearItem[]{gear(81, "Mystic hat", GearSlot.HEAD, GearStyle.MAGIC, 1),
 				gear(82, "Mystic robe top", GearSlot.BODY, GearStyle.MAGIC, 1)}

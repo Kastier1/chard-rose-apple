@@ -143,10 +143,12 @@ public final class LayoutBuilder
 		for (Map.Entry<String, List<GearItem>> e : bySet.entrySet())
 		{
 			final List<GearItem> pieces = e.getValue();
-			final long slots = pieces.stream().map(GearItem::getSlot).distinct().count();
-			if (slots < 2 || pieces.stream().noneMatch(i -> isArmourSlot(i.getSlot())))
+			// Only armour makes a set: a lone Verac's helm with Verac's flail stays odd armour and a weapon, so getting a
+			// set's weapon never gives it a column and pushes the sets after it along
+			final long armourSlots = pieces.stream().map(GearItem::getSlot).filter(LayoutBuilder::isArmourSlot)
+				.distinct().count();
+			if (armourSlots < 2)
 			{
-				// One piece (or only one slot's worth) of a set lines nothing up, nor does a weapon and shield alone
 				pieces.forEach(i -> (isArmourSlot(i.getSlot()) ? unsetted : rest).add(i));
 			}
 			else
@@ -248,15 +250,16 @@ public final class LayoutBuilder
 		return columns;
 	}
 
-	/** A set with pieces for at least two slots in the tab. */
+	/** A set with armour for at least two slots in the tab, and its own weapon or shield if the tab has it. */
 	private static final class GearSet
 	{
 		final String name;
 		/** Its column of {@link #SET_ROWS}: its strongest piece for each slot. */
 		final GearItem[] column;
 		/**
-		 * More pieces for a slot it already has (a second void helm). They go with the unsetted armour, so they can't
-		 * widen the set and push the sets after it along.
+		 * More pieces for a slot it already has (a second void helm, a degraded copy of its weapon). Armour goes with
+		 * the unsetted armour and weapons and shields with the other weapons, so they can't widen the set and push the
+		 * sets after it along.
 		 */
 		final List<GearItem> extras = new ArrayList<>();
 		/**
